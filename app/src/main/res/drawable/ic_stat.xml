@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Simple phone-with-pulse glyph -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7,2h10a1,1 0 0 1 1,1v18a1,1 0 0 1 -1,1H7a1,1 0 0 1 -1,-1V3a1,1 0 0 1 1,-1zM8,4v14h8V4H8zM10,20h4v1h-4v-1z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,11h1.5l1,-2.5 1.5,5 1,-2.5H15v1h-0.5l-1.7,4.2 -1.5,-5L10.6,12H9v-1z" />
+</vector>
