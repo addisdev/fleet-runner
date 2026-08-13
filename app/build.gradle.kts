@@ -23,6 +23,14 @@ android {
             // still run the app (LiteRT/synthetic) via the JVM-only code path.
             abiFilters += "arm64-v8a"
         }
+
+        externalNativeBuild {
+            cmake {
+                // Benchmark numbers must come from optimized code even in the
+                // debug app variant — an -O0 llama.cpp poisons every result.
+                arguments += "-DCMAKE_BUILD_TYPE=Release"
+            }
+        }
     }
 
     ndkVersion = "27.2.12479018"
