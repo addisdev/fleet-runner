@@ -3,6 +3,7 @@ package com.taylab.fleetrunner.workload
 import android.content.Context
 import com.taylab.fleetrunner.backend.IterResult
 import com.taylab.fleetrunner.backend.ModelBackend
+import com.taylab.fleetrunner.net.ArtifactCache
 import com.taylab.fleetrunner.net.CollectorClient
 import com.taylab.fleetrunner.protocol.JobSpec
 import com.taylab.fleetrunner.protocol.Metrics
@@ -26,7 +27,7 @@ class BenchmarkEngine(
         val batteryStart = Telemetry.batteryPct(context)
         val thermals = mutableListOf<String>()
 
-        val backend = ModelBackend.forJob(job)
+        val backend = ModelBackend.forJob(job, ArtifactCache(context, client))
         try {
             val loadMs = backend.load(job)
             repeat(warmups) { backend.runIteration(job) }

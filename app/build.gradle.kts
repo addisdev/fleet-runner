@@ -15,8 +15,23 @@ android {
         // floor for LLM jobs only, via backend capabilities, not app minSdk.
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
+
+        ndk {
+            // The fleet's LLM-capable devices are all arm64; 32-bit devices
+            // still run the app (LiteRT/synthetic) via the JVM-only code path.
+            abiFilters += "arm64-v8a"
+        }
+    }
+
+    ndkVersion = "27.2.12479018"
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {

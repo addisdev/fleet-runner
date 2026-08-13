@@ -1,5 +1,6 @@
 package com.taylab.fleetrunner.backend
 
+import com.taylab.fleetrunner.net.ArtifactCache
 import com.taylab.fleetrunner.protocol.JobSpec
 
 data class IterResult(
@@ -20,9 +21,9 @@ interface ModelBackend {
     fun unload()
 
     companion object {
-        fun forJob(job: JobSpec): ModelBackend = when (job.backend) {
+        fun forJob(job: JobSpec, artifacts: ArtifactCache): ModelBackend = when (job.backend) {
             null, "synthetic" -> SyntheticBackend()
-            "llama.cpp" -> LlamaCppBackend()
+            "llama.cpp" -> LlamaCppBackend(artifacts)
             else -> throw IllegalArgumentException("unknown backend: ${job.backend}")
         }
     }
