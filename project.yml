@@ -1,0 +1,26 @@
+name: FleetRunner
+options:
+  bundleIdPrefix: com.taylab
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  FleetRunner:
+    type: application
+    platform: iOS
+    sources: [FleetRunner]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+    info:
+      path: FleetRunner/Info.plist
+      properties:
+        NSAppTransportSecurity:
+          # The collector speaks plain HTTP inside the Tailscale mesh / localhost.
+          NSAllowsLocalNetworking: true

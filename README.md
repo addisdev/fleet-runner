@@ -1,26 +1,32 @@
 # fleet-runner-ios
 
-Swift runner app for the Fleet Runner device fleet — **Phase 3, not started**.
+Swift runner app for the Fleet Runner device fleet — Phase 3.
 
-This repo is a placeholder created alongside [`fleet-runner-android`](https://github.com/addisdev/fleet-runner-android)
-so the fleet repos exist under one naming convention from day one. The Android
-runner is being built first (Phase 1); this app mirrors it when Phase 3 starts.
+SwiftUI app mirroring [`fleet-runner-android`](https://github.com/addisdev/fleet-runner-android)'s
+JSON protocol (shared protocol, not shared code): agent loop long-polling the
+[collector](https://github.com/addisdev/fleet-collector), 60 s telemetry beacon
+(battery / thermal / `phys_footprint`), and the synthetic SHA-256 benchmark
+backend — token-for-token identical to the Android implementation, so tok/s is
+comparable across the whole fleet.
 
-## What it will be
+## Build & run (simulator)
 
-A thin Swift 6 + SwiftUI app that mirrors the Android runner's JSON protocol
-(shared protocol, not shared code):
+```
+xcodegen generate
+xcodebuild -project FleetRunner.xcodeproj -scheme FleetRunner \
+  -destination 'platform=iOS Simulator,name=iPhone 16' -derivedDataPath build build
+xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/FleetRunner.app
+xcrun simctl launch booted com.taylab.fleetrunner -autostart 1
+```
 
-- Agent loop long-polling the collector (`GET /devices/:id/next-job`)
-- Telemetry beacon (battery, thermal state, memory pressure)
-- `ModelBackend` implementations: llama.cpp via SPM (GGUF, Metal), then Core ML
-  (`.mlmodelc`), possibly MLX later
-- Benchmark workload engine with warmups, prefill/decode split, and
-  `phys_footprint` memory reporting (labeled, never compared to Android PSS)
-- Distribution via TestFlight internal
+Simulators reach the collector at `http://127.0.0.1:8787` directly. On real
+devices, point the Collector URL at the Mac's tailnet address; distribution is
+TestFlight internal.
 
-## Related
+## Phase 3 status
 
-- Collector + protocol schemas: [`fleet-collector`](https://github.com/addisdev/fleet-collector)
-  — `schemas/job.schema.json` and `schemas/result.schema.json` are the contract.
-- Plan: `~/Desktop/Fleet Runner/fleet-runner-plan.html`
+- [x] Protocol, collector client, agent loop, beacon, synthetic benchmark
+- [x] Cross-platform benchmark table verified (iOS sim + Android emulator + SM-X930)
+- [ ] Phase 3b: llama.cpp backend (llama.xcframework, Metal), Core ML backend
+- [ ] Phase 3b: host-executor iOS path (devicectl install, XCUITest / Maestro iOS)
+- [ ] Real-device battery/charging telemetry validation (simulator reports -1)
