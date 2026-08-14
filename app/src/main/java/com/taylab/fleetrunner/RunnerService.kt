@@ -50,6 +50,11 @@ class RunnerService : Service() {
 
     private var scope: CoroutineScope? = null
 
+    // The beacon stamps this onto its posts: a beacon carrying a job_id renews
+    // that job's lease, so long benchmarks aren't swept mid-run.
+    @Volatile
+    private var currentJobId: String? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -82,15 +87,20 @@ class RunnerService : Service() {
                     _status.value = "polling for work"
                     val job = client.nextJob(deviceId) ?: continue
                     _status.value = "running ${job.jobId}"
-                    when (job.workload) {
-                        "benchmark" -> BenchmarkEngine(this, client, deviceId).run(job)
-                        else -> client.postResult(
-                            ResultPost(
-                                kind = "result", jobId = job.jobId, deviceId = deviceId,
-                                iter = 0, final = true, ok = false,
-                                error = "workload '${job.workload}' not supported by this runner yet",
-                            ),
-                        )
+                    currentJobId = job.jobId
+                    try {
+                        when (job.workload) {
+                            "benchmark" -> BenchmarkEngine(this, client, deviceId).run(job)
+                            else -> client.postResult(
+                                ResultPost(
+                                    kind = "result", jobId = job.jobId, deviceId = deviceId,
+                                    iter = 0, final = true, ok = false,
+                                    error = "workload '${job.workload}' not supported by this runner yet",
+                                ),
+                            )
+                        }
+                    } finally {
+                        currentJobId = null
                     }
                     _status.value = "finished ${job.jobId}"
                 }
@@ -105,7 +115,11 @@ class RunnerService : Service() {
         while (true) {
             try {
                 client.postResult(
-                    ResultPost(kind = "beacon", deviceId = deviceId, beacon = Telemetry.beacon(this)),
+                    ResultPost(
+                        kind = "beacon", deviceId = deviceId,
+                        jobId = currentJobId, // renews the running job's lease
+                        beacon = Telemetry.beacon(this),
+                    ),
                 )
             } catch (_: Exception) {
                 // Beacon is best-effort; the agent loop owns error reporting.
