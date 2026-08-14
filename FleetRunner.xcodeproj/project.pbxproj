@@ -10,6 +10,7 @@
 		18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */; };
 		29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */; };
 		5C65240485304DCA22298A18 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E7282F3367989880755ED74 /* llama.xcframework */; };
+		6424FDD0EDCF7806C66447F0 /* FleetSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */; };
 		8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35252602851DD4FC6838C5CC /* Telemetry.swift */; };
 		A98911FE185A5563E58375CA /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BB3BA830E838835C4AE2AD1 /* Protocol.swift */; };
 		B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
@@ -18,6 +19,16 @@
 		F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
 		F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B1315B864A8F6782CD92ADCB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 45E8C2DFBF297134C457A532 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4F7041A3776C49C9FDAFF8BD;
+			remoteInfo = FleetRunner;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		E253F9E4405FA0960AD234A2 /* Embed Frameworks */ = {
@@ -34,6 +45,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSmokeUITests.swift; sourceTree = "<group>"; };
 		31632F0B6302F50DC2BD764E /* CollectorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectorClient.swift; sourceTree = "<group>"; };
 		35252602851DD4FC6838C5CC /* Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Telemetry.swift; sourceTree = "<group>"; };
 		3E7282F3367989880755ED74 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = "<group>"; };
@@ -42,6 +54,7 @@
 		A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetRunnerApp.swift; sourceTree = "<group>"; };
 		BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppBackend.swift; sourceTree = "<group>"; };
 		C3122AFE32636B1FE9348CA1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FleetRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticBackend.swift; sourceTree = "<group>"; };
 		F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FleetRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactCache.swift; sourceTree = "<group>"; };
@@ -79,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */,
+				D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -91,10 +105,19 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		628955CF3364EFA0F4CD2E71 /* FleetRunnerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */,
+			);
+			path = FleetRunnerUITests;
+			sourceTree = "<group>";
+		};
 		A78D4EEF925AB995CDD5C0C8 = {
 			isa = PBXGroup;
 			children = (
 				21DB225C0B6F843825AB03D0 /* FleetRunner */,
+				628955CF3364EFA0F4CD2E71 /* FleetRunnerUITests */,
 				340D9FDE4AF589569A6332F3 /* Frameworks */,
 				2D9EC38E385BEE3CDAB7671E /* Products */,
 			);
@@ -122,6 +145,24 @@
 			productReference = F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */;
 			productType = "com.apple.product-type.application";
 		};
+		9E799996EE18A91A258E84CF /* FleetRunnerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 050D04B133577AFFC84F316E /* Build configuration list for PBXNativeTarget "FleetRunnerUITests" */;
+			buildPhases = (
+				33591D8880D86DC8B8E6526C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E903CF753B378457FFEA50B6 /* PBXTargetDependency */,
+			);
+			name = FleetRunnerUITests;
+			packageProductDependencies = (
+			);
+			productName = FleetRunnerUITests;
+			productReference = D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -131,6 +172,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					9E799996EE18A91A258E84CF = {
+						TestTargetID = 4F7041A3776C49C9FDAFF8BD;
+					};
 				};
 			};
 			buildConfigurationList = 9D9BB952DDF852794BB12E4D /* Build configuration list for PBXProject "FleetRunner" */;
@@ -148,11 +192,20 @@
 			projectRoot = "";
 			targets = (
 				4F7041A3776C49C9FDAFF8BD /* FleetRunner */,
+				9E799996EE18A91A258E84CF /* FleetRunnerUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		33591D8880D86DC8B8E6526C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6424FDD0EDCF7806C66447F0 /* FleetSmokeUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A5D4950877F41D019B81DCFE /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -170,7 +223,34 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		E903CF753B378457FFEA50B6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4F7041A3776C49C9FDAFF8BD /* FleetRunner */;
+			targetProxy = B1315B864A8F6782CD92ADCB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		4E39431C2AD4F4B015FE14D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.FleetRunnerUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = FleetRunner;
+			};
+			name = Debug;
+		};
 		5CEE8D15FBFE786A387135B8 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -340,9 +420,37 @@
 			};
 			name = Release;
 		};
+		CCA36671A2708AA60F05329C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.FleetRunnerUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = FleetRunner;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		050D04B133577AFFC84F316E /* Build configuration list for PBXNativeTarget "FleetRunnerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4E39431C2AD4F4B015FE14D3 /* Debug */,
+				CCA36671A2708AA60F05329C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		9D9BB952DDF852794BB12E4D /* Build configuration list for PBXProject "FleetRunner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

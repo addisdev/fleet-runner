@@ -8,19 +8,33 @@ final class FleetAgent: ObservableObject {
 
     private var agentTask: Task<Void, Never>?
     private var beaconTask: Task<Void, Never>?
+    private var baseURL: URL?
+
+    // Beacons carrying a job_id renew that job's lease on the collector, so
+    // long benchmarks aren't swept mid-run.
+    private let currentJobId = CurrentJobBox()
+
+    final class CurrentJobBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value: String?
+        func set(_ id: String?) { lock.lock(); value = id; lock.unlock() }
+        func get() -> String? { lock.lock(); defer { lock.unlock() }; return value }
+    }
 
     func start(baseURL: URL, deviceId: String) {
         stop()
+        self.baseURL = baseURL
         status = "starting"
         UIApplication.shared.isIdleTimerDisabled = true
         let client = CollectorClient(baseURL: baseURL)
 
         agentTask = Task { await self.agentLoop(client: client, deviceId: deviceId) }
+        let jobBox = currentJobId
         beaconTask = Task.detached {
             while !Task.isCancelled {
                 let beacon = await Telemetry.beacon()
                 try? await client.postResult(
-                    ResultPost(kind: "beacon", deviceId: deviceId, beacon: beacon))
+                    ResultPost(kind: "beacon", jobId: jobBox.get(), deviceId: deviceId, beacon: beacon))
                 try? await Task.sleep(for: .seconds(60))
             }
         }
@@ -48,6 +62,8 @@ final class FleetAgent: ObservableObject {
                     status = "polling for work"
                     guard let job = try await client.nextJob(deviceId: deviceId) else { continue }
                     status = "running \(job.jobId)"
+                    currentJobId.set(job.jobId)
+                    defer { currentJobId.set(nil) }
                     if job.workload == "benchmark" {
                         await runBenchmark(job: job, client: client, deviceId: deviceId)
                     } else {
@@ -148,8 +164,8 @@ final class FleetAgent: ObservableObject {
             await fail("llama.cpp job needs a gguf model ref")
             return
         }
-        guard let baseURL = URL(string: UserDefaults.standard.string(forKey: "base_url") ?? "") else {
-            await fail("no collector URL for artifact download")
+        guard let baseURL else {
+            await fail("agent started without a collector URL")
             return
         }
         do {

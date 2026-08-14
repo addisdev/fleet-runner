@@ -33,3 +33,23 @@ targets:
         NSAppTransportSecurity:
           # The collector speaks plain HTTP inside the Tailscale mesh / localhost.
           NSAllowsLocalNetworking: true
+
+  FleetRunnerUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [FleetRunnerUITests]
+    dependencies:
+      - target: FleetRunner
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+
+schemes:
+  FleetRunner:
+    build:
+      targets:
+        FleetRunner: all
+    test:
+      targets: [FleetRunnerUITests]
