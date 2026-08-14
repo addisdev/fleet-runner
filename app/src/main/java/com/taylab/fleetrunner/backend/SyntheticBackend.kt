@@ -59,6 +59,13 @@ class SyntheticBackend : ModelBackend {
         )
     }
 
+    override fun generate(prompt: String, maxTokens: Int): String {
+        // Deterministic stand-in output so batch/pipeline rails are provable
+        // without a model: the item's digest, clearly labeled.
+        val digest = MessageDigest.getInstance("SHA-256").digest(prompt.toByteArray())
+        return "synthetic:" + digest.joinToString("") { "%02x".format(it) }.take(16)
+    }
+
     override fun unload() {
         buffer = null
     }

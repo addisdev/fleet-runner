@@ -12,7 +12,9 @@ import com.taylab.fleetrunner.net.CollectorClient
 import com.taylab.fleetrunner.protocol.RegisterPost
 import com.taylab.fleetrunner.protocol.ResultPost
 import com.taylab.fleetrunner.telemetry.Telemetry
+import com.taylab.fleetrunner.workload.BatchEngine
 import com.taylab.fleetrunner.workload.BenchmarkEngine
+import com.taylab.fleetrunner.workload.PipelineEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +51,7 @@ class RunnerService : Service() {
     }
 
     private var scope: CoroutineScope? = null
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
 
     // The beacon stamps this onto its posts: a beacon carrying a job_id renews
     // that job's lease, so long benchmarks aren't swept mid-run.
@@ -62,6 +65,16 @@ class RunnerService : Service() {
         val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID) ?: return START_NOT_STICKY
 
         startForeground(NOTIF_ID, buildNotification(deviceId))
+
+        // Screen-off CPU throttling silently poisons benchmarks (observed:
+        // 0.6s -> 85s per batch item on an SM-X930 as the screen slept). A
+        // fleet device with the agent running holds a partial wakelock.
+        if (wakeLock == null) {
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            wakeLock = pm.newWakeLock(
+                android.os.PowerManager.PARTIAL_WAKE_LOCK, "fleetrunner:agent",
+            ).also { it.setReferenceCounted(false); it.acquire() }
+        }
 
         scope?.cancel()
         val s = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -86,11 +99,30 @@ class RunnerService : Service() {
                 while (true) {
                     _status.value = "polling for work"
                     val job = client.nextJob(deviceId) ?: continue
+
+                    // Enforce the job's device-state contract before burning
+                    // battery or attempts on a run whose numbers would lie:
+                    // on-battery + screen-off CPU throttling was observed to
+                    // slow decode ~100x on Samsung hardware.
+                    val constraintError = checkConstraints(job)
+                    if (constraintError != null) {
+                        client.postResult(
+                            ResultPost(
+                                kind = "result", jobId = job.jobId, deviceId = deviceId,
+                                iter = 0, final = true, ok = false, error = constraintError,
+                            ),
+                        )
+                        _status.value = "rejected ${job.jobId}: $constraintError"
+                        continue
+                    }
+
                     _status.value = "running ${job.jobId}"
                     currentJobId = job.jobId
                     try {
                         when (job.workload) {
                             "benchmark" -> BenchmarkEngine(this, client, deviceId).run(job)
+                            "batch" -> BatchEngine(this, client, deviceId).run(job)
+                            "pipeline" -> PipelineEngine(this, client, deviceId).run(job)
                             else -> client.postResult(
                                 ResultPost(
                                     kind = "result", jobId = job.jobId, deviceId = deviceId,
@@ -109,6 +141,18 @@ class RunnerService : Service() {
                 delay(ERROR_BACKOFF_MS)
             }
         }
+    }
+
+    private fun checkConstraints(job: com.taylab.fleetrunner.protocol.JobSpec): String? {
+        val c = job.constraints ?: return null
+        if (c.requireCharging == true && !Telemetry.isCharging(this)) {
+            return "constraint not met: require_charging (device is on battery)"
+        }
+        val minBattery = c.minBatteryPct
+        if (minBattery != null && Telemetry.batteryPct(this) < minBattery) {
+            return "constraint not met: min_battery_pct $minBattery (at ${Telemetry.batteryPct(this)}%)"
+        }
+        return null
     }
 
     private suspend fun beaconLoop(client: CollectorClient, deviceId: String) {
@@ -146,6 +190,8 @@ class RunnerService : Service() {
     override fun onDestroy() {
         scope?.cancel()
         scope = null
+        wakeLock?.release()
+        wakeLock = null
         _status.value = "stopped"
         super.onDestroy()
     }

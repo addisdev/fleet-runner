@@ -11,5 +11,8 @@ object LlamaNative {
     /** Returns [prefill_ms, decode_ms, ttft_ms], or null on decode failure. */
     external fun nativeBench(handle: Long, promptTokens: Int, genTokens: Int): DoubleArray?
 
+    /** Greedy generation until EOG or maxTokens; null on failure. */
+    external fun nativeGenerate(handle: Long, prompt: String, maxTokens: Int): String?
+
     external fun nativeFree(handle: Long)
 }

@@ -25,6 +25,20 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
 
+        // One-tap doze exemption so the agent survives screen-off on battery.
+        // Test images (ATD) ship without the Settings activity — never fatal.
+        val pm = getSystemService(android.os.PowerManager::class.java)
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            runCatching {
+                startActivity(
+                    android.content.Intent(
+                        android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        android.net.Uri.parse("package:$packageName"),
+                    ),
+                )
+            }
+        }
+
         val urlField = findViewById<EditText>(R.id.collector_url)
         val idField = findViewById<EditText>(R.id.device_id)
         val statusView = findViewById<TextView>(R.id.status)

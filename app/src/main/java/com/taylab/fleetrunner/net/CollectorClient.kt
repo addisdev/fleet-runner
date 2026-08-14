@@ -4,6 +4,9 @@ import com.taylab.fleetrunner.protocol.FleetJson
 import com.taylab.fleetrunner.protocol.JobSpec
 import com.taylab.fleetrunner.protocol.RegisterPost
 import com.taylab.fleetrunner.protocol.ResultPost
+import com.taylab.fleetrunner.protocol.intParam
+import com.taylab.fleetrunner.protocol.stringParam
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -70,6 +73,50 @@ class CollectorClient(baseUrl: String) {
                 throw IOException("artifact hash mismatch: wanted $sha256 got $got")
             }
             if (!tmp.renameTo(dest)) throw IOException("rename failed for $dest")
+        }
+    }
+
+    /** Uploads raw bytes to the artifact store; returns the sha256. */
+    fun uploadArtifact(bytes: ByteArray, name: String): String {
+        val req = Request.Builder()
+            .url("$base/artifacts")
+            .header("x-artifact-name", name)
+            .post(bytes.toRequestBody("application/octet-stream".toMediaType()))
+            .build()
+        http.newCall(req).execute().use { res ->
+            if (!res.isSuccessful) throw IOException("artifact upload failed: HTTP ${res.code}")
+            val body = FleetJson.parseToJsonElement(res.body!!.string()) as JsonObject
+            return body.stringParam("sha256") ?: throw IOException("upload response missing sha256")
+        }
+    }
+
+    fun publishEvent(topic: String, payloadJson: String) {
+        val req = Request.Builder()
+            .url("$base/events/$topic")
+            .post(payloadJson.toRequestBody(json))
+            .build()
+        http.newCall(req).execute().use { res ->
+            if (!res.isSuccessful) throw IOException("publish failed: HTTP ${res.code}")
+        }
+    }
+
+    data class Event(val id: Long, val payload: JsonObject)
+
+    /** Long-polls the next event after [after]; null when the poll expired. */
+    fun pollEvent(topic: String, after: Long): Event? {
+        val req = Request.Builder().url("$base/events/$topic/poll?after=$after").build()
+        http.newCall(req).execute().use { res ->
+            return when {
+                res.code == 204 -> null
+                res.isSuccessful -> {
+                    val body = FleetJson.parseToJsonElement(res.body!!.string()) as JsonObject
+                    Event(
+                        id = body.intParam("id", 0).toLong(),
+                        payload = body["payload"] as? JsonObject ?: JsonObject(emptyMap()),
+                    )
+                }
+                else -> throw IOException("poll failed: HTTP ${res.code}")
+            }
         }
     }
 

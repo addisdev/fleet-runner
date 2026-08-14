@@ -52,6 +52,12 @@ class LlamaCppBackend(private val artifacts: ArtifactCache) : ModelBackend {
         )
     }
 
+    override fun generate(prompt: String, maxTokens: Int): String {
+        check(handle != 0L) { "load() not called" }
+        return LlamaNative.nativeGenerate(handle, prompt, maxTokens)
+            ?: throw IllegalStateException("llama.cpp generation failed (see logcat)")
+    }
+
     override fun unload() {
         if (handle != 0L) {
             LlamaNative.nativeFree(handle)

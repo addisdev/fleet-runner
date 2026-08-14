@@ -114,6 +114,78 @@ Java_com_taylab_fleetrunner_backend_LlamaNative_nativeBench(
     return arr;
 }
 
+// Greedy generation for batch/pipeline workloads: tokenize the prompt,
+// prefill it, then sample token-by-token until EOG or max_tokens.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_taylab_fleetrunner_backend_LlamaNative_nativeGenerate(
+        JNIEnv *env, jobject, jlong handle, jstring jprompt, jint max_tokens) {
+    auto *fc = (FleetCtx *) handle;
+    if (!fc) return nullptr;
+    llama_context *ctx = fc->ctx;
+    const llama_vocab *vocab = llama_model_get_vocab(fc->model);
+
+    const char *cprompt = env->GetStringUTFChars(jprompt, nullptr);
+    std::string prompt(cprompt);
+    env->ReleaseStringUTFChars(jprompt, cprompt);
+
+    const int n_prompt = -llama_tokenize(
+            vocab, prompt.c_str(), (int32_t) prompt.size(), nullptr, 0, true, true);
+    if (n_prompt <= 0) {
+        LOGE("tokenize sizing failed");
+        return nullptr;
+    }
+    std::vector<llama_token> tokens(n_prompt);
+    if (llama_tokenize(vocab, prompt.c_str(), (int32_t) prompt.size(),
+                       tokens.data(), n_prompt, true, true) < 0) {
+        LOGE("tokenize failed");
+        return nullptr;
+    }
+
+    llama_memory_clear(llama_get_memory(ctx), true);
+
+    llama_batch batch = llama_batch_init(n_prompt, 0, 1);
+    for (int i = 0; i < n_prompt; i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i] = (int8_t) (i == n_prompt - 1);
+    }
+    batch.n_tokens = n_prompt;
+    int rc = llama_decode(ctx, batch);
+    llama_batch_free(batch);
+    if (rc != 0) {
+        LOGE("generate prefill failed: %d", rc);
+        return nullptr;
+    }
+
+    llama_sampler *sampler = llama_sampler_init_greedy();
+    llama_batch single = llama_batch_init(1, 0, 1);
+    std::string out;
+    int pos = n_prompt;
+    for (int i = 0; i < max_tokens; i++) {
+        llama_token tok = llama_sampler_sample(sampler, ctx, -1);
+        if (llama_vocab_is_eog(vocab, tok)) break;
+        char piece[256];
+        int len = llama_token_to_piece(vocab, tok, piece, sizeof(piece), 0, true);
+        if (len > 0) out.append(piece, (size_t) len);
+
+        single.token[0] = tok;
+        single.pos[0] = pos++;
+        single.n_seq_id[0] = 1;
+        single.seq_id[0][0] = 0;
+        single.logits[0] = 1;
+        single.n_tokens = 1;
+        if (llama_decode(ctx, single) != 0) {
+            LOGE("generate decode failed at %d", i);
+            break;
+        }
+    }
+    llama_batch_free(single);
+    llama_sampler_free(sampler);
+    return env->NewStringUTF(out.c_str());
+}
+
 extern "C" JNIEXPORT void JNICALL
 Java_com_taylab_fleetrunner_backend_LlamaNative_nativeFree(JNIEnv *, jobject, jlong handle) {
     auto *fc = (FleetCtx *) handle;

@@ -18,6 +18,10 @@ interface ModelBackend {
 
     fun runIteration(job: JobSpec): IterResult
 
+    /** Batch/pipeline item processing; backends without generation throw. */
+    fun generate(prompt: String, maxTokens: Int): String =
+        throw UnsupportedOperationException("$name backend cannot generate")
+
     fun unload()
 
     companion object {
