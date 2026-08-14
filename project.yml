@@ -8,6 +8,15 @@ targets:
     type: application
     platform: iOS
     sources: [FleetRunner]
+    dependencies:
+      # Built from fleet-runner-android/third_party/llama.cpp (same pinned
+      # commit as the Android JNI backend): ./build-xcframework.sh — run it
+      # from a path without spaces — then copy build-apple/llama.xcframework
+      # here. Gitignored; the app builds without it (LlamaCppBackend is
+      # compiled out via canImport).
+      - framework: Frameworks/llama.xcframework
+        embed: true
+        optional: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner

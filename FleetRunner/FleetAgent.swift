@@ -73,13 +73,19 @@ final class FleetAgent: ObservableObject {
         let measures = job.params?.measureIters ?? 3
         let batteryStart = Telemetry.batteryPct()
 
+        if job.backend == "llama.cpp" {
+            await runLlamaBenchmark(job: job, client: client, deviceId: deviceId,
+                                    pp: pp, tg: tg, warmups: warmups, measures: measures,
+                                    batteryStart: batteryStart)
+            return
+        }
         guard job.backend == nil || job.backend == "synthetic" else {
             try? await client.postResult(
                 ResultPost(
                     kind: "result", jobId: job.jobId, deviceId: deviceId,
                     iter: 0, final: true, ok: false,
                     device: Telemetry.descriptor(),
-                    error: "backend '\(job.backend ?? "?")' not built on iOS yet (Phase 3b)"))
+                    error: "backend '\(job.backend ?? "?")' not supported on iOS"))
             return
         }
 
@@ -124,5 +130,94 @@ final class FleetAgent: ObservableObject {
                 kind: "result", jobId: job.jobId, deviceId: deviceId,
                 iter: 0, final: true, ok: true,
                 device: Telemetry.descriptor(), metrics: summary))
+    }
+
+    private func runLlamaBenchmark(
+        job: JobSpec, client: CollectorClient, deviceId: String,
+        pp: Int, tg: Int, warmups: Int, measures: Int, batteryStart: Int
+    ) async {
+        func fail(_ message: String) async {
+            try? await client.postResult(
+                ResultPost(
+                    kind: "result", jobId: job.jobId, deviceId: deviceId,
+                    iter: 0, final: true, ok: false,
+                    device: Telemetry.descriptor(), error: message))
+        }
+        #if canImport(llama)
+        guard let modelRef = job.model, modelRef.format == "gguf" else {
+            await fail("llama.cpp job needs a gguf model ref")
+            return
+        }
+        guard let baseURL = URL(string: UserDefaults.standard.string(forKey: "base_url") ?? "") else {
+            await fail("no collector URL for artifact download")
+            return
+        }
+        do {
+            status = "downloading \(modelRef.name)"
+            let file = try await ArtifactCache(collectorURL: baseURL).ensure(sha256: modelRef.sha256)
+            status = "running \(job.jobId)"
+
+            let nCtx = Int32(max(1024, pp + tg + 8))
+            let nThreads = Int32(job.params?.nThreads ?? min(ProcessInfo.processInfo.activeProcessorCount, 6))
+
+            let outcome: Result<(iters: [IterResult], thermals: [String], loadMs: Int64), Error> =
+                await Task.detached {
+                    let backend = LlamaCppBackend()
+                    defer { backend.unload() }
+                    guard let loadMs = backend.load(path: file.path, nCtx: nCtx, nThreads: nThreads) else {
+                        return .failure(CollectorError.http(0, "llama.cpp failed to load model"))
+                    }
+                    for _ in 0..<warmups { _ = backend.bench(pp: Int32(pp), tg: Int32(tg)) }
+                    var iters: [IterResult] = []
+                    var thermals: [String] = []
+                    for i in 1...measures {
+                        guard let (prefillMs, decodeMs, ttftMs) = backend.bench(pp: Int32(pp), tg: Int32(tg)) else {
+                            return .failure(CollectorError.http(0, "llama.cpp decode failed"))
+                        }
+                        let r = IterResult(
+                            prefillTokS: Double(pp) * 1000.0 / max(prefillMs, 1),
+                            decodeTokS: Double(tg) * 1000.0 / max(decodeMs, 1),
+                            ttftMs: ttftMs)
+                        iters.append(r)
+                        thermals.append(Telemetry.thermal())
+                        var m = Metrics()
+                        m.prefillTokS = r.prefillTokS
+                        m.decodeTokS = r.decodeTokS
+                        m.ttftMs = r.ttftMs
+                        m.peakMemMb = Telemetry.physFootprintMb()
+                        m.memMethod = "phys_footprint"
+                        m.thermal = [thermals[thermals.count - 1]]
+                        try? await client.postResult(
+                            ResultPost(kind: "result", jobId: job.jobId, deviceId: deviceId, iter: i, metrics: m))
+                    }
+                    return .success((iters, thermals, loadMs))
+                }.value
+
+            switch outcome {
+            case .failure(let error):
+                await fail(error.localizedDescription)
+            case .success(let out):
+                var summary = Metrics()
+                summary.loadMs = out.loadMs
+                summary.prefillTokS = out.iters.map(\.prefillTokS).reduce(0, +) / Double(out.iters.count)
+                summary.decodeTokS = out.iters.map(\.decodeTokS).reduce(0, +) / Double(out.iters.count)
+                summary.ttftMs = out.iters.map(\.ttftMs).reduce(0, +) / Double(out.iters.count)
+                summary.peakMemMb = Telemetry.physFootprintMb()
+                summary.memMethod = "phys_footprint"
+                summary.thermal = out.thermals
+                summary.batteryStartPct = batteryStart
+                summary.batteryEndPct = Telemetry.batteryPct()
+                try? await client.postResult(
+                    ResultPost(
+                        kind: "result", jobId: job.jobId, deviceId: deviceId,
+                        iter: 0, final: true, ok: true,
+                        device: Telemetry.descriptor(), metrics: summary))
+            }
+        } catch {
+            await fail("artifact download failed: \(error.localizedDescription)")
+        }
+        #else
+        await fail("llama.cpp not built into this binary (llama.xcframework missing at build time)")
+        #endif
     }
 }
