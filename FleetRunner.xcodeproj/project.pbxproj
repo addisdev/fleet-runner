@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */; };
 		29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */; };
+		2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */; };
+		38E30C23455915A872514955 /* Workloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0BF52256E0CBF3AC96D589 /* Workloads.swift */; };
 		5C65240485304DCA22298A18 /* llama.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3E7282F3367989880755ED74 /* llama.xcframework */; };
 		6424FDD0EDCF7806C66447F0 /* FleetSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */; };
 		8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35252602851DD4FC6838C5CC /* Telemetry.swift */; };
@@ -16,6 +18,7 @@
 		B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
 		BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965A118D55FCDC99E6F0349A /* FleetAgent.swift */; };
 		CE5B1ECB13B098FEAF2DC376 /* llama.xcframework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = 3E7282F3367989880755ED74 /* llama.xcframework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
 		F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
 		F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
 /* End PBXBuildFile section */
@@ -46,15 +49,18 @@
 
 /* Begin PBXFileReference section */
 		09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSmokeUITests.swift; sourceTree = "<group>"; };
+		262BD6B87A5A8B607BE14F2B /* MiniZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniZip.swift; sourceTree = "<group>"; };
 		31632F0B6302F50DC2BD764E /* CollectorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectorClient.swift; sourceTree = "<group>"; };
 		35252602851DD4FC6838C5CC /* Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Telemetry.swift; sourceTree = "<group>"; };
 		3E7282F3367989880755ED74 /* llama.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = llama.xcframework; path = Frameworks/llama.xcframework; sourceTree = "<group>"; };
+		4A0BF52256E0CBF3AC96D589 /* Workloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workloads.swift; sourceTree = "<group>"; };
 		6BB3BA830E838835C4AE2AD1 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		965A118D55FCDC99E6F0349A /* FleetAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetAgent.swift; sourceTree = "<group>"; };
 		A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetRunnerApp.swift; sourceTree = "<group>"; };
 		BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppBackend.swift; sourceTree = "<group>"; };
 		C3122AFE32636B1FE9348CA1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FleetRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLBackend.swift; sourceTree = "<group>"; };
 		D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticBackend.swift; sourceTree = "<group>"; };
 		F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FleetRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactCache.swift; sourceTree = "<group>"; };
@@ -77,13 +83,16 @@
 			children = (
 				FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */,
 				31632F0B6302F50DC2BD764E /* CollectorClient.swift */,
+				D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */,
 				965A118D55FCDC99E6F0349A /* FleetAgent.swift */,
 				A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */,
 				C3122AFE32636B1FE9348CA1 /* Info.plist */,
 				BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */,
+				262BD6B87A5A8B607BE14F2B /* MiniZip.swift */,
 				6BB3BA830E838835C4AE2AD1 /* Protocol.swift */,
 				D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */,
 				35252602851DD4FC6838C5CC /* Telemetry.swift */,
+				4A0BF52256E0CBF3AC96D589 /* Workloads.swift */,
 			);
 			path = FleetRunner;
 			sourceTree = "<group>";
@@ -212,12 +221,15 @@
 			files = (
 				F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */,
 				B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */,
+				2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */,
 				BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */,
 				F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */,
 				18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */,
+				E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */,
 				A98911FE185A5563E58375CA /* Protocol.swift in Sources */,
 				29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */,
 				8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */,
+				38E30C23455915A872514955 /* Workloads.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

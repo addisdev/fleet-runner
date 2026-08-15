@@ -80,6 +80,50 @@ final class LlamaCppBackend {
         return (prefillMs, decodeMs, ttftMs)
     }
 
+    /// Greedy generation until EOG or maxTokens (batch/pipeline workloads).
+    func generate(prompt: String, maxTokens: Int32) throws -> String {
+        guard let ctx, let model else { throw CollectorError.http(0, "model not loaded") }
+        let vocab = llama_model_get_vocab(model)
+        let utf8 = Array(prompt.utf8)
+        let nPrompt = -llama_tokenize(vocab, prompt, Int32(utf8.count), nil, 0, true, true)
+        guard nPrompt > 0 else { throw CollectorError.http(0, "tokenize failed") }
+        var tokens = [llama_token](repeating: 0, count: Int(nPrompt))
+        guard llama_tokenize(vocab, prompt, Int32(utf8.count), &tokens, nPrompt, true, true) >= 0 else {
+            throw CollectorError.http(0, "tokenize failed")
+        }
+        llama_memory_clear(llama_get_memory(ctx), true)
+
+        var batch = llama_batch_init(nPrompt, 0, 1)
+        for i in 0..<Int(nPrompt) {
+            batch.token[i] = tokens[i]; batch.pos[i] = llama_pos(i)
+            batch.n_seq_id[i] = 1; batch.seq_id[i]![0] = 0
+            batch.logits[i] = i == Int(nPrompt) - 1 ? 1 : 0
+        }
+        batch.n_tokens = nPrompt
+        let rc = llama_decode(ctx, batch)
+        llama_batch_free(batch)
+        guard rc == 0 else { throw CollectorError.http(0, "prefill failed") }
+
+        let sampler = llama_sampler_init_greedy()
+        defer { llama_sampler_free(sampler) }
+        var single = llama_batch_init(1, 0, 1)
+        defer { llama_batch_free(single) }
+        var out = ""
+        var pos = Int(nPrompt)
+        var piece = [CChar](repeating: 0, count: 256)
+        for _ in 0..<Int(maxTokens) {
+            let tok = llama_sampler_sample(sampler, ctx, -1)
+            if llama_vocab_is_eog(vocab, tok) { break }
+            let len = llama_token_to_piece(vocab, tok, &piece, 256, 0, true)
+            if len > 0 { out += String(decoding: piece[0..<Int(len)].map { UInt8(bitPattern: $0) }, as: UTF8.self) }
+            single.token[0] = tok; single.pos[0] = llama_pos(pos); pos += 1
+            single.n_seq_id[0] = 1; single.seq_id[0]![0] = 0; single.logits[0] = 1
+            single.n_tokens = 1
+            guard llama_decode(ctx, single) == 0 else { break }
+        }
+        return out
+    }
+
     func unload() {
         if let ctx { llama_free(ctx) }
         if let model { llama_model_free(model) }

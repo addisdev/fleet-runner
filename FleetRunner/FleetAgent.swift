@@ -61,12 +61,40 @@ final class FleetAgent: ObservableObject {
                 while !Task.isCancelled {
                     status = "polling for work"
                     guard let job = try await client.nextJob(deviceId: deviceId) else { continue }
+
+                    // Same contract as Android: refuse jobs whose numbers would lie.
+                    if let c = job.constraints {
+                        var problem: String?
+                        if c.requireCharging == true && !Telemetry.isCharging() {
+                            #if !targetEnvironment(simulator)
+                            problem = "constraint not met: require_charging (device is on battery)"
+                            #endif
+                        }
+                        if let min = c.minBatteryPct, Telemetry.batteryPct() < min {
+                            problem = "constraint not met: min_battery_pct \(min) (at \(Telemetry.batteryPct())%)"
+                        }
+                        if let problem {
+                            try await client.postResult(ResultPost(kind: "result", jobId: job.jobId, deviceId: deviceId,
+                                                                   iter: 0, final: true, ok: false, error: problem))
+                            status = "rejected \(job.jobId): \(problem)"
+                            continue
+                        }
+                    }
+
                     status = "running \(job.jobId)"
                     currentJobId.set(job.jobId)
                     defer { currentJobId.set(nil) }
-                    if job.workload == "benchmark" {
+                    let cache = ArtifactCache(collectorURL: baseURL!)
+                    switch (job.workload, job.backend) {
+                    case ("benchmark", _):
                         await runBenchmark(job: job, client: client, deviceId: deviceId)
-                    } else {
+                    case ("batch", "coreml"):
+                        await Workloads.runVisionEval(job: job, client: client, deviceId: deviceId, artifacts: cache)
+                    case ("batch", _):
+                        await Workloads.runBatch(job: job, client: client, deviceId: deviceId, artifacts: cache)
+                    case ("pipeline", _):
+                        await Workloads.runPipeline(job: job, client: client, deviceId: deviceId, artifacts: cache)
+                    default:
                         try await client.postResult(
                             ResultPost(
                                 kind: "result", jobId: job.jobId, deviceId: deviceId,

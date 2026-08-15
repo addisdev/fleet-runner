@@ -23,6 +23,20 @@ struct BenchParams: Codable {
     let warmupIters: Int?
     let measureIters: Int?
     let nThreads: Int?
+    let sustainedMinutes: Int?
+    // batch / vision-eval / pipeline
+    let inputSha256: String?
+    let maxTokens: Int?
+    let maxItems: Int?
+    let computeUnits: String?
+    let topic: String?
+    let maxEvents: Int?
+    let after: Int?
+}
+
+struct Constraints: Codable {
+    let requireCharging: Bool?
+    let minBatteryPct: Int?
 }
 
 struct JobSpec: Codable {
@@ -34,6 +48,7 @@ struct JobSpec: Codable {
     let backend: String?
     let params: BenchParams?
     let targets: Targets?
+    let constraints: Constraints?
 }
 
 struct DeviceDescriptor: Codable {
@@ -74,6 +89,7 @@ struct ResultPost: Codable {
     var metrics: Metrics?
     var beacon: BeaconSample?
     var error: String?
+    var artifacts: [String]?
 }
 
 struct RegisterPost: Codable {

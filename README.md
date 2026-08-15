@@ -19,7 +19,7 @@ xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/FleetRunn
 xcrun simctl launch booted com.taylab.fleetrunner -autostart 1
 ```
 
-Simulators reach the collector at `http://127.0.0.1:8787` directly. On real
+Simulators reach the collector at `http://127.0.0.1:8788` directly. On real
 devices, point the Collector URL at the Mac's tailnet address; distribution is
 TestFlight internal.
 
@@ -27,6 +27,6 @@ TestFlight internal.
 
 - [x] Protocol, collector client, agent loop, beacon, synthetic benchmark
 - [x] Cross-platform benchmark table verified (iOS sim + Android emulator + SM-X930)
-- [ ] Phase 3b: llama.cpp backend (llama.xcframework, Metal), Core ML backend
-- [ ] Phase 3b: host-executor iOS path (devicectl install, XCUITest / Maestro iOS)
+- [x] llama.cpp backend (xcframework), Core ML backend (vision-eval), batch + pipeline engines
+- [x] host-executor iOS path (simctl + devicectl install, XCUITest bundle)
 - [ ] Real-device battery/charging telemetry validation (simulator reports -1)

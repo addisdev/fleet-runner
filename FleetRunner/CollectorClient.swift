@@ -48,4 +48,42 @@ final class CollectorClient: Sendable {
     func postResult(_ row: ResultPost) async throws {
         try await post("results", body: row)
     }
+
+    /// Uploads raw bytes to the artifact store; returns the sha256.
+    func uploadArtifact(_ data: Data, name: String) async throws -> String {
+        var req = URLRequest(url: base.appendingPathComponent("artifacts"))
+        req.httpMethod = "POST"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "content-type")
+        req.setValue(name, forHTTPHeaderField: "x-artifact-name")
+        let (body, res) = try await session.upload(for: req, from: data)
+        let code = (res as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 201 else { throw CollectorError.http(code, "artifacts") }
+        struct R: Decodable { let sha256: String }
+        return try JSONDecoder().decode(R.self, from: body).sha256
+    }
+
+    func publishEvent(topic: String, payload: [String: Any]) async throws {
+        var req = URLRequest(url: base.appendingPathComponent("events/\(topic)"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "content-type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        let (_, res) = try await session.data(for: req)
+        let code = (res as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 201 else { throw CollectorError.http(code, "events") }
+    }
+
+    struct Event { let id: Int; let payload: [String: Any] }
+
+    /// Long-polls the next event after `after`; nil when the poll expired.
+    func pollEvent(topic: String, after: Int) async throws -> Event? {
+        let url = base.appendingPathComponent("events/\(topic)/poll")
+            .appending(queryItems: [URLQueryItem(name: "after", value: String(after))])
+        let (data, res) = try await session.data(from: url)
+        let code = (res as? HTTPURLResponse)?.statusCode ?? 0
+        if code == 204 { return nil }
+        guard code == 200,
+              let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = obj["id"] as? Int else { throw CollectorError.http(code, "events/poll") }
+        return Event(id: id, payload: obj["payload"] as? [String: Any] ?? [:])
+    }
 }
