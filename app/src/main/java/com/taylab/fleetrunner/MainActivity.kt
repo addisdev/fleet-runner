@@ -43,7 +43,7 @@ class MainActivity : AppCompatActivity() {
         val idField = findViewById<EditText>(R.id.device_id)
         val statusView = findViewById<TextView>(R.id.status)
 
-        urlField.setText(prefs.getString("base_url", "http://127.0.0.1:8787"))
+        urlField.setText(prefs.getString("base_url", "http://127.0.0.1:8788"))
         idField.setText(prefs.getString("device_id", defaultDeviceId()))
 
         findViewById<Button>(R.id.start).setOnClickListener {

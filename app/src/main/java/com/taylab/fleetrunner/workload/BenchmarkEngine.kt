@@ -24,6 +24,10 @@ class BenchmarkEngine(
     fun run(job: JobSpec) {
         val warmups = job.params.intParam("warmup_iters", 1)
         val measures = job.params.intParam("measure_iters", 3)
+        // Sustained mode: keep iterating for N minutes instead of a fixed count.
+        // The per-iteration rows ARE the thermal curve — tok/s over wall time
+        // is the honest number for real workloads, not the first-minute burst.
+        val sustainedMinutes = job.params.intParam("sustained_minutes", 0)
         val batteryStart = Telemetry.batteryPct(context)
         val thermals = mutableListOf<String>()
 
@@ -33,7 +37,10 @@ class BenchmarkEngine(
             repeat(warmups) { backend.runIteration(job) }
 
             val iters = mutableListOf<IterResult>()
-            for (i in 1..measures) {
+            val deadline = if (sustainedMinutes > 0) System.currentTimeMillis() + sustainedMinutes * 60_000L else 0L
+            var i = 0
+            while (if (sustainedMinutes > 0) System.currentTimeMillis() < deadline else i < measures) {
+                i += 1
                 val r = backend.runIteration(job)
                 iters += r
                 val thermal = Telemetry.thermal(context)
@@ -45,9 +52,16 @@ class BenchmarkEngine(
                             prefillTokS = r.prefillTokS, decodeTokS = r.decodeTokS,
                             ttftMs = r.ttftMs, peakMemMb = Telemetry.pssMb(),
                             memMethod = "pss", thermal = listOf(thermal),
+                            batteryEndPct = Telemetry.batteryPct(context),
                         ),
                     ),
                 )
+                if (sustainedMinutes > 0 && i % 5 == 0) {
+                    // Sustained runs outlive the lease TTL: renew explicitly.
+                    client.postResult(
+                        ResultPost(kind = "beacon", deviceId = deviceId, jobId = job.jobId, beacon = Telemetry.beacon(context)),
+                    )
+                }
             }
             backend.unload()
 

@@ -20,16 +20,16 @@ long-polls for `executor: "device"` jobs, runs them, and reports results plus a
 ## Run against a local collector
 
 ```
-cd ../fleet-collector && npm start        # collector on :8787
+cd ../fleet-collector && npm start        # collector on :8788
 ./gradlew :app:installDebug
-adb reverse tcp:8787 tcp:8787             # device reaches the Mac via USB
+adb reverse tcp:8788 tcp:8788             # device reaches the Mac via USB
 ```
 
-Open the app, keep the default `http://127.0.0.1:8787`, tap **Start agent**,
+Open the app, keep the default `http://127.0.0.1:8788`, tap **Start agent**,
 then enqueue a job:
 
 ```
-curl -X POST http://127.0.0.1:8787/jobs -H 'content-type: application/json' -d '{
+curl -X POST http://127.0.0.1:8788/jobs -H 'content-type: application/json' -d '{
   "schema": 1, "job_id": "bench-synthetic-1", "workload": "benchmark",
   "executor": "device", "backend": "synthetic",
   "params": { "prompt_tokens": 256, "gen_tokens": 64, "warmup_iters": 1, "measure_iters": 3 },
