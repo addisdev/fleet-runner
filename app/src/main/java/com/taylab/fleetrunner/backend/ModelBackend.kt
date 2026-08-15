@@ -28,6 +28,7 @@ interface ModelBackend {
         fun forJob(job: JobSpec, artifacts: ArtifactCache): ModelBackend = when (job.backend) {
             null, "synthetic" -> SyntheticBackend()
             "llama.cpp" -> LlamaCppBackend(artifacts)
+            "litert" -> LiteRtBackend(artifacts)
             else -> throw IllegalArgumentException("unknown backend: ${job.backend}")
         }
     }

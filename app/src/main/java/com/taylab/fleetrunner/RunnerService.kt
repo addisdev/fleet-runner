@@ -15,6 +15,7 @@ import com.taylab.fleetrunner.telemetry.Telemetry
 import com.taylab.fleetrunner.workload.BatchEngine
 import com.taylab.fleetrunner.workload.BenchmarkEngine
 import com.taylab.fleetrunner.workload.PipelineEngine
+import com.taylab.fleetrunner.workload.VisionEvalEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -121,7 +122,9 @@ class RunnerService : Service() {
                     try {
                         when (job.workload) {
                             "benchmark" -> BenchmarkEngine(this, client, deviceId).run(job)
-                            "batch" -> BatchEngine(this, client, deviceId).run(job)
+                            "batch" ->
+                                if (job.backend == "litert") VisionEvalEngine(this, client, deviceId).run(job)
+                                else BatchEngine(this, client, deviceId).run(job)
                             "pipeline" -> PipelineEngine(this, client, deviceId).run(job)
                             else -> client.postResult(
                                 ResultPost(
