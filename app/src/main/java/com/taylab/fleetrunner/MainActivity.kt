@@ -13,6 +13,8 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
+private const val FLEET_HOST_URL = "http://192.168.50.27:8788" // fleet-host (C02TF32MGTFM); give it a DHCP reservation
+
 class MainActivity : AppCompatActivity() {
 
     private val prefs by lazy { getSharedPreferences("fleet", MODE_PRIVATE) }
@@ -43,7 +45,7 @@ class MainActivity : AppCompatActivity() {
         val idField = findViewById<EditText>(R.id.device_id)
         val statusView = findViewById<TextView>(R.id.status)
 
-        urlField.setText(prefs.getString("base_url", "http://127.0.0.1:8788"))
+        urlField.setText(prefs.getString("base_url", FLEET_HOST_URL))
         idField.setText(prefs.getString("device_id", defaultDeviceId()))
 
         findViewById<Button>(R.id.start).setOnClickListener {
