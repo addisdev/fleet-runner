@@ -11,7 +11,7 @@ struct FleetRunnerApp: App {
 
 struct ContentView: View {
     @StateObject private var agent = FleetAgent()
-    @AppStorage("base_url") private var baseUrl = "http://127.0.0.1:8788"
+    @AppStorage("base_url") private var baseUrl = "http://192.168.50.27:8788" // fleet-host (C02TF32MGTFM)
     @AppStorage("device_id") private var deviceId = Self.defaultDeviceId()
 
     var body: some View {
