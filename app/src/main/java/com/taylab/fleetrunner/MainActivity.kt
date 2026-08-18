@@ -45,6 +45,10 @@ class MainActivity : AppCompatActivity() {
         val idField = findViewById<EditText>(R.id.device_id)
         val statusView = findViewById<TextView>(R.id.status)
 
+        // `--es base_url http://host:port` lets enrollment point a device at a
+        // collector without rebuilding the app — the whole shelf can be moved
+        // to a new host with one loop.
+        intent.getStringExtra("base_url")?.let { prefs.edit().putString("base_url", it).apply() }
         urlField.setText(prefs.getString("base_url", FLEET_HOST_URL))
         idField.setText(prefs.getString("device_id", defaultDeviceId()))
 
