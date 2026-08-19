@@ -104,11 +104,16 @@ class VisionEvalEngine(
                     device = Telemetry.descriptor(context),
                     metrics = Metrics(
                         loadMs = loadMs,
-                        // Reuse the numeric slots so the bench page can chart it:
-                        // prefill = images/sec, ttft = p50 latency.
-                        prefillTokS = 1000.0 / sorted[n / 2].coerceAtLeast(1),
-                        decodeTokS = top1.toDouble() / n * 100.0, // top-1 accuracy %
-                        ttftMs = sorted[n / 2].toDouble(),
+                        // Named fields, not the LLM slots. Accuracy stored under
+                        // decode_tok_s was never chartable anyway -- the bench
+                        // page filters workload = 'benchmark' and this is a
+                        // batch job -- and top-5 and p95 reached only the report
+                        // artifact, which is why they had to be read by hand.
+                        top1Pct = top1.toDouble() / n * 100.0,
+                        top5Pct = top5.toDouble() / n * 100.0,
+                        p50Ms = sorted[n / 2].toDouble(),
+                        p95Ms = sorted[(n * 95) / 100].toDouble(),
+                        imagesPerS = 1000.0 / sorted[n / 2].coerceAtLeast(1),
                         peakMemMb = Telemetry.pssMb(), memMethod = "pss",
                         thermal = thermals,
                         batteryStartPct = batteryStart, batteryEndPct = Telemetry.batteryPct(context),

@@ -80,6 +80,16 @@ data class Metrics(
     val thermal: List<String>? = null,
     @SerialName("battery_start_pct") val batteryStartPct: Int? = null,
     @SerialName("battery_end_pct") val batteryEndPct: Int? = null,
+
+    // vision-eval. These used to ride in the LLM slots above -- accuracy in
+    // decode_tok_s, latency in ttft_ms, throughput in prefill_tok_s -- and
+    // top-5 and p95 had nowhere to go at all, so they only ever reached the
+    // uploaded report artifact and never the results table.
+    @SerialName("top1_pct") val top1Pct: Double? = null,
+    @SerialName("top5_pct") val top5Pct: Double? = null,
+    @SerialName("p50_ms") val p50Ms: Double? = null,
+    @SerialName("p95_ms") val p95Ms: Double? = null,
+    @SerialName("images_per_s") val imagesPerS: Double? = null,
 )
 
 @Serializable

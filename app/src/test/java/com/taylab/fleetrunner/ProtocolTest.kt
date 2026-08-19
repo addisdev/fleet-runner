@@ -60,6 +60,28 @@ class ProtocolTest {
     }
 
     @Test
+    fun `vision metrics serialize under their own names`() {
+        val row = ResultPost(
+            kind = "result", jobId = "planteval-1", deviceId = "d1", iter = 0, final = true, ok = true,
+            metrics = Metrics(
+                loadMs = 87, top1Pct = 76.7, top5Pct = 88.3, p50Ms = 11.0, p95Ms = 12.0,
+                imagesPerS = 90.9, peakMemMb = 105, memMethod = "pss",
+            ),
+        )
+        val json = FleetJson.encodeToString(row)
+        assertTrue(json.contains("\"top1_pct\":76.7"))
+        assertTrue(json.contains("\"top5_pct\":88.3"))
+        assertTrue(json.contains("\"p50_ms\":11.0"))
+        assertTrue(json.contains("\"p95_ms\":12.0"))
+        assertTrue(json.contains("\"images_per_s\":90.9"))
+        // The whole point: accuracy and latency must no longer be smuggled
+        // through fields whose names mean tokens per second.
+        assertFalse("vision runs must not write LLM metrics", json.contains("decode_tok_s"))
+        assertFalse("vision runs must not write LLM metrics", json.contains("prefill_tok_s"))
+        assertFalse("vision runs must not write LLM metrics", json.contains("ttft_ms"))
+    }
+
+    @Test
     fun `beacon rows omit job fields entirely`() {
         val row = ResultPost(
             kind = "beacon", deviceId = "d1",
