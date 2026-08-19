@@ -87,10 +87,14 @@ enum Workloads {
                 let sha = try await client.uploadArtifact(data, name: "\(job.jobId)-eval.json")
                 var m = Metrics()
                 m.loadMs = report["load_ms"] as? Int64
+                // Named fields, not the LLM slots. top1_acc and top5_acc are
+                // fractions in the report; the metrics are percentages.
                 let p50 = report["latency_p50_ms"] as? Double ?? 1
-                m.prefillTokS = 1000.0 / max(p50, 1)                       // images/sec
-                m.decodeTokS = (report["top1_acc"] as? Double ?? 0) * 100 // top-1 %
-                m.ttftMs = p50
+                m.top1Pct = (report["top1_acc"] as? Double).map { $0 * 100 }
+                m.top5Pct = (report["top5_acc"] as? Double).map { $0 * 100 }
+                m.p50Ms = p50
+                m.p95Ms = report["latency_p95_ms"] as? Double
+                m.imagesPerS = 1000.0 / max(p50, 1)
                 m.peakMemMb = Telemetry.physFootprintMb(); m.memMethod = "phys_footprint"
                 m.thermal = report["thermal"] as? [String]
                 m.batteryStartPct = batteryStart; m.batteryEndPct = Telemetry.batteryPct()

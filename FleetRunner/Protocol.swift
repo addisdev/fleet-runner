@@ -69,6 +69,17 @@ struct Metrics: Codable {
     var thermal: [String]?
     var batteryStartPct: Int?
     var batteryEndPct: Int?
+
+    // vision-eval. These used to ride in the LLM slots above -- accuracy in
+    // decodeTokS, latency in ttftMs, throughput in prefillTokS -- and top-5 and
+    // p95 had nowhere to go at all, so they reached only the uploaded report
+    // artifact and never the results table. convertToSnakeCase maps these to
+    // top1_pct, top5_pct, p50_ms, p95_ms and images_per_s.
+    var top1Pct: Double?
+    var top5Pct: Double?
+    var p50Ms: Double?
+    var p95Ms: Double?
+    var imagesPerS: Double?
 }
 
 struct BeaconSample: Codable {
