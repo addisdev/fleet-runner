@@ -1,0 +1,598 @@
+<title>Fleet Runner — Architecture & Build Plan</title>
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --ink: #1c2025;
+    --ink-2: #4b535e;
+    --ink-3: #7a828e;
+    --line: #dde1e7;
+    --accent: #9a5b00;
+    --accent-soft: #f4e8d6;
+    --code-bg: #eef0f4;
+    --chip-bg: #e9ecf1;
+  }
+  :root:not([data-theme="light"]) {
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16181c;
+      --surface: #1d2025;
+      --ink: #e6e8ec;
+      --ink-2: #aab2bc;
+      --ink-3: #767e89;
+      --line: #31363e;
+      --accent: #e3a44a;
+      --accent-soft: #3a2f1c;
+      --code-bg: #23262c;
+      --chip-bg: #282c33;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16181c;
+    --surface: #1d2025;
+    --ink: #e6e8ec;
+    --ink-2: #aab2bc;
+    --ink-3: #767e89;
+    --line: #31363e;
+    --accent: #e3a44a;
+    --accent-soft: #3a2f1c;
+    --code-bg: #23262c;
+    --chip-bg: #282c33;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    margin: 0;
+    padding: 3rem 1.25rem 6rem;
+    font-size: 16px;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.75rem;
+  }
+  h1 {
+    font-size: 2.1rem;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin: 0 0 0.5rem;
+    text-wrap: balance;
+  }
+  .subtitle { color: var(--ink-2); margin: 0 0 3rem; max-width: 38rem; }
+
+  h2 {
+    font-size: 1.3rem;
+    letter-spacing: -0.01em;
+    margin: 3rem 0 1rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--line);
+    text-wrap: balance;
+  }
+  h2 .num {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    color: var(--ink-3);
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+  h3 { font-size: 1.02rem; margin: 1.75rem 0 0.5rem; }
+  p { margin: 0 0 1rem; }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.4rem; }
+  li { margin-bottom: 0.4rem; }
+  strong { font-weight: 600; }
+  .muted { color: var(--ink-2); }
+
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.86em;
+    background: var(--code-bg);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+  .codeblock {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 0 0 1rem;
+  }
+  .codeblock pre {
+    margin: 0;
+    padding: 1rem 1.2rem;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+  .codeblock code { background: none; padding: 0; }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.9rem;
+    margin: 0 0 1rem;
+  }
+  .table-wrap { overflow-x: auto; margin: 0 0 1rem; }
+  th {
+    text-align: left;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 500;
+    padding: 0.5rem 1rem 0.5rem 0;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td {
+    padding: 0.55rem 1rem 0.55rem 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+
+  .chip {
+    display: inline-block;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.5rem;
+    border-radius: 99px;
+    border: 1px solid var(--line);
+    color: var(--ink-2);
+    vertical-align: middle;
+  }
+  .chip.done { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .chip.dark { border-style: dashed; }
+  .status-panel {
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1.1rem 1.3rem;
+    margin: 0 0 2.5rem;
+  }
+  .status-panel .tier-label { color: var(--accent); }
+  .status-panel ul { margin: 0.5rem 0 0; padding-left: 1.2rem; font-size: 0.92rem; }
+  .status-panel li { margin-bottom: 0.3rem; }
+  .decision {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 8px 8px 0;
+    padding: 0.8rem 1.1rem;
+    margin: 0 0 1rem;
+  }
+  .decision .label {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+  .decision p { margin: 0; }
+
+  /* diagram */
+  .diagram {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 0 0 1rem;
+    overflow-x: auto;
+  }
+  .diagram-inner { min-width: 34rem; }
+  .tier-label {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 0.5rem;
+  }
+  .device-row { display: flex; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.25rem; }
+  .device {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.8rem;
+    background: var(--bg);
+    flex: 1 1 8rem;
+  }
+  .device .plat {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.65rem;
+    color: var(--accent);
+    display: block;
+  }
+  .mesh {
+    text-align: center;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    color: var(--ink-3);
+    padding: 0.75rem 0;
+    position: relative;
+  }
+  .mesh::before, .mesh::after {
+    content: "";
+    display: block;
+    width: 1px;
+    height: 0.6rem;
+    background: var(--line);
+    margin: 0 auto 0.3rem;
+  }
+  .mesh::after { margin: 0.3rem auto 0; }
+  .plane { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+  .collector {
+    border: 1px solid var(--accent);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    background: var(--bg);
+    flex: 2 1 18rem;
+  }
+  .hostexec {
+    border: 1px dashed var(--accent);
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    background: var(--bg);
+    flex: 1 1 13rem;
+  }
+  .collector-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.6rem; }
+  .collector-title .plat {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: 400;
+    color: var(--ink-3);
+    margin-left: 0.5rem;
+    display: inline-block;
+  }
+  .subsys { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .subsys div {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.78rem;
+    background: var(--surface);
+    color: var(--ink-2);
+  }
+
+  .phase {
+    display: grid;
+    grid-template-columns: 5.5rem 1fr;
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .phase:last-of-type { border-bottom: none; }
+  .phase-id {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--accent);
+    padding-top: 0.2rem;
+  }
+  .phase-id .est { color: var(--ink-3); display: block; margin-top: 0.2rem; }
+  .phase h3 { margin: 0 0 0.35rem; font-size: 0.98rem; }
+  .phase p { margin: 0 0 0.4rem; font-size: 0.92rem; color: var(--ink-2); }
+  .phase .done {
+    font-size: 0.85rem;
+    color: var(--ink);
+  }
+  .phase .done::before {
+    content: "Done when: ";
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .appsuite {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    padding: 1rem 1.25rem;
+    margin: 0 0 1rem;
+  }
+  .appsuite h3 { margin: 0 0 0.5rem; }
+  .appsuite h3 .tag {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 0.68rem;
+    font-weight: 400;
+    color: var(--ink-3);
+    margin-left: 0.5rem;
+  }
+  .appsuite ul { margin-bottom: 0; }
+  @media (max-width: 540px) {
+    .phase { grid-template-columns: 1fr; gap: 0.3rem; }
+  }
+</style>
+
+<main>
+  <p class="eyebrow">Personal infrastructure project</p>
+  <h1>Fleet Runner — architecture &amp; build plan</h1>
+  <p class="subtitle">One set of rails that turns a shelf of iOS and Android devices into a programmable fleet: on-device ML benchmarks, Maestro UI-test runs of GreenFolio across real devices, nightly Jerv battery-drain tests, and batch inference — all dispatched from one collector, all landing in one results database.</p>
+
+  <div class="status-panel">
+    <p class="tier-label">Build status — 2026-08-19 · every planned phase built; first product eval delivered; the collector now has a real dashboard</p>
+    <ul>
+      <li><strong>Collector</strong> (<code>fleet-collector</code>) <span class="chip done">live</span> — queue, leases with requeue, artifact store, scheduler, fan-out, device locks, power webhooks; launchd-managed on :8788; 208-check smoke suite.</li>
+      <li><strong>Dashboard</strong> <span class="chip done">live</span> — a JSON read API under <code>/api/*</code>, an SSE stream and a Preact SPA served from the same process. Overview, devices with 24 h battery/thermal charts, jobs with a composer and cancel/retry, results (benchmark trends, vision eval, UI-test matrix, drain curves, soak survival), schedules, artifacts with garbage collection, events, and an alert engine with ack/snooze and an optional ntfy webhook. Mutations sit behind an optional <code>FLEET_DASH_TOKEN</code>; the server-rendered tables survive at <code>/dash/legacy</code> as the build-step-free fallback. <strong>One caveat:</strong> vision-eval and drain results predate having metric fields of their own and are read back out of the LLM slots — top-5 and p95 were never stored at all, so the plant-ID numbers below still come from the hand-written report until the runner apps emit the named fields now in <code>schemas/result.schema.json</code>.</li>
+      <li><strong>Android runner</strong> (<code>fleet-runner-android</code>) <span class="chip done">verified</span> — agent loop, lease-renewing beacon, synthetic + real llama.cpp (NDK/JNI) benchmarks. Real-hardware proof landed: <strong>Qwen2.5-0.5B Q4_K_M at 125 prefill / 47.4 decode tok/s on the SM-X930</strong> (Dimensity 9400), thermals nominal, model fetched by hash from the artifact store.</li>
+      <li><strong>Host executor</strong> <span class="chip done">verified</span> — one queued job installs a build on every attached device (APKs via adb, .app zips via simctl); Maestro suites run per-device with JUnit artifacts; soak workload proves process survival with lease-renewing checks (verified across a tablet + two emulators). iOS UI tests run via the generic XCUITest bundle — green through the queue on iOS 18.4 (Maestro and the iOS 27 beta runtime both choke under Xcode 26.6, so fleet iOS UI tests target stable runtimes).</li>
+      <li><strong>iOS runner</strong> (<code>fleet-runner-ios</code>) <span class="chip done">verified</span> — protocol mirror, synthetic benchmark in the cross-platform table, and the llama.cpp runtime proof: Qwen2.5-0.5B ran on-simulator through the full artifact-download + xcframework path (sim numbers deliberately not comparable to hardware).</li>
+      <li><strong>Batch + pipeline workloads</strong> <span class="chip done">verified</span> — real llama.cpp generation on Android (batch items → outputs artifact; pipeline nodes over broker-free collector event rails). Real Qwen completions from the SM-X930. Taught the runner device-state honesty: wakelock, doze exemption, and enforced <code>require_charging</code> after on-battery throttling slowed decode ~100×.</li>
+      <li><strong>First product payload — GreenFolio plant-ID eval</strong> <span class="chip done">delivered · both platforms</span> — LiteRT (Android) and Core ML (iOS) vision backends + vision-eval workload (top-1/top-5 + p50/p95 per model per device). Verdict: <strong>on-device species ID is viable on Android and iOS; ship the int8 model.</strong> See the eval section below.</li>
+      <li><strong>Remaining plan items</strong> <span class="chip done">built</span> — <code>targets.match</code> descriptor expressions (claim + fan-out), sustained-load benchmark mode, the <code>drain</code> workload (GPX replay + battery curve, refuses charging devices; verified through the queue), real-iPhone <code>devicectl</code> targets, and iOS batch/pipeline parity. Every workload in the catalog now has code.</li>
+      <li><strong>Nightly schedules</strong> <span class="chip dark">seeded, off</span> — shelf benchmark 02:00, exclusive UI smoke 02:30, weekly plant-ID re-eval; enabling is one PATCH each.</li>
+      <li><strong>CI integration</strong> <span class="chip dark">built, off</span> — enqueue script + commit statuses exist and are verified in dry-run; nothing in any app repo or CI references the fleet until the owner connects it.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">01</span>Goals and non-goals</h2>
+  <p><strong>Goals.</strong> Two families of workloads on shared infrastructure:</p>
+  <ul>
+    <li><strong>On-device ML</strong> — a runner app per platform that loads models through pluggable backends, executes benchmark/batch/pipeline workloads, and measures performance honestly.</li>
+    <li><strong>Real-device app testing</strong> — install a build of GreenFolio, Aliquant, or Jerv on N physical devices and run UI-test suites, battery-drain runs, and overnight background-survival soaks against it.</li>
+  </ul>
+  <p>Both families share the collector, the job/result protocol, the device registry, the scheduler, and the dashboard. The fleet is programmable: a new capability is a new workload type, not a new system.</p>
+  <p><strong>Non-goals (v1).</strong> No training on device, no model conversion on device, no public multi-tenant anything, no UI beyond a status screen on the phone and a plain dashboard on the collector. Old devices that can't run LLMs still earn their place — they're the UI-test matrix, the OEM-task-killer soak targets, and the vision/audio workload pool.</p>
+
+  <h2><span class="num">02</span>System overview</h2>
+  <div class="diagram"><div class="diagram-inner">
+    <p class="tier-label">Fleet — runner app on each device</p>
+    <div class="device-row">
+      <div class="device"><span class="plat">iOS · Core ML / llama.cpp</span>newer iPhones</div>
+      <div class="device"><span class="plat">iOS · Core ML only</span>older iPhones / iPads</div>
+      <div class="device"><span class="plat">Android · LiteRT / llama.cpp</span>newer Androids</div>
+      <div class="device"><span class="plat">Android · LiteRT only</span>older Androids</div>
+    </div>
+    <div class="mesh">Tailscale mesh · agents poll over HTTP · host executor drives devices over USB / Wi-Fi</div>
+    <div class="plane">
+      <div class="collector">
+        <div class="collector-title">Collector <span class="plat">single service on the Mac mini</span></div>
+        <div class="subsys">
+          <div>Device registry</div>
+          <div>Job queue + locks</div>
+          <div>Scheduler (cron)</div>
+          <div>Artifact store</div>
+          <div>Results DB (SQLite)</div>
+          <div>Dashboard</div>
+          <div>Power control</div>
+        </div>
+      </div>
+      <div class="hostexec">
+        <div class="collector-title">Host executor <span class="plat">worker on the Mac</span></div>
+        <div class="subsys">
+          <div>adb / devicectl</div>
+          <div>Maestro</div>
+          <div>XCUITest</div>
+          <div>app install</div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <p>Four pieces: the <strong>runner app</strong> (on every device), the <strong>host executor</strong> (a worker on the Mac that drives devices from outside), the <strong>collector</strong> (one small service: queue, registry, scheduler, results), and the <strong>artifact store</strong> (models <em>and</em> app builds, served by hash). Everything rides your Tailscale network, so the fleet works whether devices are on your desk or plugged in around the house — with the one caveat that host-driven jobs need the device reachable by the executor (USB hub or Wi-Fi adb).</p>
+
+  <h2><span class="num">03</span>Two execution paths — the key architectural split</h2>
+  <p>Not every workload can run <em>inside</em> an app on the device. iOS will not let an app install another app or drive its UI, and a battery test of Jerv must run Jerv itself, not a proxy. So every job declares its executor:</p>
+  <ul>
+    <li><strong><code>executor: "device"</code></strong> — the on-device runner app claims the job by polling and executes it internally. ML benchmarks, batch inference, pipeline nodes.</li>
+    <li><strong><code>executor: "host"</code></strong> — the host executor claims the job and drives target devices from outside: <code>adb</code> on Android, <code>xcrun devicectl</code> + XCUITest on iOS, Maestro for cross-platform flows. UI tests, app installs, battery-drain and soak tests.</li>
+  </ul>
+  <div class="decision">
+    <span class="label">Decision — the runner app doubles as a telemetry beacon</span>
+    <p>During host-driven jobs the runner app (or a headless companion) keeps sampling battery, thermal state, and memory pressure and streams it to the collector. Host-driven tests get the same metrics timeline as on-device ML jobs — one results schema, one dashboard. On Android the beacon also reports "is process X alive?", which is the entire measurement for OEM-task-killer soaks.</p>
+  </div>
+  <div class="decision">
+    <span class="label">Decision — host executor runs on a Mac, jobs can come from anywhere</span>
+    <p>iOS tooling (devicectl, XCUITest) requires macOS, so the host executor lives on the Mac mini next to the collector. Your CI runners don't drive phones — they <em>enqueue</em> fleet jobs over Tailscale and read results back, so a GitHub Actions workflow can gate a PR on a real-device run without touching a device.</p>
+  </div>
+
+  <h2><span class="num">04</span>The runner app</h2>
+  <p>Two thin native apps — Kotlin on Android, Swift on iOS — sharing a <strong>protocol, not code</strong>. The contract is the JSON job/result schema plus an internal interface both implementations mirror:</p>
+  <div class="codeblock"><pre><code>ModelBackend            // one per inference engine
+  capabilities() -> [formats, accelerators, maxModelSize]
+  load(artifact)  -> LoadedModel   (timed: load_ms)
+  run(input)      -> Output        (timed per call)
+  unload()
+
+WorkloadEngine          // interprets device-executor job specs
+  benchmark   : warmup N, measure M iterations, sustained-load option
+  batch       : pull items from collector, run, push outputs
+  pipeline    : subscribe to trigger topic, run on event, publish result
+
+TelemetryBeacon         // always-on, also during host-driven jobs
+  battery, thermal, memory pressure, process-alive checks
+
+Reporter                // ships results + beacon stream, retries offline
+</code></pre></div>
+  <ul>
+    <li><strong>Android:</strong> a foreground service keeps the runner alive; backends are LiteRT (vision/audio, NNAPI or GPU delegate) and llama.cpp via JNI (LLMs, GGUF). Min SDK low enough to cover the old devices — the LiteRT backend reaches much further back than llama.cpp needs to.</li>
+    <li><strong>iOS:</strong> <code>isIdleTimerDisabled</code> while plugged in and a status screen; backends are Core ML (vision/audio, <code>.mlmodelc</code>) and llama.cpp via SPM (LLMs, GGUF). MLX is a possible third backend later for newer chips.</li>
+    <li>Model artifacts are downloaded from the collector, verified by hash, and cached on device.</li>
+  </ul>
+  <div class="decision">
+    <span class="label">Decision — no shared-code framework yet</span>
+    <p>Start with two native apps against a shared JSON protocol. The runner's core logic is small; Kotlin Multiplatform is a later refactor if the duplicated logic starts to bite. This keeps weekend one about inference, not build systems.</p>
+  </div>
+  <div class="decision">
+    <span class="label">Decision — llama.cpp on both platforms for LLMs</span>
+    <p>Same engine, same GGUF file, same quantization on iOS and Android makes cross-platform numbers <em>apples-to-apples at the model level</em>. Core ML vs LiteRT comparisons are engine-vs-engine claims; llama.cpp-vs-llama.cpp is hardware-vs-hardware.</p>
+  </div>
+
+  <h2><span class="num">05</span>Workload catalog</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Workload</th><th>Executor</th><th>What it does</th><th>Primary use</th></tr>
+    <tr><td><code>benchmark</code></td><td>device</td><td>Warmup + measured inference iterations, optional sustained-load</td><td>Model/quant selection, min-spec decisions, cross-generation report</td></tr>
+    <tr><td><code>batch</code></td><td>device</td><td>Pull items, run inference, push outputs</td><td>Transcription backlog, photo-library embeddings</td></tr>
+    <tr><td><code>pipeline</code></td><td>device</td><td>Subscribe to MQTT topic, run on event, publish</td><td>Tiered home pipelines (old phone filters → new phone escalates)</td></tr>
+    <tr><td><code>install</code></td><td>host</td><td>Install APK/IPA from artifact store, verify launch</td><td>Precondition for every app-testing job</td></tr>
+    <tr><td><code>ui-test</code></td><td>host</td><td>Run a Maestro flow (or XCUITest bundle) against an installed build, capture screenshots/video/JUnit results</td><td>GreenFolio regression suite across six real devices</td></tr>
+    <tr><td><code>drain</code></td><td>host + beacon</td><td>Launch app in a scenario (e.g. tracking with a replayed route), run unplugged from a fixed battery %, record the drain curve</td><td>Nightly Jerv tracking-drain test</td></tr>
+    <tr><td><code>soak</code></td><td>host + beacon</td><td>Install, start app, leave overnight; beacon reports process-alive + battery hourly</td><td>OEM task-killer survival matrix (Samsung, Xiaomi…)</td></tr>
+  </table></div>
+  <p class="muted">ML backends per platform: LLMs via llama.cpp (GGUF, Metal on iOS); vision/audio via Core ML (<code>.mlmodelc</code>) and LiteRT (<code>.tflite</code>); Whisper via whisper.cpp. Conversion happens on the Mac, never on device. The artifact store holds models and app builds alike: name, kind, format, sha256, min-RAM hint.</p>
+
+  <h2><span class="num">06</span>Job and result protocol</h2>
+  <p>The whole system hinges on two JSON documents. An ML benchmark job:</p>
+  <div class="codeblock"><pre><code>{
+  "job_id": "bench-qwen3-0.6b-q4-2026-08-13",
+  "workload": "benchmark", "executor": "device",
+  "model": { "name": "qwen3-0.6b", "format": "gguf", "quant": "Q4_K_M",
+             "sha256": "…" },
+  "backend": "llama.cpp",
+  "params": { "prompt_tokens": 512, "gen_tokens": 128,
+              "warmup_iters": 2, "measure_iters": 5 },
+  "targets": { "match": "ram_mb >= 4000" },
+  "constraints": { "require_charging": true }
+}</code></pre></div>
+  <p>A UI-test job rides the same schema — different workload, different executor, an app build instead of a model:</p>
+  <div class="codeblock"><pre><code>{
+  "job_id": "gf-maestro-smoke-pr412",
+  "workload": "ui-test", "executor": "host",
+  "app":  { "name": "greenfolio-android", "build": "1.4.0-pr412",
+            "sha256": "…" },
+  "suite": { "kind": "maestro", "flows": "flows/smoke/*.yaml" },
+  "targets": { "pool": "android-ui", "exclusive": true },
+  "report_to": { "github_status": "addisdev/greenfolio-android@abc123" }
+}</code></pre></div>
+  <p>Results are rows in one table: metrics for benchmarks (prefill/decode tok/s, ttft, peak memory + method, thermal samples, battery delta), pass/fail + screenshot/video artifact refs for UI tests, and timestamped beacon curves for drain and soak runs. Version the schema from day one (<code>"schema": 1</code>), and make result posting idempotent by <code>(job_id, device_id, iter)</code>.</p>
+
+  <h2><span class="num">07</span>Metric normalization — the honest-numbers problem</h2>
+  <ul>
+    <li><strong>Measure at the same boundaries.</strong> Model load is its own metric, never folded into latency. For LLMs, prefill and decode are reported separately — a single "tokens/sec" hides the number that matters.</li>
+    <li><strong>Memory is labeled, not laundered.</strong> iOS reports <code>phys_footprint</code>; Android reports PSS. They are not the same quantity, so every row carries <code>mem_method</code> and the dashboard never charts them on one axis.</li>
+    <li><strong>Thermals are a curve, not a state.</strong> Sample the platform thermal state every N seconds; map to a shared enum (<code>nominal / fair / serious / critical</code>). The sustained-load benchmark is the honest number for real workloads.</li>
+    <li><strong>Battery runs are opt-in and controlled.</strong> Benchmarks require charging by default; <code>drain</code> and <code>soak</code> runs start unplugged from a fixed percentage with screen state pinned, and the collector's power control makes that repeatable.</li>
+    <li><strong>Warmups are mandatory.</strong> First-run compilation (ANE/NNAPI) is reported as its own metric, then excluded.</li>
+    <li><strong>Location is replayed, not real.</strong> Drain tests feed the app a recorded GPX route — Android via a mock location provider, iOS via a debug-scheme <code>ReplayLocationProvider</code> baked into the app build — so every nightly run walks the same 5&nbsp;km. The GPS radio stays on, so the power cost is real; only the coordinates are scripted.</li>
+  </ul>
+
+  <h2><span class="num">08</span>The collector</h2>
+  <p>One small TypeScript service (Node + Fastify) with SQLite — no external dependencies, runs forever on the Mac mini under <code>launchd</code>. Endpoints:</p>
+  <div class="codeblock"><pre><code>POST /devices/register        device checks in with descriptor + pools/tags
+GET  /devices/:id/next-job    long-poll for device-executor work
+GET  /executor/next-job       long-poll for host-executor work
+GET  /artifacts/:sha256       models and app builds (range requests)
+POST /results                 result rows + beacon samples, idempotent
+POST /jobs                    enqueue (curl, CI, or the scheduler)
+GET  /dash                    server-rendered dashboard</code></pre></div>
+  <ul>
+    <li><strong>Scheduler:</strong> cron entries that enqueue job templates — <code>02:00 jerv-drain on pool:battery</code>, <code>03:00 gf-maestro-full on pool:android-ui</code>. Nightly runs are just scheduled enqueues; nothing special.</li>
+    <li><strong>Device locks and pools:</strong> devices carry tags (<code>ml-capable</code>, <code>android-ui</code>, <code>battery</code>, <code>os-pinned-a11</code>); exclusive jobs lock their targets so a UI test never lands mid-benchmark. Battery-pool devices are excluded from opportunistic ML work.</li>
+    <li><strong>Power control:</strong> the collector toggles smart plugs (or per-device charge-limit tooling) — unplug the battery pool before a drain run, restore charging to the 40–70% band after. This is also the day-to-day battery-health mechanism.</li>
+    <li><strong>CI integration:</strong> a GitHub Actions step in greenfolio/aliquant/jerv repos uploads the build artifact, POSTs a job over Tailscale, polls for the verdict, and the collector posts a commit status back. Real-device smoke on every PR to develop; the full matrix nightly.</li>
+  </ul>
+  <p>The dashboard starts as one page: device grid (last seen, battery, thermal, current job), job history with pass/fail, per-model comparison table, and drain-curve charts. Resist building more until the data demands it.</p>
+
+  <h2><span class="num">09</span>What each app runs on the fleet</h2>
+  <div class="appsuite">
+    <h3>GreenFolio <span class="tag">shipped · iOS + Android + web</span></h3>
+    <ul>
+      <li><strong>Maestro smoke suite on every PR</strong> — login, add plant, photo attach, sync — across the Android pool (real low-RAM devices, old OS versions); full regression suite nightly.</li>
+      <li><strong>Plant-ID model evaluation</strong> <span class="chip done">delivered</span> — candidate species classifiers benchmarked on the fleet; verdict in §09b: ship the int8 PlantNet ResNet18 (12 MB, 11 ms, 88% top-5) with cloud fallback below a confidence threshold. Min-spec floor fills in as devices run the queued fan-out.</li>
+      <li><strong>Sync soak</strong> — overnight soak with the beacon confirming background sync survives OEM task killers.</li>
+    </ul>
+  </div>
+  <div class="appsuite">
+    <h3>Aliquant <span class="tag">pre-release · iOS first</span></h3>
+    <ul>
+      <li><strong>On-device categorizer benchmark</strong> — how long does a 5,000-transaction backfill take on a mid-range device? Answers the privacy-preserving-ML architecture question with numbers before you commit.</li>
+      <li><strong>UI-test rail ready from day one</strong> — the iOS suite runs on real devices from the first TestFlight build, so the Android client starts life with a device matrix waiting.</li>
+    </ul>
+  </div>
+  <div class="appsuite">
+    <h3>Jerv <span class="tag">in development · iOS first</span></h3>
+    <ul>
+      <li><strong>Nightly tracking-drain test</strong> — replayed 5&nbsp;km GPX route, unplugged from 80%, drain curve per device per build. Battery cost is Jerv's existential risk; this catches a regression the night it lands.</li>
+      <li><strong>Background-survival matrix</strong> — when jerv-android starts: overnight soaks across OEMs, beacon reporting whether tracking is still alive at hour 8. Only real devices can answer this.</li>
+      <li><strong>Activity-classifier benchmark</strong> — the walk/ride/drive classifier that gates map-uncovering, benchmarked like any other model.</li>
+    </ul>
+  </div>
+
+  <h2><span class="num">09b</span>Eval delivered: GreenFolio on-device plant ID</h2>
+  <p>The fleet's first product payload. GreenFolio identifies plants today by sending photos to the cloud Plant.id API; the question was whether species identification can run on-device — offline in a greenhouse, at zero per-call cost — and on what hardware. Full method and per-image reports live in <code>fleet-collector/evals/greenfolio-plant-id.md</code>.</p>
+  <p><strong>Method.</strong> 120 held-out images (16 species) sampled from the PlantNet-300K <em>test</em> split, center-cropped and resized once on the Mac so every device classifies identical bytes; ImageNet normalization on-device. Candidates: the Apache-2.0 <code>litert-community</code> PlantNet-300K ResNet18 (1081 species), our own post-training int8 quantization of it (100 <em>validation</em>-split calibration images — disjoint from the eval — float I/O preserved), and a 47-class houseplants model as a latency comparator.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Model</th><th>Size</th><th>Top-1</th><th>Top-5</th><th>p50 latency</th><th>p95</th></tr>
+    <tr><td>PlantNet ResNet18 fp32</td><td>47 MB</td><td>77.5%</td><td>90.0%</td><td>54 ms</td><td>57 ms</td></tr>
+    <tr><td><strong>PlantNet ResNet18 int8</strong></td><td><strong>12 MB</strong></td><td>76.7%</td><td>88.3%</td><td><strong>11 ms</strong></td><td>12 ms</td></tr>
+    <tr><td>houseplants-47 (comparator)</td><td>30 MB</td><td colspan="2" class="muted">n/a — different label space</td><td>69 ms</td><td>77 ms</td></tr>
+    <tr><td>iOS · Core ML fp16 (same weights)</td><td>23.5 MB</td><td>76.7%</td><td>90.0%</td><td>8.4 ms</td><td>13.5 ms</td></tr>
+    <tr><td>iOS · Core ML int8-weight</td><td>11.8 MB</td><td>75.8%</td><td>90.8%</td><td>7.6 ms</td><td>11.6 ms</td></tr>
+  </table></div>
+  <p class="muted">Android rows: ATD emulator, CPU, 4 threads. iOS rows: iPhone 16 simulator on CPU — the Simulator's emulated GPU/ANE silently returned all-zero logits for this model, so the iOS runner forces CPU on sims and labels it; real iPhones use the ANE. Emulator/simulator numbers validate the pipelines and the <em>relative</em> comparison; the SM-X930 rows are queued via fan-out and fill in when the tablet wakes. Host fp32 accuracy matched device fp32 exactly, and Core ML matches LiteRT within a point on identical images — both platforms' preprocessing is faithful to the same weights.</p>
+  <div class="decision">
+    <span class="label">Verdict — ship int8, top-5 as the product surface</span>
+    <p>4× smaller and 5× faster for under a point of top-1 and under two of top-5. 12 MB is an in-app asset, not a download; 11 ms means a live viewfinder works on CPU alone, sidestepping GPU-delegate flakiness entirely. Recommended shape: on-device int8 top-5 as a "did you mean…" list (turns 77% top-1 into an ~88% "it was in the list" experience), cloud Plant.id only below a confidence threshold. Min-spec floor gets decided by the shelf fan-out as devices come online — the eval re-runs weekly once schedules are enabled.</p>
+  </div>
+
+  <h2><span class="num">10</span>Build plan</h2>
+  <div class="phase">
+    <div class="phase-id">Phase 0<span class="est">1 weekend</span><span class="chip done">done</span></div>
+    <div>
+      <h3>Protocol + collector skeleton</h3>
+      <p>Job/result schemas with the <code>executor</code> field from day one. Collector with registry, queue, artifact store (models + app builds), results table, minimal dashboard. Fake both executor types with curl.</p>
+      <p class="done">a curl-simulated device and a curl-simulated host executor can each claim jobs, fetch artifacts, and post results that appear on the dashboard.</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-id">Phase 1<span class="est">2 weekends</span><span class="chip done">done</span></div>
+    <div>
+      <h3>Android ML runner MVP</h3>
+      <p>Kotlin app, foreground service, agent loop + telemetry beacon, llama.cpp backend, benchmark workload. Android first: <code>adb</code> makes debugging painless and your oldest devices are Android.</p>
+      <p class="done">two Android devices run the same GGUF benchmark and the dashboard shows a comparison row.</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-id">Phase 2<span class="est">1 weekend</span><span class="chip done">done</span></div>
+    <div>
+      <h3>Host executor + Maestro on Android</h3>
+      <p>The Mac-side worker: claim host jobs, <code>install</code> workload (APK from artifact store), <code>ui-test</code> workload running Maestro flows over adb, screenshots/JUnit uploaded as result artifacts. Wire the GreenFolio smoke flows first.</p>
+      <p class="done">one command runs the GreenFolio smoke suite across every device in the android-ui pool and the dashboard shows per-device pass/fail with screenshots.</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-id">Phase 3<span class="est">1–2 weekends</span><span class="chip done">done*</span></div>
+    <div>
+      <h3>iOS: runner app + host-driven testing</h3>
+      <p>Swift runner mirroring the protocol (llama.cpp via xcframework, then Core ML), distributed via TestFlight internal. Host executor grows <code>devicectl</code> install + XCUITest; Maestro proved <em>not</em> stable on iOS under Xcode 26.6, so XCUITest it is (*the remaining gap, with real-iPhone devicectl).</p>
+      <p class="done">the same benchmark fans out across iOS and Android into one table ✓, iOS UI tests run via the XCUITest bundle ✓, real iPhones enumerated via <code>devicectl</code> ✓ (a signed build is the app repo's job) — *Maestro-on-iOS remains unusable under Xcode 26.6, and the iOS 27 beta runtime crashes XCUITest runners; fleet iOS UI tests target stable runtimes.</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-id">Phase 4<span class="est">1–2 weekends</span><span class="chip done">done*</span></div>
+    <div>
+      <h3>Scheduler, power control, battery workloads</h3>
+      <p>Cron-style scheduled enqueues, smart-plug power control, device pools + exclusive locks. Then the <code>drain</code> workload (GPX replay hook in the Jerv debug build) and the <code>soak</code> workload (process-alive beacon checks).</p>
+      <p class="done">scheduler, fan-out, locks, power webhooks, <code>soak</code>, and <code>drain</code> (GPX replay via simctl/adb emu, battery curve, lease-renewing checks) all built and verified through the queue ✓ — *a real Jerv drain number still needs a physical device unplugged (smart plugs make that repeatable) and Jerv's own debug replay provider on physical iOS.</p>
+    </div>
+  </div>
+  <div class="phase">
+    <div class="phase-id">Phase 5<span class="est">ongoing</span><span class="chip dark">built · off</span></div>
+    <div>
+      <h3>CI integration + new workloads on the same rails</h3>
+      <p>GitHub Actions enqueue + commit-status reporting: real-device smoke on PRs, full matrix nightly. Then the ML expansion pack on the same rails: vision backends for old devices, sustained-thermal benchmark, batch transcription/embeddings, MQTT pipeline nodes.</p>
+      <p class="done">the enqueue script and commit-status reporting exist and pass dry-run verification ✓ — deliberately disconnected from every app repo and CI system until the owner flips it on (two env vars + one workflow).</p>
+    </div>
+  </div>
+
+  <h2><span class="num">11</span>Fleet care (do these early)</h2>
+  <ul>
+    <li><strong>Charge management:</strong> batteries held at 100% forever swell. Smart plugs cycling around 40–70% — which Phase 4 turns into a collector feature, so buy controllable plugs from the start.</li>
+    <li><strong>Pin old OS versions now:</strong> disable auto-update on every device you want as a compatibility target. An updated device never goes back. Tag them <code>os-pinned-*</code> in the registry.</li>
+    <li><strong>Label and register:</strong> physical label = <code>device_id</code> in the registry. Future-you will thank you.</li>
+    <li><strong>Tailscale on everything</strong> from day one; a powered USB hub on the Mac mini for the host-executor pool, Wi-Fi adb for devices living elsewhere.</li>
+    <li><strong>Developer mode + trust once, per device:</strong> enable Android developer options / iOS developer mode and pair with the Mac while the shelf is in front of you, not job by job.</li>
+  </ul>
+</main>
