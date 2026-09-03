@@ -4,6 +4,17 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// Building llama.cpp for arm64 takes about fifteen minutes and needs the NDK.
+// The JVM unit tests touch none of it, so `-Pfleet.skipNative` drops the whole
+// native toolchain from the build — which is what lets CI run the tests on a
+// plain runner in a couple of minutes instead of installing an NDK to compile
+// code the tests never call.
+//
+// It is a testing flag, not a build flavour. An APK produced with it loads no
+// llama.cpp and would report no LLM numbers at all, so nothing that packages a
+// runner should ever pass it.
+val skipNative = providers.gradleProperty("fleet.skipNative").isPresent
+
 android {
     namespace = "com.taylab.fleetrunner"
     compileSdk = 35
@@ -24,21 +35,26 @@ android {
             abiFilters += "arm64-v8a"
         }
 
-        externalNativeBuild {
-            cmake {
-                // Benchmark numbers must come from optimized code even in the
-                // debug app variant — an -O0 llama.cpp poisons every result.
-                arguments += "-DCMAKE_BUILD_TYPE=Release"
+        if (!skipNative) {
+            externalNativeBuild {
+                cmake {
+                    // Benchmark numbers must come from optimized code even in
+                    // the debug app variant — an -O0 llama.cpp poisons every
+                    // result.
+                    arguments += "-DCMAKE_BUILD_TYPE=Release"
+                }
             }
         }
     }
 
-    ndkVersion = "27.2.12479018"
+    if (!skipNative) {
+        ndkVersion = "27.2.12479018"
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
         }
     }
 
