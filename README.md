@@ -19,9 +19,10 @@ xcrun simctl install booted build/Build/Products/Debug-iphonesimulator/FleetRunn
 xcrun simctl launch booted com.taylab.fleetrunner -autostart 1
 ```
 
-Simulators reach the collector at `http://127.0.0.1:8788` directly. On real
-devices, point the Collector URL at the Mac's tailnet address; distribution is
-TestFlight internal.
+The app defaults to `http://127.0.0.1:8788`, which a simulator reaches directly
+because it shares the Mac's network stack. On real devices, set the Collector
+URL field to the host's address on your network (its `.local` name, or its
+tailnet address if you run one); distribution is TestFlight internal.
 
 ## Phase 3 status
 

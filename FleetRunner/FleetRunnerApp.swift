@@ -11,7 +11,10 @@ struct FleetRunnerApp: App {
 
 struct ContentView: View {
     @StateObject private var agent = FleetAgent()
-    @AppStorage("base_url") private var baseUrl = "http://192.168.50.27:8788" // fleet-host (C02TF32MGTFM)
+    // Loopback by default: a simulator shares the Mac's network stack, so this
+    // works out of the box there, and a real device is told its collector once,
+    // in the field below, rather than having one baked into the binary.
+    @AppStorage("base_url") private var baseUrl = "http://127.0.0.1:8788"
     @AppStorage("device_id") private var deviceId = Self.defaultDeviceId()
 
     var body: some View {
