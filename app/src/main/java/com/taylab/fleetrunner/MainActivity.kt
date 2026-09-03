@@ -13,7 +13,11 @@ import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-private const val FLEET_HOST_URL = "http://192.168.50.27:8788" // fleet-host (C02TF32MGTFM); give it a DHCP reservation
+// Loopback by default, so a fresh clone works over `adb reverse` and an
+// emulator with no setup at all. A device that has walked away from the cable
+// is pointed at the collector's real address through the URL field, or by
+// enroll.sh with FLEET_URL set -- not by a constant compiled into the APK.
+private const val FLEET_HOST_URL = "http://127.0.0.1:8788"
 
 class MainActivity : AppCompatActivity() {
 

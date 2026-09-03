@@ -37,8 +37,9 @@ curl -X POST http://127.0.0.1:8788/jobs -H 'content-type: application/json' -d '
 }'
 ```
 
-Results appear on the collector dashboard (`/dash`). Over Tailscale, set the
-collector URL to the Mac mini's tailnet address instead — no adb needed.
+Results appear on the collector dashboard (`/dash`). To let a device leave the
+desk, set the collector URL to the host's address on your network — its
+`.local` name, or its tailnet address if you run one — and no adb is needed.
 
 ## Phase 1 status
 

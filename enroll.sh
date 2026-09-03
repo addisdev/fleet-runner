@@ -1,8 +1,8 @@
 #!/bin/bash
 # Enroll every attached Android device into the fleet.
 #
-#   ./enroll.sh                       # uses the compiled-in collector URL
-#   FLEET_URL=http://host:8788 ./enroll.sh
+#   ./enroll.sh                       # loopback; devices must be on the cable
+#   FLEET_URL=http://fleet-host.local:8788 ./enroll.sh
 #   POOLS=ml-capable,android-ui ./enroll.sh
 #
 # Idempotent: re-running re-installs and re-points existing devices. No cable
@@ -10,7 +10,10 @@
 # so a device can walk away from the desk and keep working.
 set -uo pipefail
 
-COLLECTOR="${FLEET_URL:-http://192.168.50.27:8788}"
+# Loopback is the safe default, not the useful one: it only reaches the
+# collector while the device is cabled and `adb reverse` is up. Set FLEET_URL
+# to the host's address on your network for devices that leave the desk.
+COLLECTOR="${FLEET_URL:-http://127.0.0.1:8788}"
 APK="app/build/outputs/apk/debug/app-debug.apk"
 
 echo "== building runner"
@@ -24,6 +27,11 @@ SERIALS=$(adb devices | awk 'NR>1 && $2=="device" {print $1}')
 [ -z "$SERIALS" ] && { echo "no authorized devices attached"; exit 1; }
 
 echo "== collector: $COLLECTOR"
+case "$COLLECTOR" in
+  *127.0.0.1*|*localhost*)
+    echo "   (loopback — enrolled devices reach it only over 'adb reverse tcp:8788 tcp:8788'."
+    echo "    Set FLEET_URL to the host's LAN or tailnet address for untethered devices.)" ;;
+esac
 before=$(curl -s --max-time 5 "$COLLECTOR/devices" | grep -o '"device_id"' | wc -l | tr -d ' ')
 
 for s in $SERIALS; do
