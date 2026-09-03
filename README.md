@@ -1,11 +1,19 @@
 # fleet-runner-android
 
-Kotlin runner app for the Fleet Runner device fleet — Phase 1 of the plan.
+The Android half of **Fleet Runner**, a personal device lab. A foreground
+service turns any phone or tablet back to Android 7 (minSdk 24) into a node
+that a [collector](https://github.com/addisdev/fleet-collector) can send work
+to: llama.cpp and LiteRT benchmarks, batch inference, and image-classification
+evals, with a telemetry beacon reporting battery, charging and thermal state
+every 60 seconds.
 
-A foreground service turns any Android device (minSdk 24) into a fleet agent:
-it registers with the [collector](https://github.com/addisdev/fleet-collector),
-long-polls for `executor: "device"` jobs, runs them, and reports results plus a
-60-second telemetry beacon (battery / charging / thermal).
+Old hardware is the point. A phone too slow for an LLM still runs the
+synthetic backend and still produces a comparable number, which is what makes
+a drawer of retired handsets useful as a test matrix instead of e-waste.
+
+Real numbers from real silicon: Qwen2.5-0.5B Q4_K_M at **125 prefill / 47.4
+decode tok/s** on an SM-X930 (Dimensity 9400), with the model fetched by
+content hash from the collector's artifact store.
 
 ## Architecture
 
@@ -46,3 +54,8 @@ desk, set the collector URL to the host's address on your network — its
 - [x] Agent loop, beacon, benchmark engine, synthetic backend
 - [ ] Phase 1b: llama.cpp backend (NDK + JNI, GGUF artifact download/cache)
 - [ ] Offline result queue (results currently retry only via the loop's backoff)
+
+## License
+
+MIT — see [LICENSE](LICENSE). llama.cpp, LiteRT, and the terms they carry are
+in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
