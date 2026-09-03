@@ -1,0 +1,24 @@
+# The FleetRunner spec WITH the llama.cpp backend linked in.
+#
+# Kept separate from project.yml because the xcframework is 850 MB, gitignored,
+# and built by hand -- and Xcode fails the build outright when a declared
+# XCFramework is missing rather than skipping it. Naming it only here is what
+# lets a fresh clone (and CI) build the app without it.
+#
+# Build the framework first, from the same pinned llama.cpp commit the Android
+# JNI backend uses:
+#
+#   cd ../fleet-runner-android/third_party/llama.cpp
+#   ./build-xcframework.sh          # run it from a path without spaces
+#   cp -R build-apple/llama.xcframework ../../../fleet-runner-ios/Frameworks/
+#
+# Then `./generate.sh`, which picks this spec automatically once the framework
+# is present.
+include:
+  - project.yml
+
+targets:
+  FleetRunner:
+    dependencies:
+      - framework: Frameworks/llama.xcframework
+        embed: true

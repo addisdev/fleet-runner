@@ -8,15 +8,18 @@ targets:
     type: application
     platform: iOS
     sources: [FleetRunner]
-    dependencies:
-      # Built from fleet-runner-android/third_party/llama.cpp (same pinned
-      # commit as the Android JNI backend): ./build-xcframework.sh — run it
-      # from a path without spaces — then copy build-apple/llama.xcframework
-      # here. Gitignored; the app builds without it (LlamaCppBackend is
-      # compiled out via canImport).
-      - framework: Frameworks/llama.xcframework
-        embed: true
-        optional: true
+    # No llama.xcframework here, deliberately. The framework is 850 MB and
+    # gitignored, and Xcode treats a declared-but-missing XCFramework as a hard
+    # error ("There is no XCFramework found at ..."), not as something to skip
+    # -- `optional: true` weak-links it, which is a different question. So a
+    # spec that names it unconditionally is a spec that cannot be built from a
+    # fresh clone, which is what this one used to be.
+    #
+    # Every llama call site is behind `#if canImport(llama)`, so this spec
+    # builds and runs with the synthetic and Core ML backends, and the LLM
+    # workloads report an honest "backend unavailable". To get the real thing,
+    # build the framework and generate with project.llama.yml -- ./generate.sh
+    # picks for you. See the README.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner
