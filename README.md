@@ -1,5 +1,7 @@
 # Fleet Runner
 
+![Fleet Runner: a shelf of old phones, turned into a device lab you can send work to](docs/img/banner.png)
+
 A shelf of old phones, turned into a device lab you can send work to.
 
 One queued job installs a build on every attached device, runs a UI suite
