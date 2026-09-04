@@ -121,4 +121,6 @@ data class RegisterPost(
     @SerialName("device_id") val deviceId: String,
     val descriptor: DeviceDescriptor,
     val pools: List<String>,
+    /** Workloads this runner can actually dispatch; the queue routes on them. */
+    val capabilities: List<String> = emptyList(),
 )

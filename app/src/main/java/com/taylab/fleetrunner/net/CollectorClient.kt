@@ -7,6 +7,8 @@ import com.taylab.fleetrunner.protocol.ResultPost
 import com.taylab.fleetrunner.protocol.intParam
 import com.taylab.fleetrunner.protocol.stringParam
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.encodeToString
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -120,13 +122,41 @@ class CollectorClient(baseUrl: String) {
         }
     }
 
-    fun postResult(row: ResultPost) {
+    /** What the collector said when it accepted a row. */
+    data class PostAck(val leaseRenewed: Boolean = true)
+
+    /**
+     * Posts a result or beacon row. The returned ack carries `lease_renewed`
+     * from the response body; callers that only care that the row landed can
+     * ignore it, since a rejected post throws.
+     */
+    fun postResult(row: ResultPost): PostAck {
         val req = Request.Builder()
             .url("$base/results")
             .post(FleetJson.encodeToString(row).toRequestBody(json))
             .build()
         http.newCall(req).execute().use { res ->
             if (!res.isSuccessful) throw IOException("results failed: HTTP ${res.code}")
+            return PostAck(leaseRenewed = leaseRenewedIn(res.body?.string()))
+        }
+    }
+
+    companion object {
+        /**
+         * Reads `lease_renewed` out of a 2xx /results body. Only an explicit
+         * `false` means the claim is gone: an absent field, an empty body or
+         * anything that isn't the JSON object we expect reads as renewed, so a
+         * collector that doesn't send the field — or a proxy that eats the
+         * body — can never be mistaken for a cancellation.
+         */
+        fun leaseRenewedIn(body: String?): Boolean {
+            if (body.isNullOrBlank()) return true
+            return try {
+                val obj = FleetJson.parseToJsonElement(body) as? JsonObject ?: return true
+                obj["lease_renewed"]?.jsonPrimitive?.booleanOrNull ?: true
+            } catch (_: Exception) {
+                true
+            }
         }
     }
 }
