@@ -82,6 +82,28 @@ class ProtocolTest {
     }
 
     @Test
+    fun `thermal rows carry both axes of the curve under their own names`() {
+        val row = ResultPost(
+            kind = "result", jobId = "thermal-1", deviceId = "d1", iter = 12,
+            metrics = Metrics(
+                decodeTokS = 96.4, elapsedS = 300.0, thermalState = "fair",
+                thermal = listOf("fair"), peakMemMb = 105, memMethod = "pss",
+                batteryEndPct = 71,
+            ),
+        )
+        val json = FleetJson.encodeToString(row)
+        assertTrue(json.contains("\"elapsed_s\":300.0"))
+        assertTrue(json.contains("\"thermal_state\":\"fair\""))
+        // The scalar and the array coexist: one is this sample, the other is
+        // the sequence, and a reader of either must not have to guess which.
+        assertTrue(json.contains("\"thermal\":[\"fair\"]"))
+        // battery_pct is a beacon field, not a metric name — per-iteration
+        // battery goes out as battery_end_pct or it is not queryable at all.
+        assertTrue(json.contains("\"battery_end_pct\":71"))
+        assertFalse("battery_pct is not a metric name", json.contains("\"battery_pct\""))
+    }
+
+    @Test
     fun `beacon rows omit job fields entirely`() {
         val row = ResultPost(
             kind = "beacon", deviceId = "d1",

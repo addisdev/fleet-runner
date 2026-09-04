@@ -90,6 +90,14 @@ data class Metrics(
     @SerialName("p50_ms") val p50Ms: Double? = null,
     @SerialName("p95_ms") val p95Ms: Double? = null,
     @SerialName("images_per_s") val imagesPerS: Double? = null,
+
+    // thermal. The `thermal` array above is the whole run's state sequence;
+    // these two describe one sample, which is what makes a row a point on a
+    // curve rather than a summary of one. thermal_state is a String and not an
+    // enum on purpose: Android and iOS name their levels differently, and
+    // flattening them here would invent a scale neither vendor publishes.
+    @SerialName("elapsed_s") val elapsedS: Double? = null,
+    @SerialName("thermal_state") val thermalState: String? = null,
 )
 
 @Serializable

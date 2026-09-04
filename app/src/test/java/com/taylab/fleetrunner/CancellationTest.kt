@@ -77,9 +77,13 @@ class CancellationTest {
             deviceId = "d1",
             descriptor = DeviceDescriptor("Pixel", "tensor", 8192, "Android 15", "0.2.0"),
             pools = listOf("ml-capable"),
-            capabilities = listOf("benchmark", "batch", "batch:litert", "pipeline"),
+            capabilities = listOf("benchmark", "batch", "batch:litert", "pipeline", "thermal"),
         )
         val json = FleetJson.encodeToString(post)
-        assertTrue(json.contains("\"capabilities\":[\"benchmark\",\"batch\",\"batch:litert\",\"pipeline\"]"))
+        assertTrue(
+            json.contains(
+                "\"capabilities\":[\"benchmark\",\"batch\",\"batch:litert\",\"pipeline\",\"thermal\"]",
+            ),
+        )
     }
 }
