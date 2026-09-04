@@ -1,0 +1,35 @@
+[Unit]
+# The machine agent, on a Linux box that should be part of the fleet.
+#
+# This is a template: every path is a placeholder token that
+# deploy/install-agent.sh fills in from the machine it runs on. It is a *user*
+# unit — installed under ~/.config/systemd/user, needing no root — for the same
+# reason the collector's LaunchAgent is user-owned: the whole stack should be
+# rebuildable over SSH with nobody at the keyboard and no sudo.
+Description=Fleet Runner machine agent
+Documentation=https://github.com/addisdev/fleet-runner-machine
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=__FLEET_HOME__
+ExecStart=__NODE__ __FLEET_HOME__/node_modules/tsx/dist/cli.mjs src/agent.ts
+
+Environment=PATH=__NODE_BIN_DIR__:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+Environment=FLEET_URL=__FLEET_URL__
+Environment=FLEET_DEVICE_ID=__FLEET_DEVICE_ID__
+Environment=FLEET_POOLS=__FLEET_POOLS__
+
+# The collector expects a beacon a minute, so an agent that dies unnoticed
+# looks like a machine that went to sleep. Restart it however it goes.
+Restart=always
+RestartSec=10
+
+# A benchmark is meant to saturate this machine, but not to make the desktop
+# unusable while it does — the collector's require_idle_s/max_load constraints
+# decide when work runs, and this is the floor under the times they let it.
+Nice=5
+
+[Install]
+WantedBy=default.target

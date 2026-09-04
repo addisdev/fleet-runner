@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # A GitHub runner has no GPU, no llama-bench and no mlx_lm, which is
+      # exactly the machine the capability probes exist for: the suite passes
+      # there by declaring `benchmark` and nothing else. If a probe ever starts
+      # guessing instead of answering, this is where it shows up.
+      - run: npm test

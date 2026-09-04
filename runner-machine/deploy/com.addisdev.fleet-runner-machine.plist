@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-runner-machine</string>
+
+  <!-- The machine agent, on a Mac that should be part of the fleet.
+
+       This is a template: every path is a placeholder token that
+       deploy/install-agent.sh fills in from the machine it runs on. launchd
+       does not expand `~`, does not read a login PATH, and does not complain
+       about a path that does not exist — an agent carrying someone else's home
+       directory fails by quietly doing nothing at all. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__FLEET_HOME__/node_modules/tsx/dist/cli.mjs</string>
+    <string>src/agent.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__FLEET_HOME__</string>
+
+  <!-- The fleet's devices long-poll the collector and the collector expects a
+       beacon a minute; an agent that dies unnoticed looks to the dashboard
+       like a machine that went to sleep and never came back. -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__NODE_BIN_DIR__:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin:/opt/homebrew/bin</string>
+    <!-- The collector's address. A laptop that leaves the house should point at
+         a tailnet address rather than a LAN one; see the collector's FLEET_BIND
+         note, which is what makes that safe. -->
+    <key>FLEET_URL</key>
+    <string>__FLEET_URL__</string>
+    <!-- Unset to take the default, machine-<hostname>, which is stable across
+         restarts. Set it only to keep an id a device's history is already
+         filed under after the machine is renamed. -->
+    <key>FLEET_DEVICE_ID</key>
+    <string>__FLEET_DEVICE_ID__</string>
+    <key>FLEET_POOLS</key>
+    <string>__FLEET_POOLS__</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/fleet-runner-machine.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fleet-runner-machine.log</string>
+</dict>
+</plist>

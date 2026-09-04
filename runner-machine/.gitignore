@@ -1,0 +1,7 @@
+node_modules/
+*.log
+.DS_Store
+
+# Model artifacts fetched by content hash. They are large, they are not ours to
+# redistribute, and the collector's store is where they live.
+cache/
