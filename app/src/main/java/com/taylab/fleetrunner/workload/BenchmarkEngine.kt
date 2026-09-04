@@ -1,6 +1,7 @@
 package com.taylab.fleetrunner.workload
 
 import android.content.Context
+import com.taylab.fleetrunner.JobCancellation
 import com.taylab.fleetrunner.backend.IterResult
 import com.taylab.fleetrunner.backend.ModelBackend
 import com.taylab.fleetrunner.net.ArtifactCache
@@ -40,6 +41,20 @@ class BenchmarkEngine(
             val deadline = if (sustainedMinutes > 0) System.currentTimeMillis() + sustainedMinutes * 60_000L else 0L
             var i = 0
             while (if (sustainedMinutes > 0) System.currentTimeMillis() < deadline else i < measures) {
+                // A cancelled job stops between iterations, never mid-iteration:
+                // the rows already posted stay valid, this one just never starts.
+                if (JobCancellation.isCancelled(job.jobId)) {
+                    backend.unload()
+                    client.postResult(
+                        ResultPost(
+                            kind = "result", jobId = job.jobId, deviceId = deviceId,
+                            iter = 0, final = true, ok = false,
+                            device = Telemetry.descriptor(context),
+                            error = "cancelled",
+                        ),
+                    )
+                    return
+                }
                 i += 1
                 val r = backend.runIteration(job)
                 iters += r
@@ -58,9 +73,15 @@ class BenchmarkEngine(
                 )
                 if (sustainedMinutes > 0 && i % 5 == 0) {
                     // Sustained runs outlive the lease TTL: renew explicitly.
-                    client.postResult(
+                    val ack = client.postResult(
                         ResultPost(kind = "beacon", deviceId = deviceId, jobId = job.jobId, beacon = Telemetry.beacon(context)),
                     )
+                    // This ack carries the same lease_renewed the service
+                    // beacon reads, and a sustained run lasts quarter-hours, so
+                    // honour it here rather than waiting up to a minute for the
+                    // service beacon's turn. Explicit false only: a beacon that
+                    // fails to post throws to the catch below, as it always did.
+                    if (!ack.leaseRenewed) JobCancellation.cancel(job.jobId)
                 }
             }
             backend.unload()

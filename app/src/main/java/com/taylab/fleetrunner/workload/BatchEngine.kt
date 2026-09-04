@@ -1,6 +1,7 @@
 package com.taylab.fleetrunner.workload
 
 import android.content.Context
+import com.taylab.fleetrunner.JobCancellation
 import com.taylab.fleetrunner.backend.ModelBackend
 import com.taylab.fleetrunner.net.ArtifactCache
 import com.taylab.fleetrunner.net.CollectorClient
@@ -43,6 +44,18 @@ class BatchEngine(
 
             val outputs = buildJsonArray {
                 items.forEachIndexed { i, item ->
+                    // Cancellation lands between items: the ones already posted
+                    // stand, the rest never start, and the job closes as failed.
+                    if (JobCancellation.isCancelled(job.jobId)) {
+                        backend.unload()
+                        client.postResult(
+                            ResultPost(
+                                kind = "result", jobId = job.jobId, deviceId = deviceId,
+                                iter = 0, final = true, ok = false, error = "cancelled",
+                            ),
+                        )
+                        return
+                    }
                     val prompt = item.jsonPrimitive.content
                     val t0 = System.nanoTime()
                     val output = backend.generate(prompt, maxTokens)

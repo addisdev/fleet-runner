@@ -1,6 +1,7 @@
 package com.taylab.fleetrunner.workload
 
 import android.content.Context
+import com.taylab.fleetrunner.JobCancellation
 import com.taylab.fleetrunner.backend.ModelBackend
 import com.taylab.fleetrunner.net.ArtifactCache
 import com.taylab.fleetrunner.net.CollectorClient
@@ -35,6 +36,18 @@ class PipelineEngine(
 
             var processed = 0
             while (processed < maxEvents) {
+                // Checked before each poll, so a cancelled pipeline node stops
+                // within one long-poll instead of waiting out max_events.
+                if (JobCancellation.isCancelled(job.jobId)) {
+                    backend.unload()
+                    client.postResult(
+                        ResultPost(
+                            kind = "result", jobId = job.jobId, deviceId = deviceId,
+                            iter = 0, final = true, ok = false, error = "cancelled",
+                        ),
+                    )
+                    return
+                }
                 val event = client.pollEvent(topic, cursor) ?: continue
                 cursor = event.id
                 val prompt = event.payload.stringParam("prompt") ?: event.payload.toString()

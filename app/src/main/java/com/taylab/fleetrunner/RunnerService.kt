@@ -86,6 +86,14 @@ class RunnerService : Service() {
         return START_STICKY
     }
 
+    /**
+     * What this runner declares at registration, so the collector's capability
+     * routing only offers it work it can run. Defined here, immediately beside
+     * the dispatch `when` in [agentLoop] that it mirrors, so the declared list
+     * and the dispatched workloads cannot drift apart.
+     */
+    private val capabilities = listOf("benchmark", "batch", "batch:litert", "pipeline")
+
     private suspend fun agentLoop(client: CollectorClient, deviceId: String) {
         while (true) {
             try {
@@ -95,6 +103,7 @@ class RunnerService : Service() {
                         deviceId = deviceId,
                         descriptor = Telemetry.descriptor(this),
                         pools = listOf("ml-capable"),
+                        capabilities = capabilities,
                     ),
                 )
                 while (true) {
@@ -136,6 +145,7 @@ class RunnerService : Service() {
                         }
                     } finally {
                         currentJobId = null
+                        JobCancellation.clear(job.jobId)
                     }
                     _status.value = "finished ${job.jobId}"
                 }
@@ -161,13 +171,20 @@ class RunnerService : Service() {
     private suspend fun beaconLoop(client: CollectorClient, deviceId: String) {
         while (true) {
             try {
-                client.postResult(
+                val jobId = currentJobId
+                val ack = client.postResult(
                     ResultPost(
                         kind = "beacon", deviceId = deviceId,
-                        jobId = currentJobId, // renews the running job's lease
+                        jobId = jobId, // renews the running job's lease
                         beacon = Telemetry.beacon(this),
                     ),
                 )
+                // The collector answering a job-carrying beacon with
+                // lease_renewed:false means the claim is gone — cancelled from
+                // the dashboard, or swept — so tell the engine to stop. Only
+                // that explicit answer counts: an unreachable collector or a
+                // non-2xx throws instead, and is swallowed below as before.
+                if (jobId != null && !ack.leaseRenewed) JobCancellation.cancel(jobId)
             } catch (_: Exception) {
                 // Beacon is best-effort; the agent loop owns error reporting.
             }
