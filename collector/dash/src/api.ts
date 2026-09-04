@@ -128,7 +128,11 @@ export type Job = {
   job_id: string;
   workload: string;
   executor: "device" | "host";
-  status: "queued" | "claimed" | "done" | "failed" | "cancelled";
+  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled";
+  /** Job ids this one waits for; it stays `waiting` until they are all done. */
+  depends_on?: string[] | null;
+  /** Whether a higher-priority job may ask this one to checkpoint and step aside. */
+  preemptible?: boolean;
   claimed_by: string | null;
   attempts: number;
   max_attempts: number;

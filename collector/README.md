@@ -89,6 +89,12 @@ so it never touches a real fleet's history.
 | `thermal` | device | The same benchmark run back to back for a quarter hour, so the answer is a curve: does the cold number survive the device getting warm |
 | `cold-start` | host | Launch the installed build from cold, warm and hot; p50 and p95 per state, per device |
 | `drain` / `soak` | host | Battery curve under a replayed GPX track; and whether a runner is still alive hours later |
+| `build` | machine | Check out a ref, build it, publish the product as an artifact the next `install` can name |
+| `speech-eval` / `embed-eval` | device | Word error rate and real-time factor for on-device transcription; recall-at-k and throughput for on-device embeddings |
+| `vantage` | device, machine | DNS, connect, TLS and TTFB to your own sites from wherever each agent is, so "the site is slow" and "my wifi is slow" stop being the same answer |
+| `locale-shots` | host | A screenshot flow under every locale, including RTL, bundled as a store-ready contact sheet |
+| `app-soak` / `a11y-audit` | host | Memory, jank and crashes over hours; and the accessibility tree diffed against a baseline at the largest dynamic type |
+| `self-check` | host, machine | The fleet inspects its own hosts: disk, tool versions, clock drift, agents actually loaded |
 | `archive` / `digest` | host | Pull store reviews and Search Console data; then have the shelf summarize its own reviews using its own models |
 
 Full reference, including every parameter and the failure modes worth knowing:

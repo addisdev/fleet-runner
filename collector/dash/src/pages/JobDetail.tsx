@@ -6,6 +6,12 @@ import { useDeviceNames } from "../names.js";
 import { Actions, Button, ConfirmButton, CopyId, DeviceName, ErrorBox, Json, Link, Loaded, Panel, Pill, Stat, bytes, clock, duration, num } from "../ui.js";
 import { JobRows, LeaseCell } from "./Jobs.js";
 
+// The collector gained a 'waiting' status with dependency chains. `Job` in
+// api.ts still describes the older set, and that type is shared with every
+// other page, so the status is read as a plain string here rather than
+// pretending the union is complete.
+const statusOf = (job: { status: string }) => job.status as string;
+
 /** One line that says what a result row actually reported, per workload. */
 function summarize(payload: Record<string, any>): string {
   const m = payload.metrics;
@@ -57,6 +63,51 @@ function Results({ results, names }: { results: ResultRow[]; names: Record<strin
   );
 }
 
+/** What this job is waiting for, and what that means for it.
+ *
+ *  A 'waiting' row with nothing said about it is the worst version of this
+ *  feature: it looks like a job the queue has forgotten. Naming the
+ *  dependencies — and linking them, because the next question is always "what
+ *  is the build doing?" — is most of the value of the status existing at all. */
+function DependsOn({ job }: { job: Detail }) {
+  const deps = (job.spec?.depends_on ?? []) as string[];
+  if (deps.length === 0) return null;
+  return (
+    <p class="empty">
+      Waiting on{" "}
+      {deps.map((d, i) => (
+        <span key={d}>
+          {i > 0 && ", "}
+          <Link to={`/jobs/${encodeURIComponent(d)}`}>
+            <code>{d}</code>
+          </Link>
+        </span>
+      ))}
+      .{" "}
+      <span class="faint">
+        {statusOf(job) === "waiting"
+          ? "It is queued the moment the last of them is done, with any ${jobs.…} references in its spec filled in from their final rows. If one fails or is cancelled, this job fails with it rather than waiting forever."
+          : "The chain has already resolved; this is what it hung off."}
+      </span>
+    </p>
+  );
+}
+
+/** Whether the job will stand aside for higher-priority work. */
+function Preemptible({ job }: { job: Detail }) {
+  if (job.spec?.preemptible !== true) return null;
+  return (
+    <p class="empty">
+      Preemptible.{" "}
+      <span class="faint">
+        {statusOf(job) === "claimed"
+          ? "If a queued job with a strictly higher priority could take this device, the next beacon is answered with preempt:true. The runner checkpoints and posts a final row; the job goes back on the queue with its progress and keeps the attempt — raise something above it and watch."
+          : "When it runs, higher-priority work can ask it to stand aside; it is requeued with its progress rather than failed."}
+      </span>
+    </p>
+  );
+}
+
 function JobActions({ job, onDone }: { job: Detail; onDone: () => void }) {
   const cancel = useMutation(async () => {
     const r = await mutate<{ note: string }>("POST", `/api/jobs/${encodeURIComponent(job.job_id)}/cancel`, {});
@@ -81,7 +132,12 @@ function JobActions({ job, onDone }: { job: Detail; onDone: () => void }) {
     return r;
   });
 
-  const stoppable = job.status === "queued" || job.status === "claimed";
+  const stoppable = ["queued", "claimed", "waiting"].includes(statusOf(job));
+  // Priority is worth changing for as long as the job has not run. On a claimed
+  // job it is not cosmetic either: raising a *queued* job above a running
+  // preemptible one is what asks the runner to stand aside, so the controls
+  // stay live rather than disappearing the moment work starts.
+  const reorderable = stoppable;
 
   return (
     <>
@@ -98,9 +154,13 @@ function JobActions({ job, onDone }: { job: Detail; onDone: () => void }) {
         <Button busy={retry.busy} onClick={() => void retry.go()} title="Clone this spec under a fresh job id">
           Retry as new job
         </Button>
-        {job.status === "queued" && (
+        {reorderable && (
           <>
-            <Button busy={raise.busy} onClick={() => void raise.go()} title="Move up the queue">
+            <Button
+              busy={raise.busy}
+              onClick={() => void raise.go()}
+              title="Move up the queue — and past any preemptible job already running"
+            >
               priority +1
             </Button>
             <Button busy={lower.busy} onClick={() => void lower.go()} disabled={job.priority <= 0}>
@@ -152,6 +212,8 @@ export function JobDetail({ id }: { id: string }) {
                   Lease remaining: <LeaseCell job={j} />
                 </p>
               )}
+              <DependsOn job={j} />
+              <Preemptible job={j} />
               {j.last_error && <p class="error">{j.last_error}</p>}
               <JobActions job={j} onDone={state.reload} />
             </Panel>

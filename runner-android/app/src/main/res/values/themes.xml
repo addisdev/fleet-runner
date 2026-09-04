@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      DayNight, so the runner follows the system rather than carrying a theme
+      setting of its own to get out of step with the dashboard. The window
+      background is set here rather than on the root view so the launch window
+      is already the right colour — otherwise every cold start flashes white on
+      a shelf of dark phones.
+    -->
+    <style name="Theme.FleetRunner" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/fleet_bg</item>
+        <item name="android:colorBackground">@color/fleet_bg</item>
+        <item name="android:textColor">@color/fleet_ink</item>
+        <item name="android:textColorPrimary">@color/fleet_ink</item>
+        <item name="android:textColorSecondary">@color/fleet_ink_dim</item>
+        <item name="android:textColorHint">@color/fleet_ink_faint</item>
+        <item name="colorAccent">@color/fleet_accent</item>
+        <item name="android:statusBarColor">@color/fleet_bg</item>
+        <item name="android:navigationBarColor">@color/fleet_bg</item>
+    </style>
+</resources>

@@ -76,9 +76,9 @@ function Operations({ pools, onDone }: { pools: string[]; onDone: () => void }) 
     onDone();
     return r;
   });
-  const [retention, setRetention] = useState({ beacon_days: 30, event_days: 30 });
+  const [retention, setRetention] = useState({ beacon_days: 30, event_days: 30, power_days: 30 });
   const dryRun = useMutation(() =>
-    mutate<{ would_delete: { beacons: number; events: number } }>("POST", "/api/system/retention", {
+    mutate<{ would_delete: { beacons: number; events: number; power_samples: number } }>("POST", "/api/system/retention", {
       ...retention,
       dry_run: true,
     }),
@@ -138,6 +138,17 @@ function Operations({ pools, onDone }: { pools: string[]; onDone: () => void }) 
               onChange={(e) => setRetention({ ...retention, event_days: Number((e.target as HTMLInputElement).value) || 1 })}
             />
           </label>
+          {/* Sampled per pool every few seconds rather than per device every
+              minute, so this table outgrows the beacons beside it. */}
+          <label class="field">
+            <span>keep power samples (days)</span>
+            <input
+              type="number"
+              min={1}
+              value={retention.power_days}
+              onChange={(e) => setRetention({ ...retention, power_days: Number((e.target as HTMLInputElement).value) || 1 })}
+            />
+          </label>
         </div>
         <Actions>
           <Button busy={dryRun.busy} onClick={() => void dryRun.go()}>
@@ -145,7 +156,10 @@ function Operations({ pools, onDone }: { pools: string[]; onDone: () => void }) 
           </Button>
           {dryRun.result && (
             <ConfirmButton
-              confirm={`Yes, delete ${(dryRun.result as { would_delete: { beacons: number; events: number } }).would_delete.beacons} beacons and ${(dryRun.result as { would_delete: { beacons: number; events: number } }).would_delete.events} events`}
+              // The confirm string names every table, because a button that
+              // deletes three things while promising two is how someone loses
+              // a measurement series they thought they were keeping.
+              confirm={`Yes, delete ${dryRun.result.would_delete.beacons} beacons, ${dryRun.result.would_delete.events} events and ${dryRun.result.would_delete.power_samples} power samples`}
               busy={purge.busy}
               onConfirm={() => void purge.go()}
             >

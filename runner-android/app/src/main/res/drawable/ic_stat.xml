@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The status-bar icon: stroke, on the same 24 grid as the dashboard's icon set.
+
+  It used to be the filled phone silhouette, which at 24dp on a white
+  notification shade collapsed into a grey lozenge with a smudge in it. A
+  status-bar icon is masked to a single colour, so shape is the only thing it
+  has — an outline reads, a filled slab does not.
+-->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp"
-    android:height="24dp"
-    android:viewportWidth="24"
-    android:viewportHeight="24">
-    <!-- Simple phone-with-pulse glyph -->
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M7,2h10a1,1 0 0 1 1,1v18a1,1 0 0 1 -1,1H7a1,1 0 0 1 -1,-1V3a1,1 0 0 1 1,-1zM8,4v14h8V4H8zM10,20h4v1h-4v-1z" />
-    <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M9,11h1.5l1,-2.5 1.5,5 1,-2.5H15v1h-0.5l-1.7,4.2 -1.5,-5L10.6,12H9v-1z" />
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6"
+        android:strokeLineJoin="round" android:fillColor="#00000000"
+        android:pathData="M7.5,2.5h9a2,2 0 0 1 2,2v15a2,2 0 0 1 -2,2h-9a2,2 0 0 1 -2,-2v-15a2,2 0 0 1 2,-2z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6"
+        android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M8.5,12h1.7l1.1,-3.2 1.8,6.4 1.2,-3.2h1.2" />
 </vector>

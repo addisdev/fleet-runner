@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Material's pill button, drawn by hand: the app depends on appcompat only,
+     and one shape is a cheaper answer than the whole Material library. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="@color/fleet_on_accent">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@color/fleet_accent" />
+            <corners android:radius="24dp" />
+        </shape>
+    </item>
+</ripple>

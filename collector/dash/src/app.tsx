@@ -2,7 +2,7 @@ import { useKeyboard, SHORTCUTS } from "./keys.js";
 import { TokenBanner } from "./TokenBanner.js";
 import { useLiveState } from "./live.js";
 import { match, useRoute } from "./router.js";
-import { Glyph } from "./icons.js";
+import { Glyph, Icon, NAV_ICON } from "./icons.js";
 import { Link, Panel } from "./ui.js";
 import { Compose } from "./pages/Compose.js";
 import { DeviceDetail } from "./pages/DeviceDetail.js";
@@ -14,6 +14,7 @@ import { Overview } from "./pages/Overview.js";
 import { Schedules } from "./pages/Schedules.js";
 import { AlertBanner, Alerts } from "./pages/Alerts.js";
 import { Artifacts } from "./pages/Artifacts.js";
+import { Evals, EvalSetPage } from "./pages/Evals.js";
 import { Events } from "./pages/Events.js";
 import { Results } from "./pages/Results.js";
 import { Visual } from "./pages/Visual.js";
@@ -25,6 +26,7 @@ const NAV = [
   ["/devices", "Devices"],
   ["/jobs", "Jobs"],
   ["/results", "Results"],
+  ["/evals", "Evals"],
   ["/visual", "Visual"],
   ["/schedules", "Schedules"],
   ["/artifacts", "Artifacts"],
@@ -82,6 +84,7 @@ function Router() {
   // Before /jobs/:id, or "new" would be read as a job id.
   if (match("/jobs/new", route)) return <Compose />;
   if (match("/results", route)) return <Results />;
+  if (match("/evals", route)) return <Evals />;
   if (match("/visual", route)) return <Visual />;
   if (match("/artifacts", route)) return <Artifacts />;
   if (match("/events", route)) return <Events />;
@@ -93,6 +96,10 @@ function Router() {
   if (device) return <DeviceDetail key={device.id} id={device.id} />;
   const job = match("/jobs/:id", route);
   if (job) return <JobDetail key={job.id} id={job.id} />;
+  // After the literal /evals above, for the same reason /devices/new is before
+  // /devices/:id — a literal segment must never be read as an id.
+  const evalSet = match("/evals/:sha", route);
+  if (evalSet) return <EvalSetPage key={evalSet.sha} sha={evalSet.sha} />;
 
 
   return <NotFound route={route} />;
@@ -134,11 +141,15 @@ export function App() {
           </span>
         </span>
         <nav class="nav">
-          {NAV.map(([to, label]) => (
-            <Link key={to} to={to}>
-              {label}
-            </Link>
-          ))}
+          {NAV.map(([to, label]) => {
+            const icon = NAV_ICON[to];
+            return (
+              <Link key={to} to={to}>
+                {icon && <Icon name={icon} />}
+                {label}
+              </Link>
+            );
+          })}
         </nav>
         <LiveDot />
       </header>

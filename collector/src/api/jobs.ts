@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
 import { AGE, beaconFields, inClause, iso, paging, parse, sha256Refs } from "./shared.js";
 
-const STATUSES = new Set(["queued", "claimed", "done", "failed", "cancelled"]);
+const STATUSES = new Set(["waiting", "queued", "claimed", "done", "failed", "cancelled"]);
 const EXECUTORS = new Set(["device", "host"]);
 const SORTS: Record<string, string> = {
   created: "created_at",
@@ -30,13 +30,14 @@ type JobRow = {
   priority: number;
   parent_job_id: string | null;
   template_id: string | null;
+  depends_on: string | null;
   lease_remaining_s: number | null;
   duration_s: number | null;
 };
 
 const JOB_COLUMNS = `job_id, executor, workload, spec, status, created_at, claimed_by, claimed_at,
   finished_at, lease_ttl_s, max_attempts, attempts, lease_deadline, last_error,
-  priority, parent_job_id, template_id,
+  priority, parent_job_id, template_id, depends_on,
   CASE WHEN status = 'claimed' AND lease_deadline IS NOT NULL
        THEN CAST(strftime('%s', lease_deadline) - strftime('%s','now') AS INTEGER) END AS lease_remaining_s,
   CASE WHEN claimed_at IS NOT NULL
@@ -54,6 +55,9 @@ export function shapeJob(j: JobRow, opts: { spec?: boolean } = {}) {
     max_attempts: j.max_attempts,
     priority: j.priority,
     template_id: j.template_id,
+    // The chain, as the row records it. Empty rather than null so a caller can
+    // ask `.length` without knowing whether dependencies were ever a thing.
+    depends_on: parse<string[]>(j.depends_on, []),
     lease_ttl_s: j.lease_ttl_s,
     lease_deadline: iso(j.lease_deadline),
     lease_remaining_s: j.lease_remaining_s,
@@ -68,6 +72,9 @@ export function shapeJob(j: JobRow, opts: { spec?: boolean } = {}) {
     device_id: spec.targets?.device_id ?? null,
     wants_executor: spec.targets?.executor ?? null,
     exclusive: spec.targets?.exclusive ?? false,
+    // Whether this job will stand aside for higher-priority work. Pulled out of
+    // the spec for the same reason `exclusive` is: a list view reads it.
+    preemptible: spec.preemptible === true,
     backend: spec.backend ?? null,
     model: spec.model?.name ?? null,
     app: spec.app?.name ?? null,
@@ -262,7 +269,12 @@ export function registerJobs(app: FastifyInstance) {
       // stores current state, not an event log, so this is derived — and the
       // field name says so rather than implying a record that does not exist.
       derived_timeline: [
-        { at: iso(row.created_at), what: "queued" },
+        {
+          at: iso(row.created_at),
+          what: row.depends_on
+            ? `enqueued, waiting on ${parse<string[]>(row.depends_on, []).join(", ")}`
+            : "queued",
+        },
         ...(row.claimed_at ? [{ at: iso(row.claimed_at), what: `claimed by ${row.claimed_by ?? "?"} (attempt ${row.attempts})` }] : []),
         ...(beacons.length ? [{ at: beacons[0].ts, what: `first beacon of ${beacons.length}` }] : []),
         ...(row.finished_at ? [{ at: iso(row.finished_at), what: row.status }] : []),

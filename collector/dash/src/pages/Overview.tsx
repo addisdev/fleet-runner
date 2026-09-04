@@ -1,8 +1,22 @@
 // The "is the fleet OK" screen. One request, five answers.
 import { useApi, type Overview as OverviewData, type RecentResults } from "../api.js";
 import { Workload } from "../icons.js";
+import { ArtAllClear, ArtIdle, ArtNoResults } from "../art.js";
 import { useDeviceNames } from "../names.js";
-import { DeviceName, Link, Loaded, Panel, Pill, Stat, ago, agoFrom, clock, duration } from "../ui.js";
+import {
+  DeviceName,
+  Link,
+  Loaded,
+  Panel,
+  Pill,
+  Stat,
+  ago,
+  agoFrom,
+  clock,
+  duration,
+  leaseNow,
+  useNow,
+} from "../ui.js";
 
 function LeaseBar({ fraction }: { fraction: number | null }) {
   if (fraction == null) return null;
@@ -22,11 +36,14 @@ export function Overview() {
   const state = useApi<OverviewData>("/api/overview", ["job", "device", "beacon", "result", "schedule"], 30_000);
   const recent = useApi<RecentResults>("/api/results/recent?limit=12", ["result"], 60_000);
   const names = useDeviceNames();
+  // Lease bars and countdowns drain against this rather than against the 30s
+  // refresh, so "1m 20s left" is true when you read it.
+  const now = useNow();
 
   return (
     <>
       <h1>Overview</h1>
-      <Loaded state={state} what="overview">
+      <Loaded state={state} what="overview" shape="stats">
         {(d) => (
           <>
             <Panel title="Fleet" aside={<span class="faint">{clock(d.generated_at)}</span>}>
@@ -77,7 +94,7 @@ export function Overview() {
 
             <Panel title={`Running now (${d.running.length})`}>
               {d.running.length === 0 ? (
-                <p class="empty">Nothing claimed. The fleet is idle.</p>
+                <ArtIdle caption="Nothing claimed. The fleet is idle." />
               ) : (
                 <div class="scroll">
                   <table>
@@ -89,29 +106,42 @@ export function Overview() {
                       <th>Lease left</th>
                       <th>Attempt</th>
                     </tr>
-                    {d.running.map((j) => (
-                      <tr key={j.job_id}>
-                        <td class="wrap-anywhere">
-                          <Link to={`/jobs/${encodeURIComponent(j.job_id)}`}>
-                            <code>{j.job_id}</code>
-                          </Link>
-                        </td>
-                        <td>
-                          <Workload name={j.workload} /> <span class="faint">{j.executor}</span>
-                        </td>
-                        <td class="wrap-anywhere">
-                          {j.claimed_by ? <DeviceName id={j.claimed_by} names={names} /> : <span class="faint">—</span>}
-                        </td>
-                        <td class="num">{duration(j.elapsed_s)}</td>
-                        <td>
-                          {duration(j.lease_remaining_s)}
-                          <LeaseBar fraction={j.lease_fraction} />
-                        </td>
-                        <td class="num">
-                          {j.attempts}/{j.max_attempts}
-                        </td>
-                      </tr>
-                    ))}
+                    {d.running.map((j) => {
+                      const lease = leaseNow(j, now);
+                      return (
+                        <tr key={j.job_id}>
+                          <td class="wrap-anywhere">
+                            <Link to={`/jobs/${encodeURIComponent(j.job_id)}`}>
+                              <code>{j.job_id}</code>
+                            </Link>
+                          </td>
+                          <td>
+                            <Workload name={j.workload} /> <span class="faint">{j.executor}</span>
+                          </td>
+                          <td class="wrap-anywhere">
+                            {j.claimed_by ? (
+                              <DeviceName id={j.claimed_by} names={names} />
+                            ) : (
+                              <span class="faint">—</span>
+                            )}
+                          </td>
+                          {/* Elapsed counts up from the claim for the same reason the lease
+                              counts down: both are wall-clock, and both were frozen between polls. */}
+                          <td class="num">
+                            {duration(
+                              j.claimed_at ? (now - new Date(j.claimed_at).getTime()) / 1000 : j.elapsed_s,
+                            )}
+                          </td>
+                          <td>
+                            {duration(lease.remaining_s)}
+                            <LeaseBar fraction={lease.fraction} />
+                          </td>
+                          <td class="num">
+                            {j.attempts}/{j.max_attempts}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </table>
                 </div>
               )}
@@ -119,7 +149,7 @@ export function Overview() {
 
             <Panel title="Recent failures">
               {d.recent_failures.length === 0 ? (
-                <p class="empty">No failed jobs.</p>
+                <ArtAllClear caption="No failed jobs." />
               ) : (
                 <div class="scroll">
                   <table>
@@ -191,10 +221,10 @@ export function Overview() {
             </Panel>
 
             <Panel title="Recent results">
-              <Loaded state={recent} what="results">
+              <Loaded state={recent} what="results" empty={<ArtNoResults caption="No results yet." />}>
                 {(r) =>
                   r.results.length === 0 ? (
-                    <p class="empty">No results yet.</p>
+                    <ArtNoResults caption="No results yet." />
                   ) : (
                     <div class="scroll">
                       <table>

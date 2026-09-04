@@ -52,7 +52,19 @@
         "flows": { "type": "string" }
       }
     },
-    "params": { "type": "object" },
+    "params": {
+      "type": "object",
+      "description": "Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; any host job network and network_to; a preempted job resume_from."
+    },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Job ids this one waits for. The job is enqueued as 'waiting' and becomes 'queued' when the last of them finishes; if any of them fails or is cancelled, this one fails with last_error naming it. While waiting, a spec may reference a dependency's output: \"${jobs.<id>.artifact}\" resolves to the first sha256 in that job's final row, and \"${jobs.<id>.metrics.<key>}\" to one of its metrics. A whole-string reference keeps the value's type, so a metric stays a number. Referencing a job not listed here is refused at enqueue."
+    },
+    "preemptible": {
+      "type": "boolean",
+      "description": "Whether a higher-priority job may ask this one to step aside. When true, a beacon is answered with preempt:true once a strictly higher-priority queued job would go to the same claimant; the runner is expected to checkpoint, upload its progress, and post a final row with preempted:true. That requeues the job with params.resume_from set to the uploaded sha256 and hands the attempt back, so stepping aside never counts against max_attempts. Equal priority does not preempt."
+    },
     "lease": {
       "type": "object",
       "description": "How long a claim stays valid without proof of life. The runner renews it by posting POST /results kind=beacon with this job_id; a lapsed lease is requeued by the collector's sweep, and failed once max_attempts is spent. Omit for the defaults: 600 s, or 14400 s for drain/soak, which run for hours between beacons.",

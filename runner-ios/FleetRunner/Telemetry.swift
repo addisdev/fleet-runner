@@ -1,7 +1,49 @@
 import Foundation
+import Network
 import UIKit
 
+/// A long-lived `NWPathMonitor`, because there is no way to ask iOS "what is
+/// carrying my traffic right now?" without one — the answer only arrives
+/// through a monitor that has already been started.
+///
+/// Started once and kept, rather than spun up per request: a freshly started
+/// monitor has no path yet, so a per-request one would report "unknown" for
+/// exactly the first row of every vantage run.
+private final class NetworkWatcher: @unchecked Sendable {
+    static let shared = NetworkWatcher()
+    private let monitor = NWPathMonitor()
+
+    private init() {
+        monitor.pathUpdateHandler = { _ in }
+        monitor.start(queue: DispatchQueue(label: "com.taylab.fleetrunner.network-watcher"))
+    }
+
+    /// wifi / cellular / ethernet / unknown, the same four words the Android
+    /// runner reports.
+    ///
+    /// Wi-Fi is checked before cellular so a phone holding both answers the way
+    /// its traffic will actually go, which is also how Android's transport
+    /// check reads. "unknown" is a word, not a guess: it covers no active path,
+    /// a transport neither platform names, and the moment before the monitor
+    /// has heard anything.
+    func current() -> String {
+        let path = monitor.currentPath
+        if path.usesInterfaceType(.wifi) { return "wifi" }
+        if path.usesInterfaceType(.cellular) { return "cellular" }
+        if path.usesInterfaceType(.wiredEthernet) { return "ethernet" }
+        return "unknown"
+    }
+}
+
 enum Telemetry {
+
+    /// What is carrying this device's traffic right now.
+    ///
+    /// Read per request during a vantage run rather than once per job: a device
+    /// can leave wifi mid-run, and the rows on either side of that are honestly
+    /// different measurements.
+    static func networkType() -> String { NetworkWatcher.shared.current() }
+
 
     static func descriptor() -> DeviceDescriptor {
         var uts = utsname()

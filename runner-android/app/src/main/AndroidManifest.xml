@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- vantage reports which transport carried each timing (wifi / cellular /
+         ethernet). Without this the workload can only ever say "unknown", and
+         a latency figure with no idea what carried it is not comparable to
+         anything. Normal permission: granted at install, no runtime prompt. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Fleet devices are dedicated hardware: exempting the agent from doze
          keeps beacons and the agent loop alive on battery (observed: Samsung
