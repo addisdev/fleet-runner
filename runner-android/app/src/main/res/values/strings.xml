@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title">Fleet Runner</string>
+    <string name="hint_collector_url">Collector URL</string>
+    <string name="hint_device_id">Device ID</string>
+    <string name="start">Start agent</string>
+    <string name="stop">Stop</string>
+    <string name="status_stopped">stopped</string>
+</resources>
