@@ -1,0 +1,448 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */; };
+		29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */; };
+		2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */; };
+		38E30C23455915A872514955 /* Workloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0BF52256E0CBF3AC96D589 /* Workloads.swift */; };
+		6424FDD0EDCF7806C66447F0 /* FleetSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */; };
+		8591C734F0CC29AECDA37140 /* BenchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */; };
+		8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35252602851DD4FC6838C5CC /* Telemetry.swift */; };
+		A98911FE185A5563E58375CA /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BB3BA830E838835C4AE2AD1 /* Protocol.swift */; };
+		B0BC3C9EA4C05413868B3AC0 /* ThermalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */; };
+		B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
+		BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965A118D55FCDC99E6F0349A /* FleetAgent.swift */; };
+		E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
+		F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
+		F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B1315B864A8F6782CD92ADCB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 45E8C2DFBF297134C457A532 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4F7041A3776C49C9FDAFF8BD;
+			remoteInfo = FleetRunner;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSmokeUITests.swift; sourceTree = "<group>"; };
+		262BD6B87A5A8B607BE14F2B /* MiniZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniZip.swift; sourceTree = "<group>"; };
+		31632F0B6302F50DC2BD764E /* CollectorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectorClient.swift; sourceTree = "<group>"; };
+		35252602851DD4FC6838C5CC /* Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Telemetry.swift; sourceTree = "<group>"; };
+		4A0BF52256E0CBF3AC96D589 /* Workloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workloads.swift; sourceTree = "<group>"; };
+		6BB3BA830E838835C4AE2AD1 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
+		965A118D55FCDC99E6F0349A /* FleetAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetAgent.swift; sourceTree = "<group>"; };
+		A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetRunnerApp.swift; sourceTree = "<group>"; };
+		BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppBackend.swift; sourceTree = "<group>"; };
+		C3122AFE32636B1FE9348CA1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchSession.swift; sourceTree = "<group>"; };
+		C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalWorkload.swift; sourceTree = "<group>"; };
+		D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FleetRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLBackend.swift; sourceTree = "<group>"; };
+		D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticBackend.swift; sourceTree = "<group>"; };
+		F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FleetRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactCache.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		21DB225C0B6F843825AB03D0 /* FleetRunner */ = {
+			isa = PBXGroup;
+			children = (
+				FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */,
+				C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */,
+				31632F0B6302F50DC2BD764E /* CollectorClient.swift */,
+				D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */,
+				965A118D55FCDC99E6F0349A /* FleetAgent.swift */,
+				A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */,
+				C3122AFE32636B1FE9348CA1 /* Info.plist */,
+				BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */,
+				262BD6B87A5A8B607BE14F2B /* MiniZip.swift */,
+				6BB3BA830E838835C4AE2AD1 /* Protocol.swift */,
+				D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */,
+				35252602851DD4FC6838C5CC /* Telemetry.swift */,
+				C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */,
+				4A0BF52256E0CBF3AC96D589 /* Workloads.swift */,
+			);
+			path = FleetRunner;
+			sourceTree = "<group>";
+		};
+		2D9EC38E385BEE3CDAB7671E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */,
+				D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		628955CF3364EFA0F4CD2E71 /* FleetRunnerUITests */ = {
+			isa = PBXGroup;
+			children = (
+				09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */,
+			);
+			path = FleetRunnerUITests;
+			sourceTree = "<group>";
+		};
+		A78D4EEF925AB995CDD5C0C8 = {
+			isa = PBXGroup;
+			children = (
+				21DB225C0B6F843825AB03D0 /* FleetRunner */,
+				628955CF3364EFA0F4CD2E71 /* FleetRunnerUITests */,
+				2D9EC38E385BEE3CDAB7671E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4F7041A3776C49C9FDAFF8BD /* FleetRunner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F3286BB877D4AA75311CE685 /* Build configuration list for PBXNativeTarget "FleetRunner" */;
+			buildPhases = (
+				A5D4950877F41D019B81DCFE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FleetRunner;
+			packageProductDependencies = (
+			);
+			productName = FleetRunner;
+			productReference = F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9E799996EE18A91A258E84CF /* FleetRunnerUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 050D04B133577AFFC84F316E /* Build configuration list for PBXNativeTarget "FleetRunnerUITests" */;
+			buildPhases = (
+				33591D8880D86DC8B8E6526C /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E903CF753B378457FFEA50B6 /* PBXTargetDependency */,
+			);
+			name = FleetRunnerUITests;
+			packageProductDependencies = (
+			);
+			productName = FleetRunnerUITests;
+			productReference = D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		45E8C2DFBF297134C457A532 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					9E799996EE18A91A258E84CF = {
+						TestTargetID = 4F7041A3776C49C9FDAFF8BD;
+					};
+				};
+			};
+			buildConfigurationList = 9D9BB952DDF852794BB12E4D /* Build configuration list for PBXProject "FleetRunner" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = A78D4EEF925AB995CDD5C0C8;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2D9EC38E385BEE3CDAB7671E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4F7041A3776C49C9FDAFF8BD /* FleetRunner */,
+				9E799996EE18A91A258E84CF /* FleetRunnerUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		33591D8880D86DC8B8E6526C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6424FDD0EDCF7806C66447F0 /* FleetSmokeUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A5D4950877F41D019B81DCFE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */,
+				8591C734F0CC29AECDA37140 /* BenchSession.swift in Sources */,
+				B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */,
+				2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */,
+				BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */,
+				F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */,
+				18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */,
+				E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */,
+				A98911FE185A5563E58375CA /* Protocol.swift in Sources */,
+				29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */,
+				8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */,
+				B0BC3C9EA4C05413868B3AC0 /* ThermalWorkload.swift in Sources */,
+				38E30C23455915A872514955 /* Workloads.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E903CF753B378457FFEA50B6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4F7041A3776C49C9FDAFF8BD /* FleetRunner */;
+			targetProxy = B1315B864A8F6782CD92ADCB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4E39431C2AD4F4B015FE14D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.FleetRunnerUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = FleetRunner;
+			};
+			name = Debug;
+		};
+		5CEE8D15FBFE786A387135B8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		677E5779BF74BF2E34BD4E03 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FleetRunner/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6D8277B7B1A169524FA93CEC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		AA2C9846DBF7CD51634B4650 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FleetRunner/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		CCA36671A2708AA60F05329C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.FleetRunnerUITests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = FleetRunner;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		050D04B133577AFFC84F316E /* Build configuration list for PBXNativeTarget "FleetRunnerUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4E39431C2AD4F4B015FE14D3 /* Debug */,
+				CCA36671A2708AA60F05329C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9D9BB952DDF852794BB12E4D /* Build configuration list for PBXProject "FleetRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6D8277B7B1A169524FA93CEC /* Debug */,
+				5CEE8D15FBFE786A387135B8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F3286BB877D4AA75311CE685 /* Build configuration list for PBXNativeTarget "FleetRunner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				677E5779BF74BF2E34BD4E03 /* Debug */,
+				AA2C9846DBF7CD51634B4650 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 45E8C2DFBF297134C457A532 /* Project object */;
+}

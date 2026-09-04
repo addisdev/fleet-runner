@@ -1,0 +1,39 @@
+name: runner-android
+
+on:
+  push:
+    branches: [main, develop]
+    paths: ["runner-android/**", ".github/workflows/runner-android.yml"]
+  pull_request:
+    paths: ["runner-android/**", ".github/workflows/runner-android.yml"]
+
+defaults:
+  run:
+    working-directory: runner-android
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Deliberately without submodules. -Pfleet.skipNative drops the native
+      # build, so llama.cpp is never compiled here and cloning it would cost
+      # more than the tests do.
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          build-root-directory: runner-android
+
+      # The JVM tests cover the protocol, the synthetic backend's scaling, the
+      # cancellation registry and the thermal curve's bookkeeping -- none of
+      # which call into the native library. The arm64 llama.cpp build takes
+      # about fifteen minutes and needs a pinned NDK, so it is verified on a
+      # developer machine (and by the phones that actually run the benchmarks)
+      # rather than on every push.
+      - run: ./gradlew :app:testDebugUnitTest -Pfleet.skipNative

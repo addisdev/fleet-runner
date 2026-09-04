@@ -1,0 +1,5 @@
+build/
+DerivedData/
+Frameworks/llama.xcframework/
+.DS_Store
+xcuserdata/

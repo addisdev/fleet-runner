@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-collector</string>
+
+  <!-- The fleet-host variant: a spare 2016 MacBook Pro (Monterey, Intel) that
+       does nothing but host the collector. Node lives in ~/.local rather than
+       /opt/homebrew because this machine has no Homebrew and no Xcode command
+       line tools — the collector needs neither (better-sqlite3 installs from
+       a prebuild), and keeping it sudo-free means the whole stack can be
+       rebuilt over SSH without anyone at the keyboard. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__FLEET_HOME__/node_modules/tsx/dist/cli.mjs</string>
+    <string>src/server.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__FLEET_HOME__</string>
+
+  <!-- The devices long-poll this service; a crash that goes unnoticed strands
+       every runner. KeepAlive revives it however it died. Stop it deliberately
+       with `launchctl bootout`, never by killing the process. -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <!-- Absolute paths: the server falls back to path.resolve("data"), so a
+       wrong cwd would silently create a second, empty fleet.db and the whole
+       fleet history would look erased. Port 8788 because 8787 is taken on the
+       workstation by another project's dashboard. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__NODE_BIN_DIR__:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>FLEET_DATA_DIR</key>
+    <string>__FLEET_HOME__/data</string>
+    <key>FLEET_ARTIFACT_DIR</key>
+    <string>__FLEET_HOME__/artifacts/store</string>
+    <key>FLEET_PORT</key>
+    <string>8788</string>
+
+    <!-- Guards the dashboard's mutating endpoints (cancel, retry, forget a
+         device, artifact GC, pool power). A speed bump, not authentication:
+         POST /jobs stays open so CI and curl keep working, and anyone on the
+         LAN can still enqueue. What it stops is a stray tab or a misfired
+         script deleting something. Generate one per host and keep it out of
+         git -- this file is a template, the real value lives only in the
+         installed copy under ~/Library/LaunchAgents:
+             openssl rand -base64 24 | tr -d '/+=' | cut -c1-32
+    <key>FLEET_DASH_TOKEN</key>
+    <string>generate-your-own</string>
+    -->
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/fleet-collector.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fleet-collector.log</string>
+</dict>
+</plist>

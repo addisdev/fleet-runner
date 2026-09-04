@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-executor-ios</string>
+
+  <!-- The iOS host executor, on the workstation that hosts the GitHub runners
+       and has full Xcode.
+
+       It runs natively, NOT in the runner's Docker container: simulators are
+       driven through the host's CoreSimulator, and a Linux container on macOS
+       cannot reach them at any price. Docker here is for the Actions runner;
+       this is beside it, not inside it.
+
+       fleet-host cannot do this job — it has only Command Line Tools, so its
+       xcrun cannot find simctl. That is why iOS work is pinned here with
+       targets.executor rather than left to whichever executor is free. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__FLEET_HOME__/node_modules/tsx/dist/cli.mjs</string>
+    <string>src/executor.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__FLEET_HOME__</string>
+
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__NODE_BIN_DIR__:/usr/bin:/bin:/usr/sbin:/sbin:__ANDROID_PLATFORM_TOOLS__</string>
+    <!-- Loopback, not the LAN address. macOS gates local-network access per
+         app and a launchd-started process has no grant and cannot prompt for
+         one, so the LAN address returns EHOSTUNREACH here while working fine
+         from Terminal. com.addisdev.fleet-tunnel carries 18788 to fleet-host. -->
+    <key>FLEET_URL</key>
+    <string>http://127.0.0.1:18788</string>
+    <!-- The name jobs pin with: targets.executor = "mac-xcode". -->
+    <key>FLEET_EXECUTOR_NAME</key>
+    <string>mac-xcode</string>
+    <!-- The generic XCUITest bundle: one scheme that drives any app, told which
+         one through FLEET_APP_ID / FLEET_ASSERTS at launch. -->
+    <key>FLEET_IOS_PROJECT</key>
+    <string>__IOS_PROJECT__</string>
+    <!-- Playwright's browsers are installed in this user's home (sudo-free,
+         like adb and Maestro). This flag is what lets the executor accept
+         web-test; every other host refuses it rather than fail obscurely. -->
+    <key>FLEET_WEB</key>
+    <string>1</string>
+    <key>MAESTRO_BIN</key>
+    <string>__MAESTRO_BIN__</string>
+    <key>MAESTRO_CLI_NO_ANALYTICS</key>
+    <string>1</string>
+    <key>FLEET_FLOWS_DIR</key>
+    <string>__FLEET_HOME__/flows</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/fleet-executor-ios.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fleet-executor-ios.log</string>
+</dict>
+</plist>
