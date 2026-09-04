@@ -157,10 +157,10 @@ exists — the plist invokes it directly to avoid depending on a login `PATH`.
 | `POST /devices/register` | Device checks in with descriptor + pool tags (upsert) |
 | `GET /devices/:id/next-job` | Long-poll (~25 s) for `executor: "device"` work; 204 when none |
 | `GET /executor/next-job` | Long-poll for `executor: "host"` work (`?name=` labels the claimant) |
-| `POST /jobs` | Enqueue a job spec (curl, CI, or the future scheduler); 409 on duplicate `job_id` |
+| `POST /jobs` | Enqueue a job spec (curl, CI, or the future scheduler); 409 on duplicate `job_id`, and the reply's `status` says whether it was queued or is `waiting` on `depends_on` |
 | `GET /jobs/:id` | Job status, including `attempts`, `lease_deadline`, and `last_error` |
 | `POST /jobs/sweep` | Force a lease sweep now; returns the `job_id`s requeued and failed |
-| `POST /results` | Result rows (`kind: "result"`, idempotent by job/device/iter) and telemetry (`kind: "beacon"`, which renews the job's lease); `final: true` closes the job |
+| `POST /results` | Result rows (`kind: "result"`, idempotent by job/device/iter) and telemetry (`kind: "beacon"`, which renews the job's lease and answers `preempt`); `final: true` closes the job and promotes whatever waited on it — unless it carries `preempted: true`, which requeues it instead |
 | `POST /artifacts` | Upload raw bytes (models or app builds); returns `sha256` |
 | `GET /artifacts/:sha256` | Download, supports Range requests |
 | `POST /schedules` / `GET /schedules` | Upsert / list cron schedules (5-field cron + job template, `enabled` off by default) |
@@ -606,6 +606,24 @@ the executor's own link to the collector and to adb.
 **This path is reasoned through but has not been run.** Adding the anchor and
 exercising it once by hand is worth doing before a schedule depends on it.
 
+## Device state is journalled, not assumed
+
+`network-shape.ts` and `device-state.ts` both change something about a phone and
+must put it back. Both write their intent to a journal **before** touching the
+device — `~/.fleet/network-shape.json` and `~/.fleet/device-state.json` — so a
+crash between the two is recoverable, and both restore every attached device at
+executor startup before the first claim.
+
+That makes the journals operator-visible signals. **A device still listed in
+either file after a run is a device that needs manual attention**: a phone left
+offline, or left in Arabic at the largest dynamic type, looks broken rather than
+configured, and nothing else will tell you which.
+
+Restoration is asymmetric on purpose. Wifi is re-enabled unconditionally, since
+a fleet device off the network is broken by definition. Cellular data is only
+re-enabled when the journal says the executor disabled it, because turning data
+back on for a device deliberately kept off a metered SIM costs real money.
+
 ## Constraints
 
 `constraints` on a job spec is enforced in two places, and which place matters.
@@ -646,6 +664,76 @@ Host jobs fan out too. A host child is pinned exactly as a device child is, and
 the executor's own target selection already honours `targets.device_id`, so an
 `install` plus `ui-test` pair can cover the OS matrix with two job specs.
 
+## Job chains (`depends_on`)
+
+Build, then install what it built, then run the UI suite against it. Until now
+that shape needed something outside the collector sitting on the queue, polling
+for the build to close and posting the next job by hand — which is a piece of
+software with no home, no restart story, and nothing watching *it*.
+
+`depends_on` puts the relationship on the job that waits:
+
+```json
+{ "schema": 1, "job_id": "install-903", "workload": "install", "executor": "host",
+  "depends_on": ["build-903"],
+  "app": { "name": "greenfolio-android", "build": "903",
+           "sha256": "${jobs.build-903.artifact}" } }
+```
+
+A job with an unfinished dependency is inserted as **`waiting`**, which is a
+status of its own rather than a flag on a queued row. The claim loop asks for
+`status = 'queued'`, so a waiting job is invisible to it by construction — there
+is no second predicate that someone could forget to update.
+
+- When the last dependency reaches `done`, the waiter is promoted to `queued`,
+  in the same transaction that closed the dependency. A crash between the two
+  would leave a chain stalled on a job that has already finished, and nothing on
+  the collector would ever come back and fix that.
+- When a dependency **fails or is cancelled**, the waiter is failed with
+  `last_error` naming it, and that failure cascades the whole way down. A broken
+  build must not leave an install and a ui-test sitting in `waiting` until
+  somebody notices next week. Cancelling counts for the same reason failing
+  does: nothing behind a job that will never run can ever be satisfied.
+- A dependency that does not exist, and a cycle, are refused at enqueue with a
+  400. A chain that names a job nobody ever posted would otherwise sit in
+  `waiting` forever, looking exactly like a chain whose build is merely slow.
+- A dependency that has *already* failed makes the new job fail on arrival
+  rather than park in `waiting`: no promotion event is coming for it.
+
+### Template references
+
+At promotion time the waiter's stored spec is rewritten, so what the runner
+claims is a spec with real values in it rather than one carrying instructions it
+would have to interpret:
+
+| Reference | Resolves to |
+|---|---|
+| `${jobs.<id>.artifact}` | the first sha256 in that job's final result row's `artifacts` (or `test.artifacts`) |
+| `${jobs.<id>.metrics.<key>}` | that metric from the same row |
+
+A reference that is the *whole* string keeps the value's type — a metric
+substituted into `params.budget_s` stays a number, and a budget silently turned
+into the string `"91"` would compare wrong against every number it meets
+afterwards. A reference embedded in a longer string is interpolated as text.
+
+Two refusals worth knowing:
+
+- A reference may only name a job in this job's own `depends_on` (400 at
+  enqueue). Otherwise it would be filled from whatever that job happened to have
+  produced by the time this one was promoted, which is a race dressed up as a
+  feature.
+- A reference that cannot be resolved at promotion — the dependency finished
+  `done` but uploaded no artifact, or reported no such metric — **fails the
+  waiter** and says so. Promoting it with a blank hash would produce a job that
+  dies at download time, hours later and nowhere near the cause.
+
+Dependencies that are all closed by the time the job is posted queue it
+immediately, with the substitution done at enqueue instead — same result, no
+promotion event to hang it on.
+
+Fan-out children inherit their parent's dependencies, so a whole shelf can hang
+off one build.
+
 ## Artifact pins
 
 The GC reference scan reads job specs, results, schedules and templates. Two
@@ -663,6 +751,43 @@ kinds of artifact are safe from deletion without appearing in it:
 The artifacts page shows this in a "Kept" column, because the only honest
 reading of "references: 0" without it is "free to delete", which for a baseline
 is exactly wrong.
+
+## Energy
+
+`power.json` maps a pool to a smart plug. A pool that also declares `read_url`,
+`watts_path` and `energy_method` is sampled into `power_samples`, and a job's
+energy is integrated over its claim window.
+
+Three things are deliberate:
+
+- **`energy_method` is declared, never inferred.** A pool that omits it gets no
+  energy figure at all. `plug` means the plug feeds exactly one device;
+  `plug-shared` means several sit behind it, and the figure is **the pool's**.
+  It must not be divided by the device count — the devices are not identical,
+  they are not all busy, and a per-device number arrived at by division would be
+  indistinguishable in storage from a measured one.
+- **Gaps are counted, never bridged.** The integration refuses to extrapolate
+  past its first and last in-window sample and skips gaps over five minutes,
+  reporting `covered_ms` against `window_ms`. An unreachable plug must not
+  become fabricated draw, so fewer than two samples yields null rather than zero.
+- **The number includes charging, and says so.** A phone on a plug is also
+  charging. Subtracting a measured per-pool idle baseline removes the charger
+  brick's standing draw, but nothing can remove battery charging current from a
+  wall measurement. The reported quantity is therefore stated everywhere it
+  appears: watt-hours at the wall, above the pool's idle baseline, over the
+  job's claim window, including any charging during it.
+
+## Evals
+
+`/api/evals` and the Evals page group `batch`, `speech-eval` and `embed-eval`
+results by eval set and model, pivoted by device — so the next eval is a URL
+rather than a hand-written report.
+
+The page **counts and lists the rows it excluded**, with the metric keys each
+one does carry. That is the point rather than a detail: the plant-ID write-up's
+accuracy rode in `decode_tok_s` because vision had no field of its own, and
+those rows are unqueryable today. Silently dropping them would repeat exactly
+the mistake the page exists to prevent.
 
 ## Alerts
 
@@ -729,6 +854,49 @@ Defaults are 600 s and 3 attempts, per job via `lease.ttl_s` / `lease.max_attemp
 `drain` and `soak` default to 14400 s, since they run for hours between beacons.
 Pick a TTL longer than the worst-case gap between beacons for that workload — too
 short and the collector requeues a job that is still running fine.
+
+## Preemption
+
+A six-hour `app-soak` holds the only iPhone on the shelf. A one-minute smoke
+test lands behind it. Without preemption the choice is to wait six hours or to
+cancel the soak and throw away everything it has measured — and cancelling is
+what actually happens, which is why the soak never finishes.
+
+`preemptible: true` on a job spec offers a third answer: the job agrees to be
+interrupted.
+
+- **Asking.** The runner's beacon reply gains `preempt: true` when the running
+  job's spec is preemptible *and* a `queued` job with a **strictly higher**
+  priority would be handed to the same claimant. Strictly higher, because equal
+  priority is not a reason to throw away work in progress, and two jobs trading
+  a device back and forth is worse than either of them finishing late. The
+  eligibility question is answered by the same code the claim loop uses, so a
+  runner is only ever asked to stand aside for a job that would really replace
+  it.
+- **Stopping.** The collector never kills anything. `preempt: true` is a request
+  the runner honours on its own schedule: it stops at a point it can resume
+  from, uploads its progress as an artifact, and posts its final row with
+  `preempted: true`.
+- **Standing down.** That row does not close the job. It goes back to `queued`,
+  the attempt it burned is **handed back** (`attempts - 1`), the device lock is
+  released, and the uploaded sha256 is written into the spec as
+  `params.resume_from` so the next claim continues rather than starting the hour
+  again. It is not marked failed, and it does not appear in the failed list —
+  being interrupted by the operator's own priorities is not evidence that a job
+  is flaky, and counting it would exhaust `max_attempts` on a job that never
+  once misbehaved.
+
+The dashboard's `priority +1` on any queued job is the operator-facing half of
+this: raise a queued job past a running preemptible one and the next beacon
+carries the request. The job detail page says whether the running job is
+preemptible, because a priority button that does nothing visible is worse than
+no button.
+
+A runner that ignores `preempt` simply keeps running — the field is additive and
+the old behaviour is the default. `preemptible` is not yet in
+`schemas/job.schema.json`; the schema has no top-level `additionalProperties:
+false`, so the field validates today, but it should be documented there
+alongside `priority`.
 
 ## Phase 0 scope notes
 

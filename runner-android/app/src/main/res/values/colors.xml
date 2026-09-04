@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The dashboard's palette, in Android resources.
+
+  The same hex values as collector/dash/src/style.css, copied rather than
+  approximated: a phone on the shelf and the collector in a browser are one
+  product, and "close enough" green is how two screens stop looking like one
+  thing. values-night/ carries the dark half; nothing here is chosen by the app,
+  so the runner follows the system the way the dashboard follows
+  prefers-color-scheme.
+-->
+<resources>
+    <color name="fleet_bg">#F7F8FA</color>
+    <color name="fleet_panel">#FFFFFF</color>
+    <color name="fleet_panel_2">#F0F2F5</color>
+    <color name="fleet_line">#DDE1E7</color>
+    <color name="fleet_ink">#1C2025</color>
+    <color name="fleet_ink_dim">#7A828E</color>
+    <color name="fleet_ink_faint">#9AA2AE</color>
+    <color name="fleet_accent">#2F6FDB</color>
+    <color name="fleet_on_accent">#FFFFFF</color>
+    <color name="fleet_ok">#2E7D32</color>
+    <color name="fleet_warn">#9A5B00</color>
+    <color name="fleet_bad">#C62828</color>
+    <!-- The "fair" thermal step, which is neither ok nor warn. -->
+    <color name="fleet_fair">#9A8C20</color>
+
+    <!--
+      The brand amber and the mark's tile. The amber is not a theme colour: it
+      is the mark and the pulse and nothing else, so it does not change with
+      appearance. Interactive things stay fleet_accent, so the brand never
+      reads as a button. The tile lifts in values-night so the mark's square
+      does not sink into the panel behind it.
+    -->
+    <color name="fleet_pulse">#E3A44A</color>
+    <color name="fleet_tile">#1C2025</color>
+</resources>

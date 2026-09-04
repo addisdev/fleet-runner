@@ -57,6 +57,11 @@ function build() {
     .prepare(
       `SELECT
          COUNT(*) FILTER (WHERE status = 'queued')  AS queued,
+         -- Counted separately, never folded into queued. A waiting job is not
+         -- work the fleet is failing to pick up; it is a chain parked on a
+         -- dependency, and adding it to queue depth would make a healthy
+         -- pipeline look like a backlog.
+         COUNT(*) FILTER (WHERE status = 'waiting') AS waiting,
          COUNT(*) FILTER (WHERE status = 'claimed') AS claimed,
          COUNT(*) FILTER (WHERE status = 'done'   AND finished_at >= datetime('now','-24 hours')) AS done_24h,
          COUNT(*) FILTER (WHERE status = 'failed' AND finished_at >= datetime('now','-24 hours')) AS failed_24h,

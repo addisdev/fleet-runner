@@ -47,6 +47,38 @@ object Telemetry {
         }
     }
 
+    /**
+     * What is carrying this device's traffic right now: wifi / cellular /
+     * ethernet / unknown, the same four words the iOS runner reports.
+     *
+     * Recorded on every vantage row rather than derived later, because the
+     * whole point of measuring from where the device happens to be is that a
+     * phone on cellular and a desktop on fibre give different answers — and a
+     * timing with no idea what carried it is not comparable to anything. The
+     * reading is taken per request: a device can leave wifi mid-job, and the
+     * rows on either side of that are honestly different measurements.
+     *
+     * "unknown" covers the cases where the OS will not say — no active
+     * network, a VPN or a transport we do not name — and is deliberately a
+     * word rather than a guess.
+     */
+    fun networkType(context: Context): String {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return "unknown"
+        val caps = try {
+            cm.getNetworkCapabilities(cm.activeNetwork) ?: return "unknown"
+        } catch (_: SecurityException) {
+            // ACCESS_NETWORK_STATE denied: say so rather than invent a link.
+            return "unknown"
+        }
+        return when {
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) -> "wifi"
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) -> "cellular"
+            caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_ETHERNET) -> "ethernet"
+            else -> "unknown"
+        }
+    }
+
     /** PSS in MB — labeled "pss" in results, never compared to iOS phys_footprint. */
     fun pssMb(): Long {
         val info = Debug.MemoryInfo().also { Debug.getMemoryInfo(it) }

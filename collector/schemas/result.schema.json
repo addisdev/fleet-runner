@@ -55,6 +55,38 @@
       "disk_free_gb": { "type": "number", "description": "self-check: free space on the executor host's data volume" },
       "clock_offset_ms": { "type": "number", "description": "self-check: offset against NTP. A skewed executor clock makes every duration in the results table wrong in a way nothing else would reveal" },
       "checks_failed": { "type": "number", "description": "self-check: how many host checks failed, so the alert rule needs no parsing" },
+
+      "build_s": { "type": "number", "description": "build: wall-clock seconds for the build itself, excluding checkout and upload" },
+      "artifact_bytes": { "type": "number", "description": "build: size of the produced app or package" },
+
+      "wer_pct": { "type": "number", "description": "speech-eval: word error rate after case and punctuation normalisation. Lower is better, and it can exceed 100 when a model inserts more words than the reference contains" },
+      "rtf": { "type": "number", "description": "speech-eval: real-time factor, audio seconds per wall second. Above 1 means the device transcribes faster than the clip plays, which is the shippability line" },
+      "clips": { "type": "number", "description": "speech-eval: how many clips the score covers, so a partial run is never mistaken for a full one" },
+
+      "recall_at_1": { "type": "number", "description": "embed-eval: fraction of queries whose top hit is relevant" },
+      "recall_at_5": { "type": "number" },
+      "recall_at_10": { "type": "number" },
+      "docs_per_s": { "type": "number", "description": "embed-eval: embedding throughput" },
+      "dim": { "type": "number", "description": "embed-eval: embedding width, because recall is only comparable within one" },
+
+      "energy_wh": { "type": "number", "description": "watt-hours drawn across the job, integrated from the pool's smart plug or the machine's own power reporting" },
+      "energy_method": {
+        "enum": ["plug", "plug-shared", "os"],
+        "description": "How energy_wh was obtained. plug-shared means several devices sit behind one plug, so the figure is the pool's and must not be divided per device — the distinction exists because dividing it silently is the obvious wrong thing to do"
+      },
+
+      "dns_ms": { "type": "number", "description": "vantage: name resolution" },
+      "connect_ms": { "type": "number", "description": "vantage: TCP connect" },
+      "tls_ms": { "type": "number", "description": "vantage: TLS handshake" },
+      "ttfb_ms": { "type": "number", "description": "vantage: time to first byte" },
+      "network_type": { "type": "string", "description": "vantage: wifi, cellular, ethernet or unknown, as the agent saw it. A latency figure with no idea what carried it is not comparable to anything" },
+
+      "pss_mb": { "type": "number", "description": "app-soak: proportional set size of the app under test at this sample" },
+      "jank_pct": { "type": "number", "description": "app-soak: percentage of janky frames since the last sample" },
+      "crashes": { "type": "number", "description": "app-soak: crashes observed in this interval" },
+
+      "locales": { "type": "number", "description": "locale-shots: how many locales the run covered" },
+      "shots": { "type": "number", "description": "locale-shots and a11y-audit: screenshots captured" },
         "drain_pct_per_h": { "type": "number", "description": "drain: battery percent consumed per hour" },
         "diff_pct": { "type": "number", "description": "web-shots: percent of pixels differing from the accepted baseline (100 when the dimensions changed)" },
 

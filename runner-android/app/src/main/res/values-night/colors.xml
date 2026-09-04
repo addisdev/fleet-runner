@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="fleet_bg">#16181C</color>
+    <color name="fleet_panel">#1C1F24</color>
+    <color name="fleet_panel_2">#21252B</color>
+    <color name="fleet_line">#31363E</color>
+    <color name="fleet_ink">#E6E8EC</color>
+    <color name="fleet_ink_dim">#98A1AD</color>
+    <color name="fleet_ink_faint">#767E89</color>
+    <color name="fleet_accent">#6EA3FF</color>
+    <color name="fleet_on_accent">#10131A</color>
+    <color name="fleet_ok">#57B45C</color>
+    <color name="fleet_warn">#D5952F</color>
+    <color name="fleet_bad">#EF5D5D</color>
+    <color name="fleet_fair">#CBB93C</color>
+
+    <color name="fleet_pulse">#E3A44A</color>
+    <!-- Ink on near-ink leaves the pulse floating with no square behind it. -->
+    <color name="fleet_tile">#2A2E35</color>
+</resources>

@@ -26,7 +26,7 @@ double ms_since(std::chrono::steady_clock::time_point t0) {
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_taylab_fleetrunner_backend_LlamaNative_nativeLoad(
-        JNIEnv *env, jobject, jstring jpath, jint n_ctx, jint n_threads) {
+        JNIEnv *env, jobject, jstring jpath, jint n_ctx, jint n_threads, jboolean embeddings) {
     const char *path = env->GetStringUTFChars(jpath, nullptr);
 
     llama_backend_init();
@@ -43,6 +43,18 @@ Java_com_taylab_fleetrunner_backend_LlamaNative_nativeLoad(
     cparams.n_batch = (uint32_t) n_ctx;
     cparams.n_threads = n_threads;
     cparams.n_threads_batch = n_threads;
+
+    // Embedding contexts are a different build of the same model: the tensor
+    // has to be requested up front, and a pooling type has to be named. Mean
+    // pooling rather than none, so a document is one vector -- with
+    // LLAMA_POOLING_TYPE_NONE llama.cpp hands back per-token states and every
+    // caller has to invent its own pooling rule, which is exactly how two
+    // runners end up producing different vectors from the same model and the
+    // recall numbers stop being comparable across the fleet.
+    if (embeddings == JNI_TRUE) {
+        cparams.embeddings = true;
+        cparams.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+    }
 
     llama_context *ctx = llama_init_from_model(model, cparams);
     if (!ctx) {
@@ -184,6 +196,89 @@ Java_com_taylab_fleetrunner_backend_LlamaNative_nativeGenerate(
     llama_batch_free(single);
     llama_sampler_free(sampler);
     return env->NewStringUTF(out.c_str());
+}
+
+// One pooled embedding vector for one string, for the embed-eval workload.
+// The context must have been opened with embeddings=true (see nativeLoad):
+// without it llama.cpp keeps no embedding tensor and there is nothing here to
+// read, which is reported as a null return rather than as a vector of zeros --
+// a plausible-looking zero vector is the failure this workload exists to catch.
+extern "C" JNIEXPORT jfloatArray JNICALL
+Java_com_taylab_fleetrunner_backend_LlamaNative_nativeEmbed(
+        JNIEnv *env, jobject, jlong handle, jstring jtext) {
+    auto *fc = (FleetCtx *) handle;
+    if (!fc) return nullptr;
+    llama_context *ctx = fc->ctx;
+    const llama_vocab *vocab = llama_model_get_vocab(fc->model);
+
+    const char *ctext = env->GetStringUTFChars(jtext, nullptr);
+    std::string text(ctext);
+    env->ReleaseStringUTFChars(jtext, ctext);
+
+    const int n_max = -llama_tokenize(
+            vocab, text.c_str(), (int32_t) text.size(), nullptr, 0, true, true);
+    if (n_max <= 0) {
+        LOGE("embed tokenize sizing failed");
+        return nullptr;
+    }
+    std::vector<llama_token> tokens(n_max);
+    if (llama_tokenize(vocab, text.c_str(), (int32_t) text.size(),
+                       tokens.data(), n_max, true, true) < 0) {
+        LOGE("embed tokenize failed");
+        return nullptr;
+    }
+
+    // A document longer than the context is truncated rather than refused: a
+    // corpus with one long document should still produce a recall number, and
+    // the truncation is the same on every device in the fleet because n_ctx
+    // comes from the job's params.
+    int n_tokens = (int) tokens.size();
+    const int n_ctx = (int) llama_n_ctx(ctx);
+    if (n_tokens > n_ctx) n_tokens = n_ctx;
+
+    llama_memory_clear(llama_get_memory(ctx), true);
+
+    llama_batch batch = llama_batch_init(n_tokens, 0, 1);
+    for (int i = 0; i < n_tokens; i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        // Every token is an output: mean pooling averages the states of the
+        // tokens that were asked for, so marking only the last one would pool
+        // a single state and quietly call it a document embedding.
+        batch.logits[i] = 1;
+    }
+    batch.n_tokens = n_tokens;
+
+    // BERT-shaped embedding models are encoder-only and llama_decode refuses
+    // them; generative GGUFs are decoder-only and llama_encode refuses those.
+    const bool has_encoder = llama_model_has_encoder(fc->model);
+    const bool has_decoder = llama_model_has_decoder(fc->model);
+    int rc = (has_encoder && !has_decoder) ? llama_encode(ctx, batch)
+                                           : llama_decode(ctx, batch);
+    llama_batch_free(batch);
+    if (rc != 0) {
+        LOGE("embed %s failed: %d", (has_encoder && !has_decoder) ? "encode" : "decode", rc);
+        return nullptr;
+    }
+
+    const float *emb = llama_get_embeddings_seq(ctx, 0);
+    if (!emb) emb = llama_get_embeddings_ith(ctx, n_tokens - 1);
+    if (!emb) {
+        LOGE("no embedding tensor; context was not built with embeddings=true");
+        return nullptr;
+    }
+
+    const int n_embd = llama_model_n_embd(fc->model);
+    if (n_embd <= 0) {
+        LOGE("model reports n_embd %d", n_embd);
+        return nullptr;
+    }
+    jfloatArray arr = env->NewFloatArray(n_embd);
+    if (!arr) return nullptr;
+    env->SetFloatArrayRegion(arr, 0, n_embd, emb);
+    return arr;
 }
 
 extern "C" JNIEXPORT void JNICALL

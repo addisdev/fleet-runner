@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1094A2006ACBE463AD53F5C6 /* Percentile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67ED6D6D92FC1E39451CC4B1 /* Percentile.swift */; };
 		18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */; };
 		29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */; };
 		2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */; };
@@ -18,6 +19,9 @@
 		B0BC3C9EA4C05413868B3AC0 /* ThermalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */; };
 		B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
 		BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965A118D55FCDC99E6F0349A /* FleetAgent.swift */; };
+		C0D50E9B5C78CC2307571AAF /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086C0F942E2B16C41C3BE0B2 /* Theme.swift */; };
+		C8B0A7C9E5C27845AA9ED041 /* EmbedEvalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BAD3B71194EA5B21648E1A4 /* EmbedEvalWorkload.swift */; };
+		D704AFBF0BF1559D31AE6C9B /* VantageWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50ADC470CF907EE3A603AA44 /* VantageWorkload.swift */; };
 		E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
 		F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
 		F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
@@ -34,11 +38,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		086C0F942E2B16C41C3BE0B2 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSmokeUITests.swift; sourceTree = "<group>"; };
+		0BAD3B71194EA5B21648E1A4 /* EmbedEvalWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbedEvalWorkload.swift; sourceTree = "<group>"; };
 		262BD6B87A5A8B607BE14F2B /* MiniZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniZip.swift; sourceTree = "<group>"; };
 		31632F0B6302F50DC2BD764E /* CollectorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectorClient.swift; sourceTree = "<group>"; };
 		35252602851DD4FC6838C5CC /* Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Telemetry.swift; sourceTree = "<group>"; };
 		4A0BF52256E0CBF3AC96D589 /* Workloads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workloads.swift; sourceTree = "<group>"; };
+		50ADC470CF907EE3A603AA44 /* VantageWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VantageWorkload.swift; sourceTree = "<group>"; };
+		67ED6D6D92FC1E39451CC4B1 /* Percentile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Percentile.swift; sourceTree = "<group>"; };
 		6BB3BA830E838835C4AE2AD1 /* Protocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Protocol.swift; sourceTree = "<group>"; };
 		965A118D55FCDC99E6F0349A /* FleetAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetAgent.swift; sourceTree = "<group>"; };
 		A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetRunnerApp.swift; sourceTree = "<group>"; };
@@ -61,15 +69,19 @@
 				C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */,
 				31632F0B6302F50DC2BD764E /* CollectorClient.swift */,
 				D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */,
+				0BAD3B71194EA5B21648E1A4 /* EmbedEvalWorkload.swift */,
 				965A118D55FCDC99E6F0349A /* FleetAgent.swift */,
 				A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */,
 				C3122AFE32636B1FE9348CA1 /* Info.plist */,
 				BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */,
 				262BD6B87A5A8B607BE14F2B /* MiniZip.swift */,
+				67ED6D6D92FC1E39451CC4B1 /* Percentile.swift */,
 				6BB3BA830E838835C4AE2AD1 /* Protocol.swift */,
 				D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */,
 				35252602851DD4FC6838C5CC /* Telemetry.swift */,
+				086C0F942E2B16C41C3BE0B2 /* Theme.swift */,
 				C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */,
+				50ADC470CF907EE3A603AA44 /* VantageWorkload.swift */,
 				4A0BF52256E0CBF3AC96D589 /* Workloads.swift */,
 			);
 			path = FleetRunner;
@@ -190,14 +202,18 @@
 				8591C734F0CC29AECDA37140 /* BenchSession.swift in Sources */,
 				B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */,
 				2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */,
+				C8B0A7C9E5C27845AA9ED041 /* EmbedEvalWorkload.swift in Sources */,
 				BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */,
 				F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */,
 				18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */,
 				E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */,
+				1094A2006ACBE463AD53F5C6 /* Percentile.swift in Sources */,
 				A98911FE185A5563E58375CA /* Protocol.swift in Sources */,
 				29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */,
 				8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */,
+				C0D50E9B5C78CC2307571AAF /* Theme.swift in Sources */,
 				B0BC3C9EA4C05413868B3AC0 /* ThermalWorkload.swift in Sources */,
+				D704AFBF0BF1559D31AE6C9B /* VantageWorkload.swift in Sources */,
 				38E30C23455915A872514955 /* Workloads.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -11,6 +11,9 @@ import {
 import { evalMatch } from "../src/match.js";
 import { parseAmStart, amStartProblem } from "../src/am-start.js";
 import { parseNetworkProfile } from "../src/network-shape.js";
+import { runPowerChecks } from "../src/power.test.js";
+import { runEvalChecks } from "../src/api/evals.test.js";
+import { runDeviceParserChecks } from "../src/device-parsers.test.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
 const BASE = process.env.FLEET_URL ?? "http://127.0.0.1:8788";
@@ -2124,6 +2127,269 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
   try { parseNetworkProfile("slowish"); } catch { threw = true; }
   check("network: an unknown profile throws rather than running unshaped", threw);
 }
+
+// --- job chains: depends_on ---
+
+// A build → install → ui-test sequence used to need a script sitting on the
+// queue watching for the build to close. The dependency lives on the waiting
+// job instead — which is also what makes a broken build stop the chain rather
+// than let it test yesterday's APK.
+//
+// The workload is scoped to this run and declared by one device, so the claims
+// below can only ever be offered the jobs this section enqueued: a leftover
+// queued job from an earlier section cannot wander into the assertions.
+{
+  const CHAIN_WL = `smoke-chain-wl-${run}`;
+  const CHAIN_DEV = `smoke-chain-dev-${run}`;
+  const BUILD = `smoke-chain-build-${run}`;
+  const INSTALL = `smoke-chain-install-${run}`;
+  const chainJob = (job_id: string, extra: Record<string, unknown> = {}) => ({
+    schema: 1, job_id, workload: CHAIN_WL, executor: "device",
+    targets: { device_id: CHAIN_DEV }, ...extra,
+  });
+
+  await json("POST", "/devices/register", {
+    device_id: CHAIN_DEV, descriptor: { model: "Chainlink", os: "android-14", ram_mb: 8000 },
+    pools: [], capabilities: [CHAIN_WL],
+  });
+
+  const head = await json("POST", "/jobs", chainJob(BUILD));
+  check("chain: the head of a chain queues normally", head.body?.status === "queued", JSON.stringify(head.body));
+
+  const waiter = await json("POST", "/jobs", chainJob(INSTALL, {
+    depends_on: [BUILD],
+    app: { name: "chain-app", build: "smoke", sha256: `\${jobs.${BUILD}.artifact}` },
+    params: { budget_s: `\${jobs.${BUILD}.metrics.build_s}` },
+  }));
+  check("chain: a job whose dependency is unfinished is inserted waiting",
+    waiter.status === 201 && waiter.body?.status === "waiting", JSON.stringify(waiter.body));
+
+  // The whole reason 'waiting' is a status rather than a flag: the claim loop
+  // asks for 'queued' and so cannot see it.
+  const offered = await json("GET", `/devices/${CHAIN_DEV}/next-job`);
+  check("chain: the queue offers the dependency, never the waiter",
+    offered.body?.job_id === BUILD, JSON.stringify(offered.body?.job_id));
+  const parked = await json("GET", `/api/jobs/${INSTALL}`);
+  check("chain: the waiter is still waiting", parked.body?.status === "waiting", parked.body?.status);
+  check("chain: and says what it waits for",
+    JSON.stringify(parked.body?.depends_on) === JSON.stringify([BUILD]), JSON.stringify(parked.body?.depends_on));
+
+  // Finish the build with an artifact and a metric, which is what the waiter's
+  // spec is written against.
+  const apk = Buffer.from(`chain-apk-${run}`.repeat(50));
+  const apkSha = createHash("sha256").update(apk).digest("hex");
+  await fetch(`${BASE}/artifacts`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream", "x-artifact-name": "chain.apk" },
+    body: apk,
+  });
+  const closed = await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: BUILD, device_id: CHAIN_DEV, iter: 0, final: true, ok: true,
+    metrics: { build_s: 91 }, test: { passed: 1, failed: 0, artifacts: [apkSha] },
+  });
+  check("chain: closing the dependency promotes the waiter",
+    ((closed.body?.promoted ?? []) as string[]).includes(INSTALL), JSON.stringify(closed.body));
+
+  const promoted = await json("GET", `/api/jobs/${INSTALL}`);
+  check("chain: the promoted job is queued", promoted.body?.status === "queued", promoted.body?.status);
+  check("chain: ${jobs.<id>.artifact} resolves into the stored spec",
+    promoted.body?.spec?.app?.sha256 === apkSha, JSON.stringify(promoted.body?.spec?.app));
+  // A metric that is the whole string keeps its type: a budget substituted as
+  // the string "91" would compare against numbers wrong for ever after.
+  check("chain: ${jobs.<id>.metrics.<key>} resolves and stays a number",
+    promoted.body?.spec?.params?.budget_s === 91, JSON.stringify(promoted.body?.spec?.params));
+  check("chain: a promoted job is claimable",
+    (await json("GET", `/devices/${CHAIN_DEV}/next-job`)).body?.job_id === INSTALL);
+  await json("POST", `/api/jobs/${INSTALL}/cancel`);
+
+  // A dependency that fails takes its waiter with it. Leaving the waiter in
+  // 'waiting' would be worse than failing it: nothing will ever close that
+  // dependency again, so it would sit there until someone noticed.
+  const FAIL_DEP = `smoke-chain-faildep-${run}`, FAIL_WAIT = `smoke-chain-failwait-${run}`;
+  await json("POST", "/jobs", chainJob(FAIL_DEP));
+  await json("POST", "/jobs", chainJob(FAIL_WAIT, { depends_on: [FAIL_DEP] }));
+  const broke = await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: FAIL_DEP, device_id: CHAIN_DEV, iter: 0, final: true, ok: false,
+    error: "compile error",
+  });
+  check("chain: a failed dependency fails its waiter",
+    ((broke.body?.failed ?? []) as string[]).includes(FAIL_WAIT), JSON.stringify(broke.body));
+  const failedWaiter = await json("GET", `/api/jobs/${FAIL_WAIT}`);
+  check("chain: and the waiter's error names the dependency",
+    failedWaiter.body?.status === "failed" && String(failedWaiter.body?.last_error).includes(FAIL_DEP),
+    JSON.stringify(failedWaiter.body?.last_error));
+
+  // Cancelling is not failing, but it is just as final: nothing behind a
+  // cancelled job will ever be satisfied, and the cascade runs the whole way
+  // down rather than stopping at the first link.
+  const CA = `smoke-chain-ca-${run}`, CB = `smoke-chain-cb-${run}`, CC = `smoke-chain-cc-${run}`;
+  await json("POST", "/jobs", chainJob(CA));
+  await json("POST", "/jobs", chainJob(CB, { depends_on: [CA] }));
+  await json("POST", "/jobs", chainJob(CC, { depends_on: [CB] }));
+  const cancelled = await json("POST", `/api/jobs/${CA}/cancel`, { reason: "smoke" });
+  check("chain: cancelling a job cascades to everything queued behind it",
+    ((cancelled.body?.cascaded ?? []) as string[]).includes(CB) &&
+      ((cancelled.body?.cascaded ?? []) as string[]).includes(CC),
+    JSON.stringify(cancelled.body));
+  const cb = await json("GET", `/api/jobs/${CB}`);
+  const cc = await json("GET", `/api/jobs/${CC}`);
+  check("chain: the direct waiter names the cancellation",
+    cb.body?.status === "failed" && String(cb.body?.last_error).includes("cancelled"), JSON.stringify(cb.body?.last_error));
+  check("chain: and the link beyond it goes too",
+    cc.body?.status === "failed" && String(cc.body?.last_error).includes(CB), JSON.stringify(cc.body?.last_error));
+
+  // Refusals, all at enqueue: a chain that is wrong should never become a row.
+  const cyc = await json("POST", "/jobs", chainJob(`smoke-chain-self-${run}`, {
+    depends_on: [`smoke-chain-self-${run}`],
+  }));
+  check("chain: a cycle is refused at enqueue",
+    cyc.status === 400 && String(cyc.body?.error).includes("cycle"), JSON.stringify(cyc));
+  const ghost = await json("POST", "/jobs", chainJob(`smoke-chain-ghost-${run}`, {
+    depends_on: [`smoke-chain-nobody-${run}`],
+  }));
+  check("chain: a dependency that does not exist is refused at enqueue",
+    ghost.status === 400 && String(ghost.body?.error).includes("does not exist"), JSON.stringify(ghost));
+  const stray = await json("POST", "/jobs", chainJob(`smoke-chain-stray-${run}`, {
+    depends_on: [BUILD],
+    app: { name: "chain-app", build: "smoke", sha256: `\${jobs.${FAIL_DEP}.artifact}` },
+  }));
+  check("chain: a reference to a job outside depends_on is refused",
+    stray.status === 400 && String(stray.body?.error).includes(FAIL_DEP), JSON.stringify(stray));
+
+  // Dependencies already satisfied get no promotion event, so the substitution
+  // promotion would have done has to happen at enqueue instead.
+  const LATE = `smoke-chain-late-${run}`;
+  const late = await json("POST", "/jobs", chainJob(LATE, {
+    depends_on: [BUILD],
+    app: { name: "chain-app", build: "smoke", sha256: `\${jobs.${BUILD}.artifact}` },
+  }));
+  check("chain: a dependency already done queues straight away", late.body?.status === "queued", JSON.stringify(late.body));
+  const lateRow = await json("GET", `/api/jobs/${LATE}`);
+  check("chain: and its references were filled in at enqueue",
+    lateRow.body?.spec?.app?.sha256 === apkSha, JSON.stringify(lateRow.body?.spec?.app));
+  await json("POST", `/api/jobs/${LATE}/cancel`);
+}
+
+// --- preemption: a long job stands aside for higher-priority work ---
+
+// The collector never kills anything. It answers a beacon with preempt:true and
+// the runner decides when to stop; the job goes back on the queue with its
+// progress and without the attempt, because being interrupted by the operator's
+// own priorities is not evidence that a job is flaky.
+{
+  const PRE_WL = `smoke-preempt-wl-${run}`;
+  const PRE_DEV = `smoke-preempt-dev-${run}`;
+  const LONG = `smoke-preempt-long-${run}`;
+  const PEER = `smoke-preempt-peer-${run}`;
+  const URGENT = `smoke-preempt-urgent-${run}`;
+  const beacon = () => json("POST", "/results", {
+    schema: 1, kind: "beacon", device_id: PRE_DEV, job_id: LONG,
+    beacon: { battery_pct: 90, charging: true, thermal: "nominal" },
+  });
+
+  await json("POST", "/devices/register", {
+    device_id: PRE_DEV, descriptor: { model: "Marathon", os: "android-14", ram_mb: 8000 },
+    pools: [], capabilities: [PRE_WL],
+  });
+  await json("POST", "/jobs", {
+    schema: 1, job_id: LONG, workload: PRE_WL, executor: "device",
+    preemptible: true, params: { hours: 6 }, targets: { device_id: PRE_DEV },
+  });
+  const claim = await json("GET", `/devices/${PRE_DEV}/next-job`);
+  check("preempt: the long job is claimed", claim.body?.job_id === LONG, JSON.stringify(claim.body?.job_id));
+  check("preempt: preemptible survives the round trip into the claimed spec", claim.body?.preemptible === true);
+
+  const quiet = await beacon();
+  check("preempt: with nothing queued above it the beacon says carry on",
+    quiet.body?.lease_renewed === true && quiet.body?.preempt === false, JSON.stringify(quiet.body));
+
+  // Equal priority is not a reason to throw away work in progress; two jobs
+  // trading a device back and forth is worse than either finishing late.
+  await json("POST", "/jobs", {
+    schema: 1, job_id: PEER, workload: PRE_WL, executor: "device", targets: { device_id: PRE_DEV },
+  });
+  const peered = await beacon();
+  check("preempt: an equal-priority job does not interrupt anything",
+    peered.body?.preempt === false, JSON.stringify(peered.body));
+
+  await json("POST", "/jobs", {
+    schema: 1, job_id: URGENT, workload: PRE_WL, executor: "device", priority: 9,
+    targets: { device_id: PRE_DEV },
+  });
+  const asked = await beacon();
+  check("preempt: a strictly higher-priority job asks the runner to stand aside",
+    asked.body?.preempt === true, JSON.stringify(asked.body));
+
+  // A job that never said it could be interrupted is never asked to be.
+  const STUBBORN = `smoke-preempt-stubborn-${run}`;
+  const STUB_DEV = `smoke-preempt-stubborn-dev-${run}`;
+  const STUB_WL = `smoke-preempt-stubborn-wl-${run}`;
+  await json("POST", "/devices/register", {
+    device_id: STUB_DEV, descriptor: { model: "Stubborn", os: "android-14" }, pools: [], capabilities: [STUB_WL],
+  });
+  await json("POST", "/jobs", {
+    schema: 1, job_id: STUBBORN, workload: STUB_WL, executor: "device", targets: { device_id: STUB_DEV },
+  });
+  await json("GET", `/devices/${STUB_DEV}/next-job`);
+  await json("POST", "/jobs", {
+    schema: 1, job_id: `${STUBBORN}-jumper`, workload: STUB_WL, executor: "device", priority: 9,
+    targets: { device_id: STUB_DEV },
+  });
+  const stubborn = await json("POST", "/results", {
+    schema: 1, kind: "beacon", device_id: STUB_DEV, job_id: STUBBORN,
+    beacon: { battery_pct: 90, charging: true, thermal: "nominal" },
+  });
+  check("preempt: a job that is not preemptible is never asked to stand aside",
+    stubborn.body?.lease_renewed === true && stubborn.body?.preempt === false, JSON.stringify(stubborn.body));
+
+  // The runner checkpoints and posts a final row saying so.
+  const ckpt = Buffer.from(`preempt-checkpoint-${run}`.repeat(50));
+  const ckptSha = createHash("sha256").update(ckpt).digest("hex");
+  await fetch(`${BASE}/artifacts`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream", "x-artifact-name": "checkpoint.bin" },
+    body: ckpt,
+  });
+  const before = await json("GET", `/api/jobs/${LONG}`);
+  const stood = await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: LONG, device_id: PRE_DEV, iter: 0, final: true, ok: true,
+    preempted: true, artifacts: [ckptSha], metrics: { hours_done: 2 },
+  });
+  check("preempt: a preempted final requeues instead of closing the job",
+    stood.body?.preempted === true && stood.body?.resume_from === ckptSha, JSON.stringify(stood.body));
+
+  const after = await json("GET", `/api/jobs/${LONG}`);
+  check("preempt: the job is queued again, not failed", after.body?.status === "queued", after.body?.status);
+  check("preempt: the attempt is handed back",
+    after.body?.attempts === (before.body?.attempts ?? 0) - 1,
+    `before=${before.body?.attempts} after=${after.body?.attempts}`);
+  check("preempt: the checkpoint is recorded for the resumed run",
+    after.body?.spec?.params?.resume_from === ckptSha, JSON.stringify(after.body?.spec?.params));
+  check("preempt: standing aside is not a failure in the failed list",
+    !((await json("GET", "/api/jobs?status=failed&per_page=200")).body?.jobs ?? []).some((j: any) => j.job_id === LONG));
+
+  // And the device is free for the job that displaced it.
+  const next = await json("GET", `/devices/${PRE_DEV}/next-job`);
+  check("preempt: the higher-priority job goes first now", next.body?.job_id === URGENT, JSON.stringify(next.body?.job_id));
+  for (const id of [URGENT, LONG, PEER, STUBBORN, `${STUBBORN}-jumper`]) await json("POST", `/api/jobs/${id}/cancel`);
+}
+
+// --- energy accounting and the evals pivot ---
+
+// Both are pure over their inputs, so they are exercised here for the same
+// reason the match language and the am-start parser are: the interesting
+// mistakes (integrating across a gap, dividing a shared plug's draw, dropping
+// a row instead of reporting it excluded) are arithmetic, not HTTP.
+runPowerChecks(check);
+runEvalChecks(check);
+
+// --- device workloads: parsing what the phone actually said ---
+//
+// Same reason as the am-start parser above: these decide whether a number is
+// stored at all, and the shapes that matter (a tool that printed a warning
+// instead of data, an empty crash buffer versus an unreachable device) only
+// ever appear on real hardware.
+runDeviceParserChecks(check);
 
 console.log(failures === 0 ? "\nsmoke: ALL PASS" : `\nsmoke: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

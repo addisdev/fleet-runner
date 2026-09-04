@@ -1,6 +1,6 @@
 // Shared presentational bits and the formatters every page needs.
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { Icon, type IconName } from "./icons.js";
 import { BASE, navigate, useRoute } from "./router.js";
 
@@ -39,18 +39,58 @@ export function Panel({ title, children, aside }: { title?: string; children: Co
   );
 }
 
+/**
+ * True for one beat after `value` changes — false on the first render.
+ *
+ * The dashboard updates numbers in place from the live stream, which is right
+ * (re-animating a whole panel because one count moved would be noise) but
+ * makes a change easy to miss entirely if you happened to look away. This is
+ * the smallest signal that says "that number just moved": no layout shift, no
+ * colour flash, gone in 180ms.
+ */
+function useChanged(value: unknown): boolean {
+  const previous = useRef(value);
+  const [changed, setChanged] = useState(false);
+
+  useEffect(() => {
+    if (Object.is(previous.current, value)) return;
+    previous.current = value;
+    setChanged(true);
+    const t = setTimeout(() => setChanged(false), 220);
+    return () => clearTimeout(t);
+  }, [value]);
+
+  return changed;
+}
+
 export function Stat({ label, value, tone }: { label: string; value: ComponentChildren; tone?: "ok" | "warn" | "bad" }) {
+  // Only primitives are worth watching: a tile rendering an element gets a new
+  // vnode every render and would flash forever.
+  const watchable = typeof value === "string" || typeof value === "number" ? value : null;
+  const changed = useChanged(watchable);
   return (
-    <div class={`stat${tone ? ` ${tone}` : ""}`}>
+    <div class={`stat${tone ? ` ${tone}` : ""}${changed ? " changed" : ""}`}>
       <b>{value}</b>
       <small>{label}</small>
     </div>
   );
 }
 
-/* Device states get an icon; job states do not. Online/stale/offline are
-   read across a whole shelf at a glance, job status is read one row at a time. */
-const PILL_ICON: Partial<Record<string, IconName>> = { online: "online", stale: "stale", offline: "offline" };
+/* Every state gets an icon — device states and job states alike.
+   Device states are read across a whole shelf at a glance; job states are read
+   down a long Jobs table, where a column of identical circles differing only
+   inside is faster to scan than five words of similar length. The word stays
+   in every pill, so the icon is never the only thing carrying the meaning. */
+const PILL_ICON: Partial<Record<string, IconName>> = {
+  online: "online",
+  stale: "stale",
+  offline: "offline",
+  queued: "queued",
+  claimed: "claimed",
+  done: "done",
+  failed: "failed",
+  cancelled: "cancelled",
+};
 
 export const Pill = ({ kind, children }: { kind: string; children?: ComponentChildren }) => {
   const icon = PILL_ICON[kind];
@@ -62,8 +102,38 @@ export const Pill = ({ kind, children }: { kind: string; children?: ComponentChi
   );
 };
 
-export function Loading({ what }: { what: string }) {
-  return <p class="skeleton">Loading {what}…</p>;
+/**
+ * A shape-true placeholder for the panel that is about to arrive.
+ *
+ * "Loading devices…" told you the same thing every skeleton does, but the page
+ * then jumped from one line of text to a full table. A placeholder shaped like
+ * its panel means the layout is already correct when the data lands, so
+ * nothing below it moves.
+ *
+ * `what` is still announced, for anyone who is being read the page rather than
+ * looking at it — the blocks themselves are decoration and stay hidden.
+ */
+export function Loading({ what, shape = "rows" }: { what: string; shape?: "rows" | "stats" | "none" }) {
+  if (shape === "none") return <p class="skeleton">Loading {what}…</p>;
+  return (
+    <div role="status" aria-live="polite">
+      <span class="visually-hidden">Loading {what}…</span>
+      {shape === "stats" ? (
+        <div class="sk-stats" aria-hidden="true">
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <div key={i} class="sk sk-stat" />
+          ))}
+        </div>
+      ) : (
+        <div class="sk-rows" aria-hidden="true">
+          <div class="sk sk-head" />
+          <div class="sk sk-row" />
+          <div class="sk sk-row" style={{ width: "82%" }} />
+          <div class="sk sk-row" style={{ width: "91%" }} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ErrorBox({ error }: { error: Error }) {
@@ -76,15 +146,71 @@ export const Empty = ({ children }: { children: ComponentChildren }) => <p class
 export function Loaded<T>({
   state,
   what,
+  shape,
+  empty,
   children,
 }: {
   state: { data: T | null; error: Error | null; loading: boolean };
   what: string;
+  /** Shape of the placeholder while the first response is in flight. */
+  shape?: "rows" | "stats" | "none";
+  /** Drawn instead of the plain "No x." sentence when the fetch returns nothing. */
+  empty?: ComponentChildren;
   children: (data: T) => ComponentChildren;
 }) {
   if (state.error) return <ErrorBox error={state.error} />;
-  if (!state.data) return state.loading ? <Loading what={what} /> : <Empty>No {what}.</Empty>;
+  if (!state.data)
+    return state.loading ? <Loading what={what} shape={shape} /> : <>{empty ?? <Empty>No {what}.</Empty>}</>;
   return <>{children(state.data)}</>;
+}
+
+/**
+ * A clock that ticks, for anything counting down between polls.
+ *
+ * Lease countdowns used to move only when the 30s refresh landed, so a bar
+ * that should drain smoothly jumped in six-percent steps and a "1m 20s left"
+ * could sit there reading 1m 20s for half a minute. The deadline is already in
+ * the payload — this just lets the page do the subtraction itself, which is
+ * arithmetic on data the collector sent, not a number the page invented.
+ */
+export function useNow(everyMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    // A backgrounded tab has nothing to redraw; setInterval there is pure
+    // wake-ups. It resyncs on the way back in.
+    const id = setInterval(() => {
+      if (document.visibilityState === "visible") setNow(Date.now());
+    }, everyMs);
+    const on = () => setNow(Date.now());
+    addEventListener("visibilitychange", on);
+    return () => {
+      clearInterval(id);
+      removeEventListener("visibilitychange", on);
+    };
+  }, [everyMs]);
+  return now;
+}
+
+/**
+ * A lease, counted down locally from its deadline.
+ *
+ * Returns the same two numbers the API sends — seconds left and the fraction
+ * of the window remaining — recomputed for this instant. The window length is
+ * recovered from the pair the collector sent (remaining ÷ fraction) rather
+ * than assumed, so a job with a non-default lease_ttl_s drains at its own rate.
+ */
+export function leaseNow(
+  job: { lease_deadline: string | null; lease_remaining_s: number | null; lease_fraction: number | null },
+  now: number,
+): { remaining_s: number | null; fraction: number | null } {
+  if (!job.lease_deadline) return { remaining_s: job.lease_remaining_s, fraction: job.lease_fraction };
+  const remaining = Math.max(0, (new Date(job.lease_deadline).getTime() - now) / 1000);
+  const ttl =
+    job.lease_remaining_s != null && job.lease_fraction ? job.lease_remaining_s / job.lease_fraction : null;
+  return {
+    remaining_s: remaining,
+    fraction: ttl && ttl > 0 ? Math.max(0, Math.min(1, remaining / ttl)) : job.lease_fraction,
+  };
 }
 
 // --- formatters ---

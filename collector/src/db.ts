@@ -39,8 +39,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   -- 'cancelled' is not 'failed': a failed job means something went wrong, a
   -- cancelled one means a person stopped it. Collapsing them would lie in the
   -- dashboard's failure counts and in every alert built on them.
+  -- 'waiting' is a job whose dependencies have not finished. It is distinct
+  -- from 'queued' because a queued job is one the claim loop should be looking
+  -- at, and a waiting one is not eligible for anything yet.
   status      TEXT NOT NULL DEFAULT 'queued'
-              CHECK (status IN ('queued','claimed','done','failed','cancelled')),
+              CHECK (status IN ('waiting','queued','claimed','done','failed','cancelled')),
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   claimed_by  TEXT,
   claimed_at  TEXT,
@@ -59,7 +62,10 @@ CREATE TABLE IF NOT EXISTS jobs (
   -- Recorded at fan-out time. The parent id has no row of its own, so without
   -- this the relationship can only be inferred from the id string.
   parent_job_id  TEXT,
-  template_id    TEXT
+  template_id    TEXT,
+  -- JSON array of job_ids this one waits for. Resolved to 'queued' when the
+  -- last of them closes; failed when any of them fails or is cancelled.
+  depends_on     TEXT
 );
 
 CREATE TABLE IF NOT EXISTS results (
@@ -78,6 +84,17 @@ CREATE TABLE IF NOT EXISTS beacon_samples (
   sample     TEXT NOT NULL            -- JSON beacon payload
 );
 CREATE INDEX IF NOT EXISTS idx_beacon_device_ts ON beacon_samples (device_id, ts);
+
+-- Watts, sampled from a pool's smart plug. Kept out of beacon_samples because a
+-- beacon is a device describing itself and this is the wall describing the
+-- device: nothing on the shelf reports its own draw, and several devices can
+-- sit behind one plug.
+CREATE TABLE IF NOT EXISTS power_samples (
+  pool  TEXT NOT NULL,
+  ts    TEXT NOT NULL DEFAULT (datetime('now')),
+  watts REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_power_pool_ts ON power_samples (pool, ts);
 
 CREATE TABLE IF NOT EXISTS artifacts (
   sha256     TEXT PRIMARY KEY,
@@ -295,7 +312,10 @@ const jobsDdl = (
     | { sql: string }
     | undefined
 )?.sql;
-if (jobsDdl && !jobsDdl.includes("'cancelled'")) {
+if (jobsDdl && (!jobsDdl.includes("'cancelled'") || !jobsDdl.includes("'waiting'"))) {
+  // Only the columns that existed before this rebuild are copied; depends_on is
+  // added by the ALTER loop below and is NULL on every pre-existing row, which
+  // is correct -- a job enqueued before dependencies existed had none.
   const COLUMNS = [
     "job_id", "executor", "workload", "spec", "status", "created_at", "claimed_by", "claimed_at",
     "finished_at", "lease_ttl_s", "max_attempts", "attempts", "lease_deadline", "last_error",
@@ -310,7 +330,7 @@ if (jobsDdl && !jobsDdl.includes("'cancelled'")) {
         workload    TEXT NOT NULL,
         spec        TEXT NOT NULL,
         status      TEXT NOT NULL DEFAULT 'queued'
-                    CHECK (status IN ('queued','claimed','done','failed','cancelled')),
+                    CHECK (status IN ('waiting','queued','claimed','done','failed','cancelled')),
         created_at  TEXT NOT NULL DEFAULT (datetime('now')),
         claimed_by  TEXT,
         claimed_at  TEXT,
@@ -330,6 +350,15 @@ if (jobsDdl && !jobsDdl.includes("'cancelled'")) {
     `);
   })();
   db.exec("PRAGMA foreign_keys = on");
+}
+
+// depends_on is additive, so it is an ALTER rather than part of the rebuild --
+// and it must come after it, because the rebuild copies a fixed column list.
+{
+  const jobColumns = new Set(
+    (db.prepare("PRAGMA table_info(jobs)").all() as { name: string }[]).map((c) => c.name),
+  );
+  if (!jobColumns.has("depends_on")) db.exec("ALTER TABLE jobs ADD COLUMN depends_on TEXT");
 }
 
 // After the ALTERs and the rebuild: on a pre-lease database the column does not

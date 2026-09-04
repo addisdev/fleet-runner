@@ -158,6 +158,10 @@ export function tableCounts(): Record<string, number> {
     "jobs",
     "results",
     "beacon_samples",
+    // Sampled every few seconds per pool, so it outgrows beacon_samples fast
+    // and the System page is where anyone would look first when the database
+    // starts growing. Counted here so it cannot grow unseen.
+    "power_samples",
     "artifacts",
     "schedules",
     "device_locks",

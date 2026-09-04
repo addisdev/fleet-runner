@@ -1,7 +1,8 @@
 // Host executor: claims executor:"host" jobs and drives attached Android
 // devices from outside via adb + Maestro. Runs on the Mac next to the
 // collector (iOS support arrives in Phase 3 via devicectl/XCUITest).
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import pixelmatch from "pixelmatch";
@@ -24,6 +25,21 @@ import { evalMatch } from "./match.js";
 import { keychainPassword, redact, KEYCHAIN_SERVICE } from "./secrets.js";
 import { parseAmStart, amStartProblem } from "./am-start.js";
 import { withNetwork, withNetworkAll, restoreAttached } from "./network-shape.js";
+import {
+  restoreAttachedState, unmanageableReason, withState,
+  type SettingName,
+} from "./device-state.js";
+import { appleLocaleOf, coversRtl, localeDirName, parseLocaleList, type Locale } from "./locale.js";
+import { contactSheetHtml, type SheetShot } from "./contact-sheet.js";
+import {
+  parseSdkLevel, parseVariantList, planVariant, type DisplayPlatform,
+} from "./display-settings.js";
+import { parseCrashLogcat, parseGfxinfo, parseMeminfo, parseSimCrashLog } from "./soak-samples.js";
+import {
+  a11yFindings, parseAndroidDensity, parseMaestroHierarchy, parseUiautomatorDump,
+  parseXcuiDebugDescription, type A11yGeometry, type A11yNode,
+} from "./a11y-tree.js";
+import { countBySeverity, uploadReport, type Finding } from "./web/shared.js";
 
 const FLOWS_DIR = process.env.FLEET_FLOWS_DIR ?? path.resolve("flows");
 const MAESTRO = process.env.MAESTRO_BIN ?? path.join(os.homedir(), ".maestro/bin/maestro");
@@ -723,9 +739,16 @@ async function runUiTest(job: Job) {
   await postResult({ job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk });
 }
 
-async function launchApp(target: Target, appId: string) {
+/**
+ * `args` are process launch arguments, and they exist for locale-shots: on iOS
+ * they land in the app's NSUserDefaults, which is how `-AppleLanguages (ar)`
+ * reaches an app without touching the device's own language at all. Android has
+ * no equivalent -- `am start` extras are not read as preferences -- so the
+ * Android path ignores them rather than pretending otherwise.
+ */
+async function launchApp(target: Target, appId: string, args: string[] = []) {
   if (target.platform === "ios" && target.kind === "device") {
-    await exec("xcrun", ["devicectl", "device", "process", "launch", "--device", target.id, appId], { timeout: 60_000 });
+    await exec("xcrun", ["devicectl", "device", "process", "launch", "--device", target.id, appId, ...args], { timeout: 60_000 });
     return;
   }
   if (target.platform === "android") {
@@ -744,7 +767,7 @@ async function launchApp(target: Target, appId: string) {
         "android.intent.category.LAUNCHER", "1"], { timeout: 30_000 });
     }
   } else {
-    await exec("xcrun", ["simctl", "launch", target.id, appId], { timeout: 60_000 });
+    await exec("xcrun", ["simctl", "launch", target.id, appId, ...args], { timeout: 60_000 });
   }
 }
 
@@ -916,55 +939,974 @@ async function runDrain(job: Job) {
   await postResult({ job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk });
 }
 
-// Soak: launch the app, then prove it stays alive — the whole measurement for
-// OEM-task-killer survival. Each sample is a beacon (renewing the job lease)
-// plus a result row; ok means the process survived every check.
-async function runSoak(job: Job) {
-  const appId = (job.params?.app_id as string) ?? undefined;
-  if (!appId) throw new Error("soak job needs params.app_id");
+// ---------------------------------------------------------------------------
+// Shared device plumbing for app-soak, locale-shots and a11y-audit
+// ---------------------------------------------------------------------------
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+
+/** Safe as a path segment inside a bundle and as an artifact name. */
+const safeName = (s: string) => s.replace(/[^A-Za-z0-9._-]/g, "_");
+
+const sha256File = (f: string) => createHash("sha256").update(readFileSync(f)).digest("hex");
+
+async function androidProp(t: Target, key: string): Promise<string> {
+  try {
+    return (await exec(ADB, ["-s", t.id, "shell", "getprop", key], { timeout: 10_000 })).stdout.replace(/\r/g, "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/** The API level, or null. Null is a real answer here and gates two settings. */
+async function androidSdkLevel(t: Target): Promise<number | null> {
+  return parseSdkLevel(await androidProp(t, "ro.build.version.sdk"));
+}
+
+/**
+ * The density a uiautomator dump's pixel bounds are measured in.
+ *
+ * `wm density` first because it reports the OVERRIDE when one is set, and a
+ * display-size override is itself an accessibility setting somebody may have
+ * left on. ro.sf.lcd_density is the fallback and knows nothing about overrides.
+ */
+async function androidDensityDpi(t: Target): Promise<number | null> {
+  try {
+    const { stdout } = await exec(ADB, ["-s", t.id, "shell", "wm", "density"], { timeout: 15_000 });
+    const d = parseAndroidDensity(stdout);
+    if (d !== null) return d;
+  } catch {
+    // No `wm` on this shell; the property below is older and always there.
+  }
+  return parseAndroidDensity(await androidProp(t, "ro.sf.lcd_density"));
+}
+
+/**
+ * A PNG of what is on the screen right now.
+ *
+ * The Android path goes via the device's own storage and `adb pull` rather than
+ * the shorter `adb exec-out screencap -p`. exec-out streams binary through the
+ * same promisified execFile every other call in this file uses, and that
+ * decodes stdout as UTF-8 -- every byte above 0x7f is replaced, and what lands
+ * is a PNG-shaped file no decoder will open. It fails late, in the bundle, in
+ * front of a person.
+ *
+ * A physical iPhone has no path at all, and says so: devicectl cannot capture a
+ * screen and simctl is simulators only.
+ */
+async function takeScreenshot(t: Target, dest: string): Promise<void> {
+  mkdirSync(path.dirname(dest), { recursive: true });
+  if (t.platform === "android") {
+    const remote = "/sdcard/fleet-shot.png";
+    await exec(ADB, ["-s", t.id, "shell", "screencap", "-p", remote], { timeout: 60_000 });
+    await exec(ADB, ["-s", t.id, "pull", remote, dest], { timeout: 60_000 });
+    await exec(ADB, ["-s", t.id, "shell", "rm", "-f", remote], { timeout: 15_000 }).catch(() => {});
+    return;
+  }
+  if (t.kind === "simulator") {
+    await exec("xcrun", ["simctl", "io", t.id, "screenshot", dest], { timeout: 60_000 });
+    return;
+  }
+  throw new Error(
+    `no screenshot path for the physical iPhone ${t.id}: devicectl cannot capture a screen and simctl is ` +
+    "simulators only. Screenshots from real iOS hardware come from an XCUITest run's attachments",
+  );
+}
+
+/** Stop the app if it is running, then start it clean. */
+async function relaunchApp(t: Target, appId: string, args: string[] = []): Promise<void> {
+  if (t.platform === "android") {
+    await exec(ADB, ["-s", t.id, "shell", "am", "force-stop", appId], { timeout: 20_000 }).catch(() => {});
+    await sleep(800);
+  } else if (t.kind === "simulator") {
+    await exec("xcrun", ["simctl", "terminate", t.id, appId], { timeout: 30_000 }).catch(() => {});
+    await sleep(500);
+  }
+  await launchApp(t, appId, args);
+}
+
+/** A flow path under FLOWS_DIR, refusing escapes the way the web specs do. */
+function resolveFlow(name: string): string {
+  const root = path.resolve(FLOWS_DIR);
+  const flow = path.resolve(root, name);
+  if (flow !== root && !flow.startsWith(root + path.sep)) throw new Error(`the flow ${name} escapes the flows dir`);
+  if (!existsSync(flow)) throw new Error(`flow not found: ${flow}`);
+  return flow;
+}
+
+/**
+ * Run one Maestro flow against one device, with `cwd` set to where its
+ * screenshots should land.
+ *
+ * The cwd is the whole mechanism: `takeScreenshot: home` inside a flow writes
+ * `home.png` relative to the working directory, so pointing the working
+ * directory at this locale's folder is what files a flow's shots under the
+ * right locale without the flow knowing anything about locales.
+ *
+ * Returns the failure text, or null. A failing flow is not thrown, because
+ * every caller wants to record it against one cell of a matrix and carry on
+ * with the rest.
+ */
+async function runFlow(
+  t: Target, flow: string, cwd: string, env: Record<string, string>, timeoutMs: number,
+): Promise<string | null> {
+  mkdirSync(cwd, { recursive: true });
+  try {
+    await exec(
+      MAESTRO,
+      ["--device", t.id, "test", ...Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]), flow],
+      { timeout: timeoutMs, cwd, maxBuffer: 32 * 1024 * 1024 },
+    );
+    return null;
+  } catch (e) {
+    const err = e as { stdout?: string; message?: string };
+    return `${err.stdout ?? ""}${err.message ?? ""}`.trim().slice(-400) || "maestro failed";
+  }
+}
+
+/** Every PNG in a directory, by name, in a stable order. */
+const shotsIn = (dir: string): string[] =>
+  existsSync(dir) ? readdirSync(dir).filter((f) => f.toLowerCase().endsWith(".png")).sort() : [];
+
+/** Zip a bundle so its per-locale (or per-condition) folders sit at the zip root. */
+async function zipBundle(dir: string, zip: string): Promise<void> {
+  await exec("ditto", ["-c", "-k", "--sequesterRsrc", dir, zip], { timeout: 300_000 });
+}
+
+/**
+ * Write the contact sheet, zip the bundle and upload it.
+ *
+ * Returns the artifact sha, or null when nothing was captured -- an empty zip
+ * is worse than no zip, because it is a green-looking artifact link that opens
+ * onto nothing.
+ */
+async function bundleShots(
+  bundleDir: string, title: string, sheet: SheetShot[], artifactName: string,
+  opts: { columnNoun?: string } = {},
+): Promise<string | null> {
+  if (sheet.every((s) => !s.file)) return null;
+  writeFileSync(path.join(bundleDir, "index.html"), contactSheetHtml(title, sheet, opts));
+  const zip = path.join(path.dirname(bundleDir), artifactName);
+  await zipBundle(bundleDir, zip);
+  return uploadArtifact(zip, artifactName);
+}
+
+// ---------------------------------------------------------------------------
+// app-soak
+// ---------------------------------------------------------------------------
+
+/** One interval's worth of what the device will tell us about the app. */
+type SoakSample = {
+  alive: boolean;
+  pssMb: number | null;
+  jankPct: number | null;
+  /** Crashes observed IN THIS INTERVAL, not cumulatively. */
+  crashes: number;
+  /** Everything that could not be measured, named. Never silently a zero. */
+  problems: string[];
+  signatures: string[];
+};
+
+/**
+ * Sample one Android device: PSS, janky frames, and crashes since the last look.
+ *
+ * `gfxinfo <pkg> reset` is issued AFTER reading, so each sample's jank figure
+ * covers the interval that just ended rather than the whole run -- a
+ * since-boot average flattens the one bad minute a soak exists to find. The
+ * first sample of a run is the exception and covers process start to now, which
+ * is stated on the row rather than smoothed over.
+ *
+ * The crash count is a delta against a running total read from the crash
+ * BUFFER, which is never cleared. Clearing it would be the obvious way to get
+ * per-interval numbers and would also destroy evidence belonging to whatever
+ * else runs on this phone. The buffer can roll over under a very chatty device,
+ * which shows up as a total that went down; that is clamped to zero and
+ * under-counts rather than reporting a negative crash count.
+ */
+async function sampleAndroid(
+  t: Target, appId: string, crashTotal: { seen: number },
+): Promise<SoakSample> {
+  const problems: string[] = [];
+  const alive = await processAlive(t, appId);
+
+  let pssMb: number | null = null;
+  try {
+    const { stdout } = await exec(ADB, ["-s", t.id, "shell", "dumpsys", "meminfo", appId],
+      { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
+    const m = parseMeminfo(stdout);
+    if (m.problem) problems.push(`pss: ${m.problem}`);
+    else pssMb = Math.round((m.pssKb! / 1024) * 10) / 10;
+  } catch (e) {
+    problems.push(`pss: dumpsys meminfo failed (${(e as Error).message.slice(0, 120)})`);
+  }
+
+  let jankPct: number | null = null;
+  try {
+    const { stdout } = await exec(ADB, ["-s", t.id, "shell", "dumpsys", "gfxinfo", appId],
+      { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
+    const g = parseGfxinfo(stdout);
+    if (g.problem) problems.push(`jank: ${g.problem}`);
+    else jankPct = Math.round(g.jankPct! * 100) / 100;
+    await exec(ADB, ["-s", t.id, "shell", "dumpsys", "gfxinfo", appId, "reset"], { timeout: 30_000 }).catch(() => {});
+  } catch (e) {
+    problems.push(`jank: dumpsys gfxinfo failed (${(e as Error).message.slice(0, 120)})`);
+  }
+
+  let crashes = 0;
+  const signatures: string[] = [];
+  try {
+    // -t bounds the read; crashes are rare and 4000 lines is far more than an
+    // interval produces, while an unbounded read of a busy buffer can outgrow
+    // maxBuffer and turn a sample into an exception.
+    const { stdout } = await exec(ADB, ["-s", t.id, "logcat", "-b", "crash", "-d", "-t", "4000"],
+      { timeout: 30_000, maxBuffer: 16 * 1024 * 1024 });
+    const c = parseCrashLogcat(stdout, appId);
+    if (c.problem) problems.push(`crashes: ${c.problem}`);
+    else {
+      crashes = Math.max(0, c.count - crashTotal.seen);
+      crashTotal.seen = c.count;
+      if (crashes > 0) signatures.push(...c.signatures.slice(-crashes));
+    }
+  } catch (e) {
+    problems.push(`crashes: logcat failed (${(e as Error).message.slice(0, 120)})`);
+  }
+
+  return { alive, pssMb, jankPct, crashes, problems, signatures };
+}
+
+/**
+ * Sample one iOS simulator.
+ *
+ * `windowS` is the time since this device was last sampled, and it has to be
+ * exactly that. An over-long window re-counts the previous window's crash and
+ * turns one crash into a rising tally; a short one drops crashes on the floor.
+ * The caller stamps the clock immediately before this runs and uses that stamp
+ * as the next window's start, so consecutive windows abut rather than overlap.
+ *
+ * Crashes only, and the two missing numbers are named on every row rather than
+ * filled in. There is no honest PSS for a simulated app: it is an ordinary
+ * process on this Mac, so the only figure available is the host process's RSS,
+ * which counts shared pages Android's PSS deliberately does not and would sit
+ * in a field the schema documents as proportional set size. Two numbers filed
+ * under one name is the failure the metrics schema was written to stop, and a
+ * memory comparison between a phone and a simulator is not one anybody should
+ * be able to draw by accident. Jank has no simulator equivalent at all --
+ * nothing renders on a real display pipeline.
+ */
+async function sampleIosSim(t: Target, appId: string, windowS: number): Promise<SoakSample> {
+  const problems = [
+    "pss: not measurable on a simulator (the app is a host process; its RSS is not a device PSS and must not be filed as one)",
+    "jank: not measurable on a simulator (no on-device display pipeline to miss a deadline)",
+  ];
+  const alive = await processAlive(t, appId);
+  let crashes = 0;
+  const signatures: string[] = [];
+  try {
+    const { stdout } = await exec(
+      "xcrun",
+      ["simctl", "spawn", t.id, "log", "show", "--style", "syslog",
+       "--last", `${Math.max(1, Math.ceil(windowS))}s`,
+       "--predicate", 'process == "ReportCrash" OR eventMessage CONTAINS[c] "crash"'],
+      { timeout: 90_000, maxBuffer: 32 * 1024 * 1024 },
+    );
+    const c = parseSimCrashLog(stdout, appId);
+    if (c.problem) problems.push(`crashes: ${c.problem}`);
+    else {
+      // The window is the interval, so this is already a per-interval count.
+      crashes = c.count;
+      signatures.push(...c.signatures);
+    }
+  } catch (e) {
+    problems.push(`crashes: simctl log show failed (${(e as Error).message.slice(0, 120)})`);
+  }
+  return { alive, pssMb: null, jankPct: null, crashes, problems, signatures };
+}
+
+/**
+ * app-soak: keep the app working for hours and watch what happens to it.
+ *
+ * Without `params.flow` this is the original soak and nothing more: launch the
+ * app and prove it is still running at every check, which is the whole
+ * measurement for OEM-task-killer survival. The `soak` workload name still
+ * routes here and behaves exactly as it did.
+ *
+ * With `params.flow` it becomes the thing a memory leak actually shows up in: a
+ * Maestro flow looped for the duration while PSS, janky frames and crashes are
+ * sampled between passes. A leak is a rising pss_mb across hundreds of rows, a
+ * regression is a jank_pct that climbs as the heap fills, and neither is
+ * visible in a run that only asks whether the process exists.
+ *
+ * A crash is a RESULT, not a reason to stop. The app is relaunched and the loop
+ * continues, because "it crashed twice in six hours" is the number somebody
+ * ships or does not ship on, and a run that stopped at the first crash can only
+ * ever report "at least one".
+ */
+async function runAppSoak(job: Job) {
+  const appId = (job.params?.app_id as string | undefined) ?? job.suite?.app_id;
+  if (!appId) throw new Error("app-soak needs params.app_id");
   const durationS = Number(job.params?.duration_s ?? 3600);
   const intervalS = Number(job.params?.interval_s ?? 60);
+  const flowName = job.params?.flow as string | undefined;
+  const flow = flowName ? resolveFlow(flowName) : null;
   const platform = job.app?.platform ?? "android";
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
   if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
 
-  const alive = new Map<string, boolean>();
+  const flowCwd = mkdtempSync(path.join(os.tmpdir(), "fleet-soak-"));
+
+  const eligible: Target[] = [];
+  const unsupported = new Map<string, string>();
   for (const t of targets) {
-    await launchApp(t, appId).catch(() => {});
-    alive.set(t.id, true);
+    if (t.platform === "ios" && t.kind === "device") {
+      // devicectl has no meminfo, no gfxinfo and no crash-log access, and the
+      // on-device crash reports are not readable from here. Saying so beats a
+      // row of nulls that looks like a healthy app.
+      unsupported.set(t.id,
+        "app-soak cannot sample a physical iPhone: devicectl exposes no memory, frame or crash-report " +
+        "access, so a run here would report an app that never used memory and never crashed");
+      continue;
+    }
+    if (!(await hasApp(t, appId))) {
+      await postResult({ job_id: job.job_id, device_id: t.id, iter: 0, ok: true, error: `skipped: ${appId} not installed` });
+      continue;
+    }
+    await relaunchApp(t, appId).catch(() => {});
+    eligible.push(t);
+  }
+  for (const [id, why] of unsupported) {
+    await postResult({ job_id: job.job_id, device_id: id, iter: 0, ok: false, error: why });
+    log(`app-soak on ${id}: unsupported -- ${why}`);
+  }
+  if (eligible.length === 0) {
+    await postResult({
+      job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true,
+      ok: unsupported.size === 0,
+      error: unsupported.size > 0 ? "no target could be sampled" : undefined,
+    });
+    return;
   }
 
-  const deadline = Date.now() + durationS * 1000;
+  const crashTotals = new Map(eligible.map((t) => [t.id, { seen: 0 }]));
+  // Read the crash buffer once before anything runs so pre-existing crashes --
+  // yesterday's, or another job's -- are not attributed to this soak.
+  for (const t of eligible.filter((t) => t.platform === "android")) {
+    await sampleAndroid(t, appId, crashTotals.get(t.id)!).catch(() => {});
+  }
+
+  // When each device was last sampled, so an iOS log window abuts the previous
+  // one instead of overlapping it and counting the same crash twice.
+  const lastSampledAt = new Map(eligible.map((t) => [t.id, Date.now()]));
+  const survived = new Map(eligible.map((t) => [t.id, true]));
+  const crashCount = new Map(eligible.map((t) => [t.id, 0]));
+  const flowFailures = new Map(eligible.map((t) => [t.id, 0]));
+  const firstSignature = new Map<string, string>();
+  const t0 = Date.now();
+  const deadline = t0 + durationS * 1000;
   let iter = 0;
+
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, Math.min(intervalS * 1000, deadline - Date.now())));
     iter += 1;
-    for (const t of targets) {
-      const isAlive = await processAlive(t, appId);
-      if (!isAlive) alive.set(t.id, false);
+    if (!flow) await sleep(Math.min(intervalS * 1000, deadline - Date.now()));
+    for (const t of eligible) {
+      let flowError: string | null = null;
+      if (flow) {
+        // One pass of the flow IS this interval. Bounded by the interval so a
+        // wedged flow cannot swallow the whole soak, and by at least 30s so a
+        // short interval does not guarantee a timeout.
+        const budget = Math.max(30_000, Math.min(intervalS * 1000, deadline - Date.now()));
+        flowError = await runFlow(t, flow, flowCwd, { APP_ID: appId }, budget);
+        if (flowError) flowFailures.set(t.id, (flowFailures.get(t.id) ?? 0) + 1);
+      }
+
+      const sampledAt = Date.now();
+      const windowS = (sampledAt - (lastSampledAt.get(t.id) ?? sampledAt)) / 1000;
+      lastSampledAt.set(t.id, sampledAt);
+      const s = t.platform === "android"
+        ? await sampleAndroid(t, appId, crashTotals.get(t.id)!)
+        : await sampleIosSim(t, appId, windowS);
+
+      if (s.crashes > 0) {
+        crashCount.set(t.id, (crashCount.get(t.id) ?? 0) + s.crashes);
+        if (!firstSignature.has(t.id) && s.signatures.length > 0) firstSignature.set(t.id, s.signatures[0]);
+      }
+      if (!s.alive) survived.set(t.id, false);
+
       const battery = await batteryPct(t);
       await postBeacon(job.job_id, t.id, {
-        process_alive: { [appId]: isAlive },
+        process_alive: { [appId]: s.alive },
         ...(battery !== null ? { battery_pct: battery } : {}),
       });
+
+      const notes = [
+        ...(flowError ? [`flow failed: ${flowError.slice(-200)}`] : []),
+        ...(s.alive ? [] : [`${appId} was not running at check ${iter}`]),
+        ...s.problems,
+      ];
       await postResult({
         job_id: job.job_id, device_id: t.id, iter,
-        ok: isAlive, error: isAlive ? undefined : `process ${appId} not running at check ${iter}`,
+        // A crash is recorded, not fatal: the row is red so the curve shows
+        // where it happened, and the loop carries on.
+        ok: s.alive && s.crashes === 0,
+        metrics: {
+          elapsed_s: Math.round((Date.now() - t0) / 1000),
+          crashes: s.crashes,
+          ...(s.pssMb !== null ? { pss_mb: s.pssMb } : {}),
+          ...(s.jankPct !== null ? { jank_pct: s.jankPct } : {}),
+          ...(battery !== null ? { battery_end_pct: battery } : {}),
+        },
+        error: notes.length > 0 ? notes.join("; ").slice(0, 480) : undefined,
       });
-      log(`soak ${appId} on ${t.id} check ${iter}: ${isAlive ? "alive" : "DEAD"}`);
+      log(
+        `app-soak ${appId} on ${t.id} check ${iter}: ${s.alive ? "alive" : "DEAD"}` +
+        (s.pssMb !== null ? ` · ${s.pssMb} MB` : "") +
+        (s.jankPct !== null ? ` · ${s.jankPct}% jank` : "") +
+        (s.crashes > 0 ? ` · ${s.crashes} CRASH` : ""),
+      );
+
+      // Relaunch after a death or a crash and keep going. This is the point of
+      // the workload: the count is the deliverable, so the run must be able to
+      // reach a second one.
+      if (!s.alive || s.crashes > 0) {
+        await relaunchApp(t, appId).catch((e) => log(`app-soak: relaunching ${appId} on ${t.id} failed: ${(e as Error).message}`));
+      }
     }
   }
 
-  let allOk = true;
-  for (const t of targets) {
-    const survived = alive.get(t.id) ?? false;
-    if (!survived) allOk = false;
+  let allOk = unsupported.size === 0;
+  for (const t of eligible) {
+    const crashes = crashCount.get(t.id) ?? 0;
+    const failures = flowFailures.get(t.id) ?? 0;
+    const ok = crashes === 0 && (survived.get(t.id) ?? false) && failures === 0;
+    if (!ok) allOk = false;
+    const why = [
+      ...(crashes > 0 ? [`${crashes} crash(es)${firstSignature.has(t.id) ? `, first: ${firstSignature.get(t.id)}` : ""}`] : []),
+      ...((survived.get(t.id) ?? false) ? [] : [`${appId} was found dead at least once`]),
+      ...(failures > 0 ? [`${failures} flow pass(es) failed`] : []),
+    ].join("; ");
     await postResult({
-      job_id: job.job_id, device_id: t.id, iter: 0, ok: survived,
-      error: survived ? undefined : `${appId} died during the soak`,
+      job_id: job.job_id, device_id: t.id, iter: 0, ok,
+      metrics: { crashes, elapsed_s: Math.round((Date.now() - t0) / 1000) },
+      error: ok ? undefined : why,
     });
+    log(`app-soak ${appId} on ${t.id}: ${iter} checks, ${crashes} crash(es)${ok ? "" : ` -- ${why}`}`);
   }
   await postResult({ job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk });
+}
+
+// ---------------------------------------------------------------------------
+// locale-shots
+// ---------------------------------------------------------------------------
+
+/** What one locale means to one target, in settings this executor can undo. */
+function localeSettings(t: Target, l: Locale): Partial<Record<SettingName, string>> {
+  if (t.platform === "android") return { "android:system.system_locales": l.tag };
+  return { "ios:defaults.AppleLanguages": l.tag, "ios:defaults.AppleLocale": appleLocaleOf(l) };
+}
+
+/**
+ * locale-shots: the same screens, captured under every locale the job names.
+ *
+ * How the locale is applied, and what each path is worth:
+ *
+ *   Android           -- `settings put system system_locales <tag>` and a
+ *                        force-stop-then-launch, because a process reads the
+ *                        configuration once at start. Verified by reading the
+ *                        setting back.
+ *   iOS simulator     -- `defaults write -g AppleLanguages` inside the
+ *                        simulator, verified by reading it back, AND
+ *                        `-AppleLanguages (<tag>)` as launch arguments. The
+ *                        launch arguments are the belt: they reach the app's
+ *                        own NSUserDefaults directly, which is the mechanism
+ *                        that cannot be defeated by a preferences daemon that
+ *                        has not noticed the write yet.
+ *   physical iPhone   -- REFUSED. Nothing sets a device's language from this
+ *                        host, and there is no screenshot path either. See
+ *                        unmanageableReason; the row says so by name.
+ *
+ * Two honesty checks, because "the setting took" and "the app is in that
+ * language" are different claims and only the second one matters:
+ *
+ *   - every change is journalled before it is made and restored in a finally,
+ *     with a startup sweep behind that. A phone left in Arabic is a phone
+ *     somebody has to fix by hand, and it does not look broken until they do.
+ *   - if two or more locales produce byte-identical screenshot sets, the run
+ *     fails that device by name. That is what an app whose locale never
+ *     actually changed looks like, and it is otherwise indistinguishable from
+ *     a complete, correct run -- a full bundle, one folder per locale, every
+ *     folder in English.
+ */
+async function runLocaleShots(job: Job) {
+  const appId = (job.params?.app_id as string | undefined) ?? job.suite?.app_id;
+  if (!appId) throw new Error("locale-shots needs params.app_id");
+  const locales = parseLocaleList(job.params?.locales);
+  const flowName = job.params?.flow as string | undefined;
+  const flow = flowName ? resolveFlow(flowName) : null;
+  const settleMs = Number(job.params?.settle_ms ?? 5000);
+  const platform = job.app?.platform;
+  const attached = (await listTargets()).filter((t) => !platform || t.platform === platform);
+  const targets = await selectTargets(job, attached);
+  if (targets.length === 0) throw new Error("no targets matched this job");
+
+  if (!coversRtl(locales)) {
+    // Not a failure -- the job may deliberately cover only LTR markets -- but
+    // it is the one thing a locale sweep is most often assumed to have done.
+    log(
+      `locale-shots ${job.job_id}: none of ${locales.map((l) => l.tag).join(", ")} is right-to-left, ` +
+      "so mirroring is not covered by this run",
+    );
+  }
+
+  const bundle = path.join(mkdtempSync(path.join(os.tmpdir(), "fleet-locale-")), "locale-shots");
+  mkdirSync(bundle, { recursive: true });
+  const sheet: SheetShot[] = [];
+
+  const granted = job.targets?.exclusive
+    ? await acquireLocks(job.job_id, targets.map((t) => t.id))
+    : null;
+
+  let allOk = true;
+  let totalShots = 0;
+  try {
+    for (const target of targets) {
+      if (granted && !granted.has(target.id)) {
+        await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: "skipped: device locked by another job" });
+        continue;
+      }
+      const cannot = unmanageableReason(target);
+      if (cannot) {
+        allOk = false;
+        await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: false, error: cannot });
+        log(`locale-shots on ${target.id}: refused -- ${cannot}`);
+        continue;
+      }
+      if (!(await hasApp(target, appId))) {
+        await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: `skipped: ${appId} not installed` });
+        continue;
+      }
+
+      const deviceDir = safeName(target.id);
+      const fingerprints = new Map<string, string>();
+      let deviceShots = 0;
+      let deviceOk = true;
+      let iter = 0;
+
+      for (const l of locales) {
+        iter += 1;
+        await postBeacon(job.job_id, target.id, {}).catch(() => {});
+        const rel = `${localeDirName(l)}/${deviceDir}`;
+        const dir = path.join(bundle, rel);
+        mkdirSync(dir, { recursive: true });
+        let error: string | undefined;
+
+        try {
+          await withState(target, "locale", localeSettings(target, l), async () => {
+            const args = target.platform === "ios"
+              ? ["-AppleLanguages", `(${l.tag})`, "-AppleLocale", appleLocaleOf(l)]
+              : [];
+            await relaunchApp(target, appId, args);
+            await sleep(settleMs);
+            if (flow) {
+              const e = await runFlow(target, flow, dir, { APP_ID: appId, LOCALE: l.tag }, leaseBudgetS(job) * 1000);
+              if (e) error = `flow failed: ${e.slice(-240)}`;
+            } else {
+              await takeScreenshot(target, path.join(dir, "launch.png"));
+            }
+          });
+        } catch (e) {
+          error = (e as Error).message.slice(0, 400);
+        }
+
+        const names = shotsIn(dir);
+        deviceShots += names.length;
+        totalShots += names.length;
+        // One fingerprint per locale over every shot it produced, so "these two
+        // locales rendered the same app" is one comparison rather than N.
+        const digest = createHash("sha256");
+        for (const n of names) digest.update(n).update(sha256File(path.join(dir, n)));
+        if (names.length > 0) fingerprints.set(l.tag, digest.digest("hex"));
+
+        if (names.length === 0) {
+          // A locale that captured nothing still gets a row on the sheet, so
+          // the column is a visible hole rather than an absent column.
+          sheet.push({
+            column: l.tag, rtl: l.rtl, device: target.id,
+            shot: flow ? "(flow produced no screenshots)" : "launch",
+            file: null, note: error,
+          });
+        } else {
+          for (const n of names) {
+            sheet.push({
+              column: l.tag, rtl: l.rtl, device: target.id,
+              shot: n.replace(/\.png$/i, ""), file: `${rel}/${n}`, note: error,
+            });
+          }
+        }
+
+        const ok = names.length > 0 && !error;
+        if (!ok) { deviceOk = false; allOk = false; }
+        await postResult({
+          job_id: job.job_id, device_id: target.id, iter, ok,
+          metrics: { shots: names.length },
+          error: error ?? (names.length === 0 ? `no screenshot captured for ${l.tag}` : undefined),
+        });
+        log(`locale-shots ${appId} on ${target.id}: ${l.tag} -- ${names.length} shot(s)${error ? ` (${error.slice(0, 120)})` : ""}`);
+      }
+
+      // The check that makes the rest of it worth anything.
+      let identical: string | undefined;
+      if (fingerprints.size >= 2 && new Set(fingerprints.values()).size === 1) {
+        identical =
+          `every locale produced byte-identical screenshots (${[...fingerprints.keys()].join(", ")}), so the ` +
+          "locale never reached the app -- the setting was applied and verified on the device, but the app " +
+          "rendered the same language under all of them";
+        deviceOk = false;
+        allOk = false;
+      }
+
+      await postResult({
+        job_id: job.job_id, device_id: target.id, iter: 0, ok: deviceOk,
+        metrics: { locales: fingerprints.size, shots: deviceShots },
+        error: identical ?? (deviceOk ? undefined : "one or more locales captured nothing"),
+      });
+      log(`locale-shots ${appId} on ${target.id}: ${fingerprints.size}/${locales.length} locales, ${deviceShots} shot(s)${identical ? " -- IDENTICAL" : ""}`);
+    }
+  } finally {
+    if (granted) await releaseLocks(job.job_id);
+  }
+
+  const sha = await bundleShots(
+    bundle, `locale-shots · ${appId}`, sheet, `${job.job_id}-locale-shots.zip`, { columnNoun: "locale" },
+  );
+  if (!sha) allOk = false;
+  await postResult({
+    job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk,
+    metrics: { locales: locales.length, shots: totalShots },
+    // `artifacts`, not `test.artifacts`: the bundle is an output the run
+    // produced, and filing shot counts as passed tests would put a number on
+    // the dashboard's test column that no test ever produced.
+    ...(sha ? { artifacts: [sha] } : {}),
+    error: sha ? undefined : "nothing was captured, so there is no bundle",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// a11y-audit
+// ---------------------------------------------------------------------------
+
+/** One point in a flow at which the tree is dumped and the screen captured. */
+type A11yStep = { name: string; flow?: string };
+
+function parseA11ySteps(params: Record<string, unknown> | undefined): A11yStep[] {
+  const raw = params?.steps;
+  if (Array.isArray(raw)) {
+    const steps = raw.map((s) => {
+      const file = String(s);
+      return { name: safeName(path.basename(file).replace(/\.[^.]+$/, "")), flow: file };
+    });
+    if (steps.length === 0) throw new Error("params.steps is empty; there is nothing to audit");
+    return steps;
+  }
+  if (typeof params?.flow === "string") {
+    return [{ name: safeName(path.basename(params.flow).replace(/\.[^.]+$/, "")), flow: params.flow }];
+  }
+  // No flow at all: the launch screen is still worth auditing, and saying so is
+  // better than requiring ceremony for the common first use.
+  return [{ name: "launch" }];
+}
+
+/**
+ * The accessibility tree for whatever is on screen, and what its bounds mean.
+ *
+ * Android reads its own dump. A simulator is read through Maestro, which drives
+ * XCUITest underneath and is the only route to an iOS tree that does not
+ * require building a test bundle -- so its absence is reported as the missing
+ * tool it is, with the alternative named, rather than as an empty tree.
+ */
+async function dumpA11yTree(
+  t: Target, density: number | null,
+): Promise<{ nodes: A11yNode[]; geometry: A11yGeometry; source: string }> {
+  if (t.platform === "android") {
+    const remote = "/sdcard/fleet-a11y.xml";
+    await exec(ADB, ["-s", t.id, "shell", "uiautomator", "dump", remote], { timeout: 90_000 });
+    const { stdout } = await exec(ADB, ["-s", t.id, "shell", "cat", remote],
+      { timeout: 60_000, maxBuffer: 32 * 1024 * 1024 });
+    await exec(ADB, ["-s", t.id, "shell", "rm", "-f", remote], { timeout: 15_000 }).catch(() => {});
+    const parsed = parseUiautomatorDump(stdout);
+    if (parsed.problem) throw new Error(`uiautomator dump: ${parsed.problem}`);
+    return {
+      nodes: parsed.nodes,
+      // Pixels, and only convertible when the density is known. Passing
+      // "unknown" is what makes the size check skip itself and say so, instead
+      // of comparing a pixel count to a point guideline.
+      geometry: density !== null ? { unit: "pixels", densityDpi: density } : { unit: "unknown" },
+      source: "uiautomator dump",
+    };
+  }
+  if (!existsSync(MAESTRO)) {
+    throw new Error(
+      `no accessibility-tree source for the iOS target ${t.id}: Maestro is not installed on ${NAME} ` +
+      `(looked for ${MAESTRO}), and the other route is an XCUITest helper printing ` +
+      "XCUIApplication().debugDescription, which the FleetRunner bundle does not print yet " +
+      "(the parser for it is parseXcuiDebugDescription in src/a11y-tree.ts)",
+    );
+  }
+  const { stdout } = await exec(MAESTRO, ["--device", t.id, "hierarchy"],
+    { timeout: 120_000, maxBuffer: 64 * 1024 * 1024 });
+  const parsed = parseMaestroHierarchy(stdout);
+  if (parsed.problem) throw new Error(`maestro hierarchy: ${parsed.problem}`);
+  // Maestro's iOS driver reports XCUITest frames, which are already points.
+  return { nodes: parsed.nodes, geometry: { unit: "points" }, source: "maestro hierarchy" };
+}
+
+/**
+ * The XCUITest route to an iOS tree: run the generic bundle with
+ * TEST_RUNNER_FLEET_A11Y_DUMP=1 and read the dump out of the log.
+ *
+ * Selected with `params.tree_source: "xcuitest"`. It is one dump per device,
+ * not one per step -- an xcodebuild run per step of a flow is not a thing that
+ * can happen inside a lease -- so it audits the app's launch screen only, which
+ * the run says on the row.
+ *
+ * It fails until the iOS runner grows the helper, and it fails by naming
+ * exactly what is missing, because the alternative is a job that quietly audits
+ * nothing on every simulator in the fleet.
+ */
+async function xcuitestA11yTree(t: Target, appId: string, timeoutS: number): Promise<A11yNode[]> {
+  let out = "";
+  try {
+    const { stdout } = await exec(
+      "xcodebuild",
+      ["test", "-project", IOS_PROJECT, "-scheme", "FleetRunner",
+       "-destination", `platform=${t.kind === "simulator" ? "iOS Simulator" : "iOS"},id=${t.id}`,
+       "-only-testing:FleetRunnerUITests"],
+      {
+        timeout: timeoutS * 1000,
+        env: { ...process.env, TEST_RUNNER_FLEET_APP_ID: appId, TEST_RUNNER_FLEET_A11Y_DUMP: "1" },
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    out = stdout;
+  } catch (e) {
+    out = (e as { stdout?: string }).stdout ?? "";
+  }
+  const m = /FLEET-A11Y-DUMP-BEGIN\r?\n([\s\S]*?)\r?\nFLEET-A11Y-DUMP-END/.exec(out);
+  if (!m) {
+    throw new Error(
+      "the FleetRunner test bundle printed no accessibility dump. The iOS runner needs a test that, when " +
+      "TEST_RUNNER_FLEET_A11Y_DUMP=1 is set, prints XCUIApplication().debugDescription between the lines " +
+      "FLEET-A11Y-DUMP-BEGIN and FLEET-A11Y-DUMP-END. The parser for that output already exists here " +
+      "(parseXcuiDebugDescription in src/a11y-tree.ts)",
+    );
+  }
+  const parsed = parseXcuiDebugDescription(m[1]);
+  if (parsed.problem) throw new Error(`XCUITest dump: ${parsed.problem}`);
+  return parsed.nodes;
+}
+
+/**
+ * a11y-audit: what a screen reader gets, and what the screen looks like to
+ * somebody who has turned the accessibility settings up.
+ *
+ * Per step of the flow: the tree is dumped once, under baseline settings, and
+ * checked for unlabelled tappables (error) and touch targets under the minimum
+ * (warning, and only where the bounds can honestly be converted to points).
+ * Then the same steps are walked again under each display condition and
+ * screenshotted, so the bundle's contact sheet puts baseline, largest text,
+ * bold text and dark mode side by side for each screen.
+ *
+ * Counts come out as issues_error / issues_warn, the same two fields web-audit
+ * populates and the same severity rule: error fails the run, warn is recorded
+ * and does not.
+ *
+ * Every display setting is journalled before it is written, verified after, and
+ * restored in a finally -- with the startup sweep behind that. A phone left at
+ * 2x text in dark mode is not obviously broken, which is exactly why nothing
+ * would report it.
+ */
+async function runA11yAudit(job: Job) {
+  const appId = (job.params?.app_id as string | undefined) ?? job.suite?.app_id;
+  if (!appId) throw new Error("a11y-audit needs params.app_id");
+  const steps = parseA11ySteps(job.params);
+  const variants = parseVariantList(job.params?.variants);
+  const minTargetPt = Number(job.params?.min_target_pt ?? 44);
+  const settleMs = Number(job.params?.settle_ms ?? 4000);
+  const fontScale = job.params?.font_scale !== undefined ? String(job.params.font_scale) : undefined;
+  const treeSource = job.params?.tree_source === "xcuitest" ? "xcuitest" : "auto";
+  const platform = job.app?.platform;
+  const attached = (await listTargets()).filter((t) => !platform || t.platform === platform);
+  const targets = await selectTargets(job, attached);
+  if (targets.length === 0) throw new Error("no targets matched this job");
+
+  // Resolved before anything runs, so a mistyped step fails the job with one
+  // message rather than half a matrix.
+  const stepFlows = new Map<string, string>();
+  for (const s of steps) if (s.flow) stepFlows.set(s.name, resolveFlow(s.flow));
+
+  const bundle = path.join(mkdtempSync(path.join(os.tmpdir(), "fleet-a11y-")), "a11y-audit");
+  mkdirSync(bundle, { recursive: true });
+  const sheet: SheetShot[] = [];
+  const report: Record<string, unknown> = { app_id: appId, devices: {} };
+  const devices = report.devices as Record<string, unknown>;
+
+  const granted = job.targets?.exclusive
+    ? await acquireLocks(job.job_id, targets.map((t) => t.id))
+    : null;
+
+  let allOk = true;
+  let totalShots = 0;
+  try {
+    for (const target of targets) {
+      if (granted && !granted.has(target.id)) {
+        await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: "skipped: device locked by another job" });
+        continue;
+      }
+      const cannot = unmanageableReason(target);
+      if (cannot) {
+        allOk = false;
+        await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: false, error: cannot });
+        log(`a11y-audit on ${target.id}: refused -- ${cannot}`);
+        continue;
+      }
+      if (!(await hasApp(target, appId))) {
+        await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: `skipped: ${appId} not installed` });
+        continue;
+      }
+
+      const dPlatform: DisplayPlatform = target.platform === "android" ? "android" : "ios-sim";
+      const sdk = target.platform === "android" ? await androidSdkLevel(target) : null;
+      const density = target.platform === "android" ? await androidDensityDpi(target) : null;
+      const deviceDir = safeName(target.id);
+      const findings: Finding[] = [];
+      const treeNotes: string[] = [];
+      let deviceShots = 0;
+      let deviceOk = true;
+      let iter = 0;
+
+      for (const vid of variants) {
+        const plan = planVariant(vid, dPlatform, { sdk, fontScale });
+        iter += 1;
+        await postBeacon(job.job_id, target.id, {}).catch(() => {});
+
+        if (plan.unreachable) {
+          // A condition this platform cannot produce is a failed row naming the
+          // limitation. Skipping it silently would leave a bundle whose columns
+          // look complete and whose bold-text column is ordinary weight.
+          deviceOk = false;
+          allOk = false;
+          for (const s of steps) {
+            sheet.push({ column: plan.label, device: target.id, shot: s.name, file: null, note: plan.unreachable });
+          }
+          await postResult({
+            job_id: job.job_id, device_id: target.id, iter, ok: false,
+            error: `${plan.label}: ${plan.unreachable}`,
+          });
+          log(`a11y-audit on ${target.id}: ${plan.label} unreachable -- ${plan.unreachable}`);
+          continue;
+        }
+
+        let variantError: string | undefined;
+        let variantShots = 0;
+        try {
+          await withState(target, "display", plan.settings, async () => {
+            await relaunchApp(target, appId);
+            await sleep(settleMs);
+            for (const s of steps) {
+              const flow = stepFlows.get(s.name);
+              if (flow) {
+                const e = await runFlow(target, flow, mkdtempSync(path.join(os.tmpdir(), "fleet-step-")),
+                  { APP_ID: appId }, leaseBudgetS(job) * 1000);
+                if (e && !variantError) variantError = `step ${s.name}: ${e.slice(-200)}`;
+              }
+              await sleep(1000);
+
+              const rel = `${plan.label}/${deviceDir}/${s.name}.png`;
+              try {
+                await takeScreenshot(target, path.join(bundle, rel));
+                variantShots += 1;
+                deviceShots += 1;
+                totalShots += 1;
+                sheet.push({ column: plan.label, device: target.id, shot: s.name, file: rel });
+              } catch (e) {
+                sheet.push({ column: plan.label, device: target.id, shot: s.name, file: null, note: (e as Error).message.slice(0, 200) });
+                if (!variantError) variantError = (e as Error).message.slice(0, 200);
+              }
+
+              // The tree is read once, under the baseline: the checks are about
+              // labels and geometry, and re-running them per condition would
+              // multiply every finding by four without learning anything.
+              if (vid !== "baseline") continue;
+              try {
+                if (treeSource === "xcuitest" && target.platform === "ios") {
+                  const nodes = await xcuitestA11yTree(target, appId, leaseBudgetS(job));
+                  findings.push(...a11yFindings(nodes, { unit: "points" }, { step: s.name, minTargetPt }));
+                  treeNotes.push(`${s.name}: XCUITest debugDescription (launch screen only)`);
+                } else {
+                  const tree = await dumpA11yTree(target, density);
+                  findings.push(...a11yFindings(tree.nodes, tree.geometry, { step: s.name, minTargetPt }));
+                  treeNotes.push(`${s.name}: ${tree.nodes.length} elements via ${tree.source}`);
+                }
+              } catch (e) {
+                // A step whose tree could not be read is an ERROR finding, not a
+                // silent gap: a screen nobody could inspect is not a screen that
+                // passed.
+                findings.push({
+                  severity: "error", check: "a11y-tree", page: s.name,
+                  detail: (e as Error).message.slice(0, 300),
+                });
+              }
+            }
+          });
+        } catch (e) {
+          variantError = (e as Error).message.slice(0, 400);
+        }
+
+        // Shots CAPTURED, not steps asked for: a condition that produced two
+        // of four screens must not report four.
+        const ok = !variantError && variantShots === steps.length;
+        if (!ok) { deviceOk = false; allOk = false; }
+        await postResult({
+          job_id: job.job_id, device_id: target.id, iter, ok,
+          metrics: { shots: variantShots },
+          error: variantError
+            ? `${plan.label}: ${variantError}`
+            : ok ? undefined : `${plan.label}: captured ${variantShots} of ${steps.length} screens`,
+        });
+        log(`a11y-audit ${appId} on ${target.id}: ${plan.label} — ${variantShots}/${steps.length} screens${variantError ? ` -- ${variantError.slice(0, 140)}` : ""}`);
+      }
+
+      const totals = countBySeverity(findings);
+      if (totals.issues_error > 0) { deviceOk = false; allOk = false; }
+      devices[target.id] = {
+        platform: target.platform, kind: target.kind, sdk, density_dpi: density,
+        min_target_pt: minTargetPt, trees: treeNotes, findings,
+        ...totals,
+      };
+      const firstError = findings.find((f) => f.severity === "error");
+      await postResult({
+        job_id: job.job_id, device_id: target.id, iter: 0, ok: deviceOk,
+        metrics: { ...totals, shots: deviceShots },
+        error: deviceOk
+          ? undefined
+          : firstError
+            ? `${totals.issues_error} error(s), e.g. ${firstError.check} on ${firstError.page}: ${firstError.detail.slice(0, 140)}`
+            : "one or more display conditions could not be captured",
+      });
+      log(`a11y-audit ${appId} on ${target.id}: ${totals.issues_error} error(s) / ${totals.issues_warn} warning(s), ${deviceShots} shot(s)`);
+    }
+  } finally {
+    if (granted) await releaseLocks(job.job_id);
+  }
+
+  const reportSha = await uploadReport(`${job.job_id}-a11y-report.json`, report);
+  const zipSha = await bundleShots(
+    bundle, `a11y-audit · ${appId}`, sheet, `${job.job_id}-a11y-shots.zip`, { columnNoun: "condition" },
+  );
+  await postResult({
+    job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk,
+    metrics: { shots: totalShots },
+    artifacts: [reportSha, ...(zipSha ? [zipSha] : [])],
+    error: zipSha ? undefined : "no screenshot was captured, so there is no bundle (the findings report is still attached)",
+  });
 }
 
 const LAUNCH_STATES = ["cold", "warm", "hot"] as const;
@@ -1980,21 +2922,23 @@ async function reportAttached() {
 }
 
 /**
- * Undo any network shaping an earlier run of this executor left behind, before
- * a single job is claimed.
+ * Undo every device change an earlier run of this executor left behind, before
+ * a single job is claimed: network shaping, locale, and display settings.
  *
- * The failure this prevents: a phone whose wifi was disabled by a job that
- * never reached its restore -- a reboot, an OOM, a pkill aimed at something
- * else -- looks exactly like a phone that has died. It vanishes from the
- * dashboard, fails every job it is handed, and nothing anywhere names the
- * cause. Restoring at startup means the worst case is one log line instead of
- * an afternoon.
+ * The failure this prevents, in its two flavours. A phone whose wifi was
+ * disabled by a job that never reached its restore -- a reboot, an OOM, a pkill
+ * aimed at something else -- looks exactly like a phone that has died: absent
+ * from the dashboard, failing everything, with nothing naming the cause. A
+ * phone left in Arabic at 2x text is the opposite and worse: it looks perfectly
+ * healthy, answers every job, and quietly produces wrong screenshots until
+ * somebody notices by eye. Restoring at startup turns both into one log line.
  *
  * Only devices this executor is allowed to touch, decided by the same
  * fleetOwned rule as presence and selection: a scratch phone somebody has
- * deliberately taken off the network is not ours to reconnect.
+ * deliberately taken off the network, or deliberately set to Japanese, is not
+ * ours to change back.
  */
-async function restoreNetworkOnStartup() {
+async function restoreDevicesOnStartup() {
   try {
     const attached = await listTargets();
     const sims = attached.some((t) => t.platform === "ios") ? await simctlDevices() : null;
@@ -2006,17 +2950,26 @@ async function restoreNetworkOnStartup() {
         ? `network: repaired ${repaired.length} device(s) left shaped by an earlier run: ${repaired.join(", ")}`
         : `network: ${owned.length} attached device(s), none needed repair`,
     );
+    // The same sweep for locale and display settings, and for the same reason.
+    // A phone left in Arabic at 2x text does not look broken -- it stays online
+    // and answers every job -- so nothing else anywhere would ever report it.
+    const restated = await restoreAttachedState(owned);
+    log(
+      restated.length > 0
+        ? `device-state: repaired ${restated.length} device(s) left changed by an earlier run: ${restated.join(", ")}`
+        : `device-state: ${owned.length} attached device(s), none needed repair`,
+    );
   } catch (e) {
     // Never a reason not to start working: an executor that refuses to claim
     // because a restore sweep failed is a worse outage than the one it is
     // guarding against.
-    log(`network: startup restore sweep failed: ${(e as Error).message.slice(0, 200)}`);
+    log(`startup restore sweep failed: ${(e as Error).message.slice(0, 200)}`);
   }
 }
 
 async function main() {
   log(`polling ${BASE} (flows: ${FLOWS_DIR})`);
-  await restoreNetworkOnStartup();
+  await restoreDevicesOnStartup();
   // The dashboard calls a device online for ONLINE_S seconds after it was last
   // seen. Refreshing on a timer rather than per poll keeps presence steady
   // regardless of how long a long-poll blocks or how long a job runs.
@@ -2039,7 +2992,12 @@ async function main() {
     try {
       if (job.workload === "install") await runInstall(job);
       else if (job.workload === "ui-test") await runUiTest(job);
-      else if (job.workload === "soak") await runSoak(job);
+      // Same implementation, and deliberately so: `soak` with no params.flow is
+      // exactly the old behaviour, so the existing nightlies keep meaning what
+      // they meant.
+      else if (job.workload === "soak" || job.workload === "app-soak") await runAppSoak(job);
+      else if (job.workload === "locale-shots") await runLocaleShots(job);
+      else if (job.workload === "a11y-audit") await runA11yAudit(job);
       else if (job.workload === "drain") await runDrain(job);
       else if (job.workload === "cold-start") await runColdStart(job);
       else if (job.workload === "web-test") await runWebTest(job);
