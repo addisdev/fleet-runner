@@ -23,7 +23,16 @@ struct BenchParams: Codable {
     let warmupIters: Int?
     let measureIters: Int?
     let nThreads: Int?
+    /// Decoded and never read on iOS — the Android BenchmarkEngine turns a
+    /// `benchmark` into a timed loop with it, this runner never has. Kept so
+    /// the two protocols stay one protocol. Anything that wants a sustained
+    /// run here should send the `thermal` workload, which is that idea done
+    /// properly: a row per iteration rather than a mean over a warming device.
     let sustainedMinutes: Int?
+    /// thermal: how long to keep measuring, in seconds. The workload's whole
+    /// shape — it runs measured iterations until this elapses rather than a
+    /// fixed count of them, because the answer is a curve against wall time.
+    let durationS: Int?
     // batch / vision-eval / pipeline
     let inputSha256: String?
     let maxTokens: Int?
@@ -80,6 +89,19 @@ struct Metrics: Codable {
     var p50Ms: Double?
     var p95Ms: Double?
     var imagesPerS: Double?
+
+    // thermal. A benchmark row is a summary; a thermal row is a point on a
+    // curve, and these two are what place it. convertToSnakeCase maps them to
+    // elapsed_s and thermal_state, which is how fleet-collector's
+    // schemas/metrics.json names them.
+    //
+    // `thermalState` is the single state at this sample, deliberately not the
+    // `thermal` array above: the array is a bag of states a run passed
+    // through, which cannot say when. A string rather than a number because
+    // Android and iOS name their levels differently and flattening them would
+    // invent a scale neither vendor publishes.
+    var elapsedS: Double?
+    var thermalState: String?
 }
 
 struct BeaconSample: Codable {

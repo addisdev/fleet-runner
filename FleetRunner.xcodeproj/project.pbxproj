@@ -12,8 +12,10 @@
 		2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */; };
 		38E30C23455915A872514955 /* Workloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0BF52256E0CBF3AC96D589 /* Workloads.swift */; };
 		6424FDD0EDCF7806C66447F0 /* FleetSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */; };
+		8591C734F0CC29AECDA37140 /* BenchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */; };
 		8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35252602851DD4FC6838C5CC /* Telemetry.swift */; };
 		A98911FE185A5563E58375CA /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BB3BA830E838835C4AE2AD1 /* Protocol.swift */; };
+		B0BC3C9EA4C05413868B3AC0 /* ThermalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */; };
 		B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
 		BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965A118D55FCDC99E6F0349A /* FleetAgent.swift */; };
 		E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
@@ -42,6 +44,8 @@
 		A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetRunnerApp.swift; sourceTree = "<group>"; };
 		BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppBackend.swift; sourceTree = "<group>"; };
 		C3122AFE32636B1FE9348CA1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchSession.swift; sourceTree = "<group>"; };
+		C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalWorkload.swift; sourceTree = "<group>"; };
 		D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FleetRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLBackend.swift; sourceTree = "<group>"; };
 		D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticBackend.swift; sourceTree = "<group>"; };
@@ -54,6 +58,7 @@
 			isa = PBXGroup;
 			children = (
 				FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */,
+				C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */,
 				31632F0B6302F50DC2BD764E /* CollectorClient.swift */,
 				D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */,
 				965A118D55FCDC99E6F0349A /* FleetAgent.swift */,
@@ -64,6 +69,7 @@
 				6BB3BA830E838835C4AE2AD1 /* Protocol.swift */,
 				D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */,
 				35252602851DD4FC6838C5CC /* Telemetry.swift */,
+				C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */,
 				4A0BF52256E0CBF3AC96D589 /* Workloads.swift */,
 			);
 			path = FleetRunner;
@@ -181,6 +187,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */,
+				8591C734F0CC29AECDA37140 /* BenchSession.swift in Sources */,
 				B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */,
 				2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */,
 				BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */,
@@ -190,6 +197,7 @@
 				A98911FE185A5563E58375CA /* Protocol.swift in Sources */,
 				29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */,
 				8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */,
+				B0BC3C9EA4C05413868B3AC0 /* ThermalWorkload.swift in Sources */,
 				38E30C23455915A872514955 /* Workloads.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

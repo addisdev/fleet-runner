@@ -82,7 +82,7 @@ final class FleetAgent: ObservableObject {
     /// that the switch and what the collector's routing believes we can run
     /// cannot drift apart and earn us work we'd only bounce back as
     /// "not supported".
-    static let dispatchedWorkloads = ["benchmark", "batch", "batch:coreml", "pipeline"]
+    static let dispatchedWorkloads = ["benchmark", "batch", "batch:coreml", "pipeline", "thermal"]
 
     private func agentLoop(client: CollectorClient, deviceId: String) async {
         while !Task.isCancelled {
@@ -132,6 +132,8 @@ final class FleetAgent: ObservableObject {
                         await Workloads.runBatch(job: job, client: client, deviceId: deviceId, artifacts: cache)
                     case ("pipeline", _):
                         await Workloads.runPipeline(job: job, client: client, deviceId: deviceId, artifacts: cache)
+                    case ("thermal", _):
+                        await Workloads.runThermal(job: job, client: client, deviceId: deviceId, artifacts: cache)
                     default:
                         try await client.postResult(
                             ResultPost(
@@ -173,15 +175,17 @@ final class FleetAgent: ObservableObject {
 
         // Off the main actor: the hash loop must not block UI or beacons.
         let outcome: (iters: [IterResult], thermals: [String], loadMs: Int64, cancelled: Bool) = await Task.detached {
-            let backend = SyntheticBackend()
-            let loadMs = backend.load()
-            for _ in 0..<warmups { _ = backend.runIteration(promptTokens: pp, genTokens: tg) }
+            // The same session the thermal curve is measured with, so a cold
+            // number and a warm one come out of identical code and can be read
+            // against each other.
+            let session = SyntheticSession(promptTokens: pp, genTokens: tg, warmups: warmups)
+            defer { session.unload() }
             var iters: [IterResult] = []
             var thermals: [String] = []
             var cancelled = false
             for i in 1...measures {
                 if CancellationRegistry.shared.isCancelled(job.jobId) { cancelled = true; break }
-                let r = backend.runIteration(promptTokens: pp, genTokens: tg)
+                guard let r = session.measure() else { break }
                 iters.append(r)
                 thermals.append(Telemetry.thermal())
                 var m = Metrics()
@@ -194,8 +198,7 @@ final class FleetAgent: ObservableObject {
                 try? await client.postResult(
                     ResultPost(kind: "result", jobId: job.jobId, deviceId: deviceId, iter: i, metrics: m))
             }
-            backend.unload()
-            return (iters, thermals, loadMs, cancelled)
+            return (iters, thermals, session.loadMs, cancelled)
         }.value
 
         if outcome.cancelled {
@@ -255,36 +258,37 @@ final class FleetAgent: ObservableObject {
 
             let outcome: Result<(iters: [IterResult], thermals: [String], loadMs: Int64), Error> =
                 await Task.detached {
-                    let backend = LlamaCppBackend()
-                    defer { backend.unload() }
-                    guard let loadMs = backend.load(path: file.path, nCtx: nCtx, nThreads: nThreads) else {
-                        return .failure(CollectorError.http(0, "llama.cpp failed to load model"))
-                    }
-                    for _ in 0..<warmups { _ = backend.bench(pp: Int32(pp), tg: Int32(tg)) }
-                    var iters: [IterResult] = []
-                    var thermals: [String] = []
-                    for i in 1...measures {
-                        if CancellationRegistry.shared.isCancelled(job.jobId) { return .failure(JobCancelled()) }
-                        guard let (prefillMs, decodeMs, ttftMs) = backend.bench(pp: Int32(pp), tg: Int32(tg)) else {
-                            return .failure(CollectorError.http(0, "llama.cpp decode failed"))
+                    do {
+                        // The same session the thermal curve is measured with,
+                        // so a cold number and a warm one come out of
+                        // identical code and can be read against each other.
+                        let session = try LlamaSession(
+                            modelPath: file.path, promptTokens: pp, genTokens: tg,
+                            warmups: warmups, nCtx: nCtx, nThreads: nThreads)
+                        defer { session.unload() }
+                        var iters: [IterResult] = []
+                        var thermals: [String] = []
+                        for i in 1...measures {
+                            if CancellationRegistry.shared.isCancelled(job.jobId) { return .failure(JobCancelled()) }
+                            guard let r = session.measure() else {
+                                return .failure(BenchUnavailable(message: "llama.cpp decode failed"))
+                            }
+                            iters.append(r)
+                            thermals.append(Telemetry.thermal())
+                            var m = Metrics()
+                            m.prefillTokS = r.prefillTokS
+                            m.decodeTokS = r.decodeTokS
+                            m.ttftMs = r.ttftMs
+                            m.peakMemMb = Telemetry.physFootprintMb()
+                            m.memMethod = "phys_footprint"
+                            m.thermal = [thermals[thermals.count - 1]]
+                            try? await client.postResult(
+                                ResultPost(kind: "result", jobId: job.jobId, deviceId: deviceId, iter: i, metrics: m))
                         }
-                        let r = IterResult(
-                            prefillTokS: Double(pp) * 1000.0 / max(prefillMs, 1),
-                            decodeTokS: Double(tg) * 1000.0 / max(decodeMs, 1),
-                            ttftMs: ttftMs)
-                        iters.append(r)
-                        thermals.append(Telemetry.thermal())
-                        var m = Metrics()
-                        m.prefillTokS = r.prefillTokS
-                        m.decodeTokS = r.decodeTokS
-                        m.ttftMs = r.ttftMs
-                        m.peakMemMb = Telemetry.physFootprintMb()
-                        m.memMethod = "phys_footprint"
-                        m.thermal = [thermals[thermals.count - 1]]
-                        try? await client.postResult(
-                            ResultPost(kind: "result", jobId: job.jobId, deviceId: deviceId, iter: i, metrics: m))
+                        return .success((iters, thermals, session.loadMs))
+                    } catch {
+                        return .failure(error)
                     }
-                    return .success((iters, thermals, loadMs))
                 }.value
 
             switch outcome {
