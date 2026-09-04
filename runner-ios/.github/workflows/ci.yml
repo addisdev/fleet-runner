@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: brew install xcodegen
+
+      # Picks the spec this checkout can build. There is no llama.xcframework
+      # here -- it is 850 MB and gitignored -- so this generates the project
+      # without the llama.cpp backend, which is exactly the state a stranger
+      # cloning the repo is in. If that ever stops building, this job is how
+      # we find out.
+      - run: ./generate.sh
+
+      - name: Build for the simulator
+        run: |
+          xcodebuild build \
+            -project FleetRunner.xcodeproj \
+            -scheme FleetRunner \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO
