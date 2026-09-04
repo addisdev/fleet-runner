@@ -15,6 +15,7 @@ import com.taylab.fleetrunner.telemetry.Telemetry
 import com.taylab.fleetrunner.workload.BatchEngine
 import com.taylab.fleetrunner.workload.BenchmarkEngine
 import com.taylab.fleetrunner.workload.PipelineEngine
+import com.taylab.fleetrunner.workload.ThermalEngine
 import com.taylab.fleetrunner.workload.VisionEvalEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -92,7 +93,7 @@ class RunnerService : Service() {
      * the dispatch `when` in [agentLoop] that it mirrors, so the declared list
      * and the dispatched workloads cannot drift apart.
      */
-    private val capabilities = listOf("benchmark", "batch", "batch:litert", "pipeline")
+    private val capabilities = listOf("benchmark", "batch", "batch:litert", "pipeline", "thermal")
 
     private suspend fun agentLoop(client: CollectorClient, deviceId: String) {
         while (true) {
@@ -135,6 +136,7 @@ class RunnerService : Service() {
                                 if (job.backend == "litert") VisionEvalEngine(this, client, deviceId).run(job)
                                 else BatchEngine(this, client, deviceId).run(job)
                             "pipeline" -> PipelineEngine(this, client, deviceId).run(job)
+                            "thermal" -> ThermalEngine(this, client, deviceId).run(job)
                             else -> client.postResult(
                                 ResultPost(
                                     kind = "result", jobId = job.jobId, deviceId = deviceId,

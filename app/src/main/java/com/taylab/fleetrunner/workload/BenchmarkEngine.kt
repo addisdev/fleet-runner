@@ -14,8 +14,18 @@ import com.taylab.fleetrunner.telemetry.Telemetry
 
 /**
  * Runs a benchmark job: timed load, mandatory warmups (reported via load_ms
- * separation, excluded from measurement), per-iteration result rows, then a
- * final summary row (iter 0) that closes the job.
+ * separation, excluded from measurement), a fixed `measure_iters` count of
+ * per-iteration result rows, then a final summary row (iter 0) that closes the
+ * job.
+ *
+ * This measures a cold device, and only that. It used to also take a
+ * `sustained_minutes` param that swapped the iteration count for a wall-clock
+ * deadline, which was the thermal curve done by hand: no elapsed axis on the
+ * rows, no summary of where the device turned, and a beacon every fifth
+ * iteration on the assumption that iterations keep their length — the one
+ * assumption a warming device breaks. The `thermal` workload does that job
+ * properly, so the param is gone rather than left as a second way to ask for a
+ * curve and get a worse one.
  */
 class BenchmarkEngine(
     private val context: Context,
@@ -25,10 +35,6 @@ class BenchmarkEngine(
     fun run(job: JobSpec) {
         val warmups = job.params.intParam("warmup_iters", 1)
         val measures = job.params.intParam("measure_iters", 3)
-        // Sustained mode: keep iterating for N minutes instead of a fixed count.
-        // The per-iteration rows ARE the thermal curve — tok/s over wall time
-        // is the honest number for real workloads, not the first-minute burst.
-        val sustainedMinutes = job.params.intParam("sustained_minutes", 0)
         val batteryStart = Telemetry.batteryPct(context)
         val thermals = mutableListOf<String>()
 
@@ -38,9 +44,8 @@ class BenchmarkEngine(
             repeat(warmups) { backend.runIteration(job) }
 
             val iters = mutableListOf<IterResult>()
-            val deadline = if (sustainedMinutes > 0) System.currentTimeMillis() + sustainedMinutes * 60_000L else 0L
             var i = 0
-            while (if (sustainedMinutes > 0) System.currentTimeMillis() < deadline else i < measures) {
+            while (i < measures) {
                 // A cancelled job stops between iterations, never mid-iteration:
                 // the rows already posted stay valid, this one just never starts.
                 if (JobCancellation.isCancelled(job.jobId)) {
@@ -71,18 +76,6 @@ class BenchmarkEngine(
                         ),
                     ),
                 )
-                if (sustainedMinutes > 0 && i % 5 == 0) {
-                    // Sustained runs outlive the lease TTL: renew explicitly.
-                    val ack = client.postResult(
-                        ResultPost(kind = "beacon", deviceId = deviceId, jobId = job.jobId, beacon = Telemetry.beacon(context)),
-                    )
-                    // This ack carries the same lease_renewed the service
-                    // beacon reads, and a sustained run lasts quarter-hours, so
-                    // honour it here rather than waiting up to a minute for the
-                    // service beacon's turn. Explicit false only: a beacon that
-                    // fails to post throws to the catch below, as it always did.
-                    if (!ack.leaseRenewed) JobCancellation.cancel(job.jobId)
-                }
             }
             backend.unload()
 
