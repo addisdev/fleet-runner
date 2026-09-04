@@ -1,0 +1,42 @@
+{
+  "name": "fleet-collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "Fleet Runner collector: device registry, job queue, artifact store, results DB, dashboard.",
+  "scripts": {
+    "test": "tsx scripts/test.ts",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/server.ts",
+    "dev": "tsx watch src/server.ts",
+    "executor": "tsx src/executor.ts",
+    "smoke": "tsx scripts/smoke.ts",
+    "dash:install": "npm --prefix dash install",
+    "dash:build": "npm --prefix dash run build",
+    "dash:dev": "npm --prefix dash run dev",
+    "seed:schedules": "tsx scripts/seed-schedules.ts",
+    "ci:upload": "tsx scripts/ci-upload.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "fastify": "^5.4.0",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.62.1",
+    "pngjs": "^7.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.2.0",
+    "@types/pngjs": "^6.0.5",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "better-sqlite3@12.11.1": true
+  }
+}

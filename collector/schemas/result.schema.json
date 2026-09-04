@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fleet.local/schemas/result/v1",
+  "title": "Fleet Runner result row (schema 1)",
+  "description": "Posted to /results. kind=result rows are idempotent by (job_id, device_id, iter). kind=beacon rows are telemetry samples, also posted during host-driven jobs.",
+  "type": "object",
+  "required": ["schema", "kind", "device_id"],
+  "properties": {
+    "schema": { "const": 1 },
+    "kind": { "enum": ["result", "beacon"] },
+    "job_id": { "type": "string", "description": "required for kind=result; optional for beacon samples" },
+    "device_id": { "type": "string" },
+    "iter": { "type": "integer", "minimum": 0, "description": "iteration number; use 0 for single-shot results and the summary row" },
+    "final": { "type": "boolean", "description": "marks the job finished on this device" },
+    "ok": { "type": "boolean", "description": "with final: pass/fail verdict" },
+    "device": {
+      "type": "object",
+      "properties": {
+        "model": { "type": "string" },
+        "soc": { "type": "string" },
+        "ram_mb": { "type": "number" },
+        "os": { "type": "string" },
+        "app_ver": { "type": "string" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Workload metrics; memory is labeled, never laundered.\n\nEvery field here means one thing. Before the vision-eval and drain fields existed, those workloads reused the LLM slots — vision put top-1 accuracy in decode_tok_s, p50 latency in ttft_ms and images/sec in prefill_tok_s; drain put percent-per-hour in decode_tok_s — and top-5 and p95 had nowhere to go at all, so they were only ever in the hand-written eval report. Rows predating these fields still carry that convention, and the dashboard marks anything it had to infer that way. New runners must populate the named fields instead.",
+      "properties": {
+        "load_ms": { "type": "number" },
+        "prefill_tok_s": { "type": "number" },
+        "decode_tok_s": { "type": "number" },
+        "ttft_ms": { "type": "number" },
+        "peak_mem_mb": { "type": "number" },
+        "mem_method": {
+        "enum": ["phys_footprint", "pss", "max_rss"],
+        "description": "How peak_mem_mb was measured, so two numbers are never compared as if they were the same quantity. phys_footprint is iOS, pss is Android and Linux. max_rss is what macOS and Windows can honestly offer for a subprocess: it counts shared pages the other two do not, so it reads high against them and must not be silently folded in with pss."
+      },
+        "thermal": { "type": "array", "items": { "enum": ["nominal", "fair", "serious", "critical"] } },
+        "battery_start_pct": { "type": "number" },
+        "battery_end_pct": { "type": "number" },
+
+        "top1_pct": { "type": "number", "description": "vision-eval: top-1 accuracy over the eval set" },
+        "top5_pct": { "type": "number", "description": "vision-eval: top-5 accuracy over the eval set" },
+        "p50_ms": { "type": "number", "description": "vision-eval: median per-image inference latency" },
+        "p95_ms": { "type": "number", "description": "vision-eval: 95th-percentile per-image inference latency" },
+        "images_per_s": { "type": "number", "description": "vision-eval: throughput" },
+
+      "elapsed_s": { "type": "number", "description": "thermal: seconds since the run started, so a row is a point on a curve rather than a summary" },
+      "thermal_state": { "type": "string", "description": "thermal: the OS thermal state at this sample. A string because Android and iOS name their levels differently and flattening them would invent a scale neither vendor publishes" },
+
+      "launch_ms": { "type": "number", "description": "cold-start: time to first frame for one launch" },
+      "launch_state": { "type": "string", "enum": ["cold", "warm", "hot"], "description": "cold-start: which launch this row measured. p50 across mixed states is meaningless, so the state is a field rather than a note" },
+
+      "disk_free_gb": { "type": "number", "description": "self-check: free space on the executor host's data volume" },
+      "clock_offset_ms": { "type": "number", "description": "self-check: offset against NTP. A skewed executor clock makes every duration in the results table wrong in a way nothing else would reveal" },
+      "checks_failed": { "type": "number", "description": "self-check: how many host checks failed, so the alert rule needs no parsing" },
+        "drain_pct_per_h": { "type": "number", "description": "drain: battery percent consumed per hour" },
+        "diff_pct": { "type": "number", "description": "web-shots: percent of pixels differing from the accepted baseline (100 when the dimensions changed)" },
+
+        "pages_crawled": { "type": "integer", "description": "web-audit: pages the crawl visited" },
+        "issues_error": { "type": "integer", "description": "web-audit/web-unfurl: error-severity findings (these fail the run)" },
+        "issues_warn": { "type": "integer", "description": "web-audit/web-unfurl: warn-severity findings (recorded, never fail the run)" },
+        "clicks": { "type": "integer", "description": "archive(gsc): total clicks for the archived day" },
+        "impressions": { "type": "integer", "description": "archive(gsc): total impressions for the archived day" },
+        "ctr_pct": { "type": "number", "description": "archive(gsc): click-through rate percent" },
+        "avg_position": { "type": "number", "description": "archive(gsc): impression-weighted average position" },
+        "reviews_count": { "type": "integer", "description": "archive(asc/play) and digest: reviews pulled / digested" },
+        "avg_rating": { "type": "number", "description": "archive(asc/play) and digest: mean star rating over those reviews" },
+        "clusters": { "type": "integer", "description": "digest: topic clusters in the assembled digest" }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "sha256 refs of output artifacts the runner uploaded (batch outputs, reports)"
+    },
+    "test": {
+      "type": "object",
+      "description": "ui-test outcomes",
+      "properties": {
+        "passed": { "type": "integer" },
+        "failed": { "type": "integer" },
+        "artifacts": { "type": "array", "items": { "type": "string" }, "description": "sha256 refs of screenshots/videos/junit uploaded to the artifact store" }
+      }
+    },
+    "shot": {
+      "type": "object",
+      "description": "web-shots per-page rows: which cell of the visual matrix this row judges. The dashboard grid is assembled from these — never from iter order, which maps to manifest order and changes when the manifest does.",
+      "properties": {
+        "suite": { "type": "string" },
+        "page": { "type": "string" },
+        "profile": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "the captured shot; absent when capture failed" },
+        "diff_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "the diff image; present only when the page diverged past threshold" }
+      }
+    },
+    "beacon": {
+      "type": "object",
+      "description": "kind=beacon telemetry sample",
+      "properties": {
+        "battery_pct": { "type": "number" },
+        "charging": { "type": "boolean" },
+        "thermal": { "enum": ["nominal", "fair", "serious", "critical"] },
+        "mem_pressure": { "type": "string" },
+        "process_alive": { "type": "object", "additionalProperties": { "type": "boolean" } }
+      }
+    }
+  }
+}

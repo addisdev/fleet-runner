@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fleet.local/schemas/job/v1",
+  "title": "Fleet Runner job spec (schema 1)",
+  "type": "object",
+  "required": ["schema", "job_id", "workload", "executor"],
+  "properties": {
+    "schema": { "const": 1 },
+    "job_id": { "type": "string", "minLength": 1 },
+    "workload": {
+      "type": "string",
+      "minLength": 1,
+      "description": "No longer a closed enum. The names below are what the collector and the host executor ship with; beyond them, the collector accepts any workload some registered agent declares in its capabilities, and refuses the rest with a 422 naming the missing capability. That is what lets a new runner add work without a release in the collector.",
+      "examples": [
+        "benchmark", "batch", "pipeline", "install", "ui-test", "drain", "soak",
+        "web-test", "web-shots", "web-audit", "web-unfurl", "archive", "digest",
+        "thermal", "cold-start", "self-check"
+      ]
+    },
+    "executor": {
+      "enum": ["device", "host"],
+      "description": "device = on-device runner app claims by polling; host = Mac-side executor drives devices from outside"
+    },
+    "model": {
+      "type": "object",
+      "description": "ML workloads: the model artifact to run",
+      "required": ["name", "format", "sha256"],
+      "properties": {
+        "name": { "type": "string" },
+        "format": { "enum": ["gguf", "mlmodelc", "tflite"] },
+        "quant": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "app": {
+      "type": "object",
+      "description": "App-testing workloads: the build artifact to install/run. Android artifacts are raw APKs; iOS artifacts are zips of the .app bundle.",
+      "required": ["name", "build", "sha256"],
+      "properties": {
+        "name": { "type": "string" },
+        "build": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "platform": { "enum": ["android", "ios"], "default": "android" }
+      }
+    },
+    "backend": { "enum": ["llama.cpp", "coreml", "litert", "whisper.cpp"] },
+    "suite": {
+      "type": "object",
+      "description": "ui-test, web-test and web-shots workloads. For playwright, `flows` is a spec directory under web-specs/ and params.browser picks the config project(s): one name, an array run in sequence, or \"all\" for every project in playwright.config.ts. web-shots reads `flows`/shots.json — the manifest of pages to capture and the profiles to capture them under (params.browser overrides the manifest's profiles).",
+      "properties": {
+        "kind": { "enum": ["maestro", "xcuitest", "playwright"] },
+        "flows": { "type": "string" }
+      }
+    },
+    "params": { "type": "object" },
+    "lease": {
+      "type": "object",
+      "description": "How long a claim stays valid without proof of life. The runner renews it by posting POST /results kind=beacon with this job_id; a lapsed lease is requeued by the collector's sweep, and failed once max_attempts is spent. Omit for the defaults: 600 s, or 14400 s for drain/soak, which run for hours between beacons.",
+      "properties": {
+        "ttl_s": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400,
+          "description": "Lease length in seconds. Set this above the longest gap expected between beacons for the workload."
+        },
+        "max_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 3,
+          "description": "Total claims allowed before an expiry marks the job failed instead of requeueing it."
+        }
+      },
+      "additionalProperties": false
+    },
+    "fanout": {
+      "description": "Enqueue one child job per selected device, each pinned via targets.device_id with job_id suffixed --<device_id>. true selects every device targets.pool/match matches. { \"distinct\": \"os\" } selects one device per distinct value of that descriptor field, newest-seen first — the canary shape: a smoke pass on every OS on the shelf without paying for every phone. Host jobs may fan out too; a host child is pinned the same way and the executor's target selection already honours it.",
+      "oneOf": [
+        { "type": "boolean" },
+        {
+          "type": "object",
+          "required": ["distinct"],
+          "properties": { "distinct": { "type": "string", "description": "descriptor field to group by, e.g. \"os\" or \"soc\"" } },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "targets": {
+      "type": "object",
+      "properties": {
+        "pool": { "type": "string" },
+        "device_id": { "type": "string", "description": "pin this job to exactly one device-executor agent" },
+        "match": { "type": "string", "description": "descriptor expression, e.g. \"ram_mb >= 4000 && os ~ 'android'\" — fields: model, soc, ram_mb, os, app_ver, device_id, pools; ops == != < <= > >= ~(regex) && || ! ( )" },
+        "exclusive": { "type": "boolean", "description": "host jobs: hold collector device locks on all targets while running, starving device-executor agents until release" },
+        "executor": { "type": "string", "description": "which host executor should claim this — a statement about which machine can reach the toolchain or the device, which no descriptor field can express" },
+        "url": { "type": "string", "description": "web-test only: what to point the browser at; no device is involved and none is locked" },
+        "device_kind": { "enum": ["device", "simulator"], "description": "host jobs: narrow selection to real hardware or simulators — a property of how a device is attached, which no descriptor field expresses honestly" }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "description": "Device-state preconditions. require_charging and min_battery_pct are enforced by the runner app at claim time, against live state: it refuses the job with a failed result. The rest are enforced by the collector before the claim, against the device's last beacon, so the job stays queued and is offered again later rather than burning an attempt. The split is deliberate — a laptop that is merely busy has not failed at anything.",
+      "properties": {
+        "require_charging": { "type": "boolean" },
+        "min_battery_pct": { "type": "number" },
+        "require_ac": {
+          "type": "boolean",
+          "description": "Only claim while on mains power. A laptop on battery throttles hard enough to turn a benchmark trend line into noise."
+        },
+        "require_idle_s": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Only claim after the machine has been idle this long. Keeps a job from spinning up the fans while someone is typing."
+        },
+        "max_load": {
+          "type": "number",
+          "description": "Only claim while the 1-minute load average is at or below this."
+        },
+        "window": {
+          "type": "object",
+          "description": "Only claim inside this local-time window. Crossing midnight is allowed: from 22 to 06 means the night, not an empty set.",
+          "required": ["from", "to"],
+          "properties": {
+            "from": { "type": "integer", "minimum": 0, "maximum": 23 },
+            "to": { "type": "integer", "minimum": 0, "maximum": 23 },
+            "tz_offset_min": { "type": "integer", "description": "Minutes east of UTC for the window's clock; omit for the collector's own." }
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "report_to": {
+      "type": "object",
+      "properties": {
+        "github_status": { "type": "string", "description": "owner/repo@sha to post a commit status to (Phase 5)" }
+      }
+    }
+  }
+}
