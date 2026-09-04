@@ -1,6 +1,27 @@
 import Foundation
 import UIKit
 
+/// Jobs the collector has told us to stop running, learned from a beacon that
+/// came back with `lease_renewed: false`. The beacon runs detached and the
+/// workloads read this from their own tasks, so it locks like CurrentJobBox.
+final class CancellationRegistry: @unchecked Sendable {
+    static let shared = CancellationRegistry()
+    private let lock = NSLock()
+    private var ids: Set<String> = []
+    func cancel(_ jobId: String) { lock.lock(); ids.insert(jobId); lock.unlock() }
+    func isCancelled(_ jobId: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }; return ids.contains(jobId)
+    }
+    func clear() { lock.lock(); ids.removeAll(); lock.unlock() }
+}
+
+/// Thrown by a workload at an iteration boundary when its job was cancelled.
+/// The message is what lands in the final row's `error`, and every workload
+/// already reports failures as `fail(error.localizedDescription)`.
+struct JobCancelled: Error, LocalizedError {
+    var errorDescription: String? { "cancelled" }
+}
+
 /// Agent loop + telemetry beacon, mirroring the Android RunnerService.
 @MainActor
 final class FleetAgent: ObservableObject {
@@ -33,8 +54,15 @@ final class FleetAgent: ObservableObject {
         beaconTask = Task.detached {
             while !Task.isCancelled {
                 let beacon = await Telemetry.beacon()
-                try? await client.postResult(
-                    ResultPost(kind: "beacon", jobId: jobBox.get(), deviceId: deviceId, beacon: beacon))
+                let jobId = jobBox.get()
+                // `try?` still swallows every failure: a throw, a timeout or a
+                // non-2xx leaves `renewed` nil, and only an explicit false in a
+                // 2xx body — the collector saying the claim is gone — cancels.
+                let renewed = try? await client.postBeacon(
+                    ResultPost(kind: "beacon", jobId: jobId, deviceId: deviceId, beacon: beacon))
+                if renewed == false, let jobId {
+                    CancellationRegistry.shared.cancel(jobId)
+                }
                 try? await Task.sleep(for: .seconds(60))
             }
         }
@@ -49,6 +77,13 @@ final class FleetAgent: ObservableObject {
         status = "stopped"
     }
 
+    /// Exactly the workloads the dispatch switch in `agentLoop` handles, sent
+    /// at registration as this device's capabilities. One list for both, so
+    /// that the switch and what the collector's routing believes we can run
+    /// cannot drift apart and earn us work we'd only bounce back as
+    /// "not supported".
+    static let dispatchedWorkloads = ["benchmark", "batch", "batch:coreml", "pipeline"]
+
     private func agentLoop(client: CollectorClient, deviceId: String) async {
         while !Task.isCancelled {
             do {
@@ -57,7 +92,8 @@ final class FleetAgent: ObservableObject {
                     RegisterPost(
                         deviceId: deviceId,
                         descriptor: Telemetry.descriptor(),
-                        pools: ["ml-capable"]))
+                        pools: ["ml-capable"],
+                        capabilities: Self.dispatchedWorkloads))
                 while !Task.isCancelled {
                     status = "polling for work"
                     guard let job = try await client.nextJob(deviceId: deviceId) else { continue }
@@ -83,8 +119,10 @@ final class FleetAgent: ObservableObject {
 
                     status = "running \(job.jobId)"
                     currentJobId.set(job.jobId)
-                    defer { currentJobId.set(nil) }
+                    defer { currentJobId.set(nil); CancellationRegistry.shared.clear() }
                     let cache = ArtifactCache(collectorURL: baseURL!)
+                    // Every case here is a string in `dispatchedWorkloads` above,
+                    // which is what we registered as our capabilities.
                     switch (job.workload, job.backend) {
                     case ("benchmark", _):
                         await runBenchmark(job: job, client: client, deviceId: deviceId)
@@ -134,13 +172,15 @@ final class FleetAgent: ObservableObject {
         }
 
         // Off the main actor: the hash loop must not block UI or beacons.
-        let outcome: (iters: [IterResult], thermals: [String], loadMs: Int64) = await Task.detached {
+        let outcome: (iters: [IterResult], thermals: [String], loadMs: Int64, cancelled: Bool) = await Task.detached {
             let backend = SyntheticBackend()
             let loadMs = backend.load()
             for _ in 0..<warmups { _ = backend.runIteration(promptTokens: pp, genTokens: tg) }
             var iters: [IterResult] = []
             var thermals: [String] = []
+            var cancelled = false
             for i in 1...measures {
+                if CancellationRegistry.shared.isCancelled(job.jobId) { cancelled = true; break }
                 let r = backend.runIteration(promptTokens: pp, genTokens: tg)
                 iters.append(r)
                 thermals.append(Telemetry.thermal())
@@ -155,8 +195,17 @@ final class FleetAgent: ObservableObject {
                     ResultPost(kind: "result", jobId: job.jobId, deviceId: deviceId, iter: i, metrics: m))
             }
             backend.unload()
-            return (iters, thermals, loadMs)
+            return (iters, thermals, loadMs, cancelled)
         }.value
+
+        if outcome.cancelled {
+            try? await client.postResult(
+                ResultPost(
+                    kind: "result", jobId: job.jobId, deviceId: deviceId,
+                    iter: 0, final: true, ok: false,
+                    device: Telemetry.descriptor(), error: "cancelled"))
+            return
+        }
 
         var summary = Metrics()
         summary.loadMs = outcome.loadMs
@@ -215,6 +264,7 @@ final class FleetAgent: ObservableObject {
                     var iters: [IterResult] = []
                     var thermals: [String] = []
                     for i in 1...measures {
+                        if CancellationRegistry.shared.isCancelled(job.jobId) { return .failure(JobCancelled()) }
                         guard let (prefillMs, decodeMs, ttftMs) = backend.bench(pp: Int32(pp), tg: Int32(tg)) else {
                             return .failure(CollectorError.http(0, "llama.cpp decode failed"))
                         }
