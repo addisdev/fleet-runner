@@ -1,7 +1,7 @@
 # fleet-runner-machine
 
 The desktop half of **Fleet Runner**, a personal device lab: a Node agent that turns a laptop or
-desktop into a node the [collector](https://github.com/addisdev/fleet-collector) can send work to.
+desktop into a node the [collector](../collector) can send work to.
 It reimplements the phone runners' JSON protocol rather than importing the collector's helpers,
 and its synthetic SHA-256 backend is theirs token for token — which is what makes a laptop's
 tok/s comparable to a phone's. And a machine can be scheduled around: `require_ac`,

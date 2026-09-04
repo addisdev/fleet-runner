@@ -10,8 +10,8 @@ Written 2026-08-18.*
 > reproducible from a query.
 >
 > **D0–D6** were merged
-> across [PR #1](https://github.com/addisdev/fleet-collector/pull/1) (D0–D2) and
-> [PR #2](https://github.com/addisdev/fleet-collector/pull/2) (D3–D6). The smoke
+> across [PR #1](https://github.com/addisdev/collector/pull/1) (D0–D2) and
+> [PR #2](https://github.com/addisdev/collector/pull/2) (D3–D6). The smoke
 > suite grew from 44 to **207 checks** and survives repeated runs against one
 > collector.
 >
@@ -46,7 +46,7 @@ Written 2026-08-18.*
 
 ## 0. Where we are
 
-The collector already ships a dashboard: `GET /dash` in `fleet-collector/src/dash.ts` renders five static tables (devices, last 50 jobs, last 50 results, schedules, locks) and `GET /dash/bench` renders the cross-device benchmark table. It is read-only, has no filtering, no detail pages, no charts, no actions, and refreshes only on reload. Everything you can *do* to the fleet today is a `curl` against the JSON API.
+The collector already ships a dashboard: `GET /dash` in `collector/src/dash.ts` renders five static tables (devices, last 50 jobs, last 50 results, schedules, locks) and `GET /dash/bench` renders the cross-device benchmark table. It is read-only, has no filtering, no detail pages, no charts, no actions, and refreshes only on reload. Everything you can *do* to the fleet today is a `curl` against the JSON API.
 
 The API underneath is in better shape than the UI: jobs with leases/attempts/`last_error`, fan-out, schedules, device locks, artifacts, events, power webhooks, status reports. So the dashboard is mostly a **read + control surface over data that already exists**, plus a handful of missing endpoints.
 
@@ -63,7 +63,7 @@ Non-goals: auth/multi-tenant (stays LAN/Tailscale-only), editing job specs by ha
 ## 2. Architecture
 
 ```
-fleet-collector/
+collector/
   src/server.ts        ← existing routes  +  new /api/* JSON routes  +  SSE stream
   src/dash.ts          ← keep as /dash/legacy until the new UI covers it, then delete
   src/api/             ← new: jobs.ts, devices.ts, results.ts, system.ts, stream.ts
@@ -200,9 +200,9 @@ Each phase is shippable and leaves `/dash` working.
 **Landed 2026-08-19.** `vision-eval` results no longer arrive in metric fields
 that mean something else, so the plant-ID report is reproducible from a query.
 
-- [`fleet-runner-android#1`](https://github.com/addisdev/fleet-runner-android/pull/1)
-- [`fleet-runner-ios#1`](https://github.com/addisdev/fleet-runner-ios/pull/1)
-- [`fleet-collector#3`](https://github.com/addisdev/fleet-collector/pull/3) — the drain half
+- [`fleet-runner-android#1`](https://github.com/addisdev/runner-android/pull/1)
+- [`fleet-runner-ios#1`](https://github.com/addisdev/runner-ios/pull/1)
+- [`fleet-collector#3`](https://github.com/addisdev/collector/pull/3) — the drain half
 
 ### What was wrong
 

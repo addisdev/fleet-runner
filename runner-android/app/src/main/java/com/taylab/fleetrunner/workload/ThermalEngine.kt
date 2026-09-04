@@ -100,7 +100,7 @@ class ThermalRun(
  * measure step, no second inference path — because what a feature ships against
  * is the sustained figure, not the first-minute burst.
  *
- * Metric names are mirrored from fleet-collector's schemas/metrics.json.
+ * Metric names are mirrored from the collector's schemas/metrics.json.
  * `elapsed_s` and `thermal_state` carry the curve's two axes. `battery_pct` is
  * not a metric name there — it is a beacon field — so per-iteration battery
  * rides `battery_end_pct`, as it does in the benchmark's rows.

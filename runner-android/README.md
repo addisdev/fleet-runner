@@ -2,7 +2,7 @@
 
 The Android half of **Fleet Runner**, a personal device lab. A foreground
 service turns any phone or tablet back to Android 7 (minSdk 24) into a node
-that a [collector](https://github.com/addisdev/fleet-collector) can send work
+that a [collector](../collector) can send work
 to: llama.cpp and LiteRT benchmarks, batch inference, and image-classification
 evals, with a telemetry beacon reporting battery, charging and thermal state
 every 60 seconds.
@@ -21,7 +21,7 @@ content hash from the collector's artifact store.
 |---|---|---|
 | Agent loop | `RunnerService.kt` | register → long-poll → run → report, with error backoff |
 | Telemetry beacon | `RunnerService.kt` / `telemetry/Telemetry.kt` | battery, thermal (shared enum), PSS; also runs during host-driven jobs |
-| Protocol | `protocol/Protocol.kt` | Kotlin mirror of `fleet-collector/schemas` (`schema: 1`) |
+| Protocol | `protocol/Protocol.kt` | Kotlin mirror of `collector/schemas` (`schema: 1`) |
 | Backends | `backend/` | `ModelBackend` interface; `synthetic` (SHA-256 CPU throughput — real, device-comparable numbers, never LLM numbers) and `llama.cpp` (Phase 1b stub: fails fast with an honest error) |
 | Benchmark engine | `workload/BenchmarkEngine.kt` | timed load, mandatory warmups, per-iteration rows, final summary closes the job |
 

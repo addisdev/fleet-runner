@@ -17,13 +17,35 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 
 ![The dashboard: llama.cpp benchmark numbers measured on a real phone](docs/img/results.png)
 
-## The repositories
+## What is in here
+
+Four projects in one repository. They ship independently and share no code —
+only a JSON protocol — but they are versioned together, because the protocol is
+the thing that breaks and a change to it touches three of them at once.
 
 | | What it is |
 |---|---|
-| **[fleet-collector](https://github.com/addisdev/fleet-collector)** | The brain. Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. |
-| **[fleet-runner-android](https://github.com/addisdev/fleet-runner-android)** | The Android agent. A foreground service on anything back to Android 7, with llama.cpp (NDK/JNI) and LiteRT backends. |
-| **[fleet-runner-ios](https://github.com/addisdev/fleet-runner-ios)** | The iOS agent. SwiftUI, with llama.cpp and Core ML backends, speaking the same JSON protocol without sharing a line of code. |
+| **[collector/](collector)** | The brain. Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. |
+| **[runner-android/](runner-android)** | The Android agent. A foreground service on anything back to Android 7, with llama.cpp (NDK/JNI) and LiteRT backends. |
+| **[runner-ios/](runner-ios)** | The iOS agent. SwiftUI, with llama.cpp and Core ML backends, speaking the same JSON protocol without sharing a line of code. |
+| **[runner-machine/](runner-machine)** | The desktop agent. A Node process that makes a laptop or desktop a fleet device, so a phone's tok/s and a laptop's land in the same table. |
+
+Each directory has its own README, its own tests and its own CI job, filtered by
+path so a change to a phone runner does not build the dashboard.
+
+### Why one repository
+
+These were four repositories until the protocol started changing. A metric name
+lives in `collector/schemas/result.schema.json` and is mirrored by hand in three
+runners; a capability list is declared by an agent and enforced by the queue.
+Every one of those is a change that has to land in several places at once, and
+across repositories it lands in several pull requests that can each merge alone.
+The drift is not hypothetical — an eval's accuracy once rode in a field named
+`decode_tok_s` because vision had no field of its own, and no query can
+reproduce that report's numbers today.
+
+One repository makes such a change one reviewable diff, and lets `npm test`
+in `collector/` fail when the schema and its mirror disagree.
 
 ## How it fits together
 
@@ -33,6 +55,7 @@ flowchart LR
         A["Android runner"]
         I["iOS runner"]
     end
+    M["machine runner<br/><i>laptop or desktop</i>"]
     subgraph host["a Mac with devices plugged in"]
         X["host executor<br/><i>adb · Maestro · simctl · Playwright</i>"]
     end
@@ -41,6 +64,7 @@ flowchart LR
 
     A -- "long-poll, claim, report" --> C
     I -- "long-poll, claim, report" --> C
+    M -- "long-poll, claim, report" --> C
     X -- "claims host jobs" --> C
     X -- "drives from outside" --> shelf
     C --- D
@@ -51,10 +75,15 @@ claimed by an executor on a Mac and drive a device from outside, because
 installing an APK or tapping through a UI test is not something an app can do
 to itself.
 
-The two runners share a protocol, not code — including a synthetic SHA-256
-benchmark that is identical on both platforms token for token. That is what
-lets a 2019 Android phone and a current iPhone produce numbers you can put in
-the same table, which is the difference between a fleet and a pile of phones.
+The runners share a protocol, not code — including a synthetic SHA-256
+benchmark that is identical on every platform token for token. That is what
+lets a 2019 Android phone, a current iPhone and a laptop produce numbers you can
+put in the same table, which is the difference between a fleet and a pile of
+phones.
+
+A runner also says what it can run. The queue routes on those declared
+capabilities rather than on a label someone applied, so adding a workload is
+something a runner can do without the collector shipping a release.
 
 ## What came out of it
 
@@ -87,7 +116,7 @@ Three findings worth the whole build:
    trustworthy.
 
 Full write-up, including the quantization scripts and the licensing of every
-model and dataset: **[the eval](https://github.com/addisdev/fleet-collector/blob/main/evals/greenfolio-plant-id.md)**.
+model and dataset: **[the eval](collector/evals/greenfolio-plant-id.md)**.
 
 ## Things I learned the hard way
 

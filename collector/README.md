@@ -9,8 +9,8 @@ XCUITest suite across them, benchmark llama.cpp on real silicon, classify a
 few hundred images through Core ML and LiteRT, screenshot a website on two
 real phones and diff it against a baseline, or drain a battery on purpose and
 plot the curve. The runners are separate apps —
-[iOS](https://github.com/addisdev/fleet-runner-ios) and
-[Android](https://github.com/addisdev/fleet-runner-android) — that speak a
+[iOS](../runner-ios) and
+[Android](../runner-android) — that speak a
 shared JSON protocol, not shared code.
 
 Node + Fastify + SQLite in WAL mode. No build step for the server, no broker,

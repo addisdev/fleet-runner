@@ -1,7 +1,7 @@
 /**
  * HTTP client for the collector.
  *
- * The same primitives as fleet-collector/src/fleet-client.ts, re-implemented
+ * The same primitives as collector/src/fleet-client.ts, re-implemented
  * rather than imported — for the same reason the Android and iOS runners have
  * their own: an agent that is a device on the fleet should depend on the
  * protocol, not on the collector's source tree.

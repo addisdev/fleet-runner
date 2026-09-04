@@ -8,9 +8,9 @@
 # Build the framework first, from the same pinned llama.cpp commit the Android
 # JNI backend uses:
 #
-#   cd ../fleet-runner-android/third_party/llama.cpp
+#   cd ../runner-android/third_party/llama.cpp
 #   ./build-xcframework.sh          # run it from a path without spaces
-#   cp -R build-apple/llama.xcframework ../../../fleet-runner-ios/Frameworks/
+#   cp -R build-apple/llama.xcframework ../../../runner-ios/Frameworks/
 #
 # Then `./generate.sh`, which picks this spec automatically once the framework
 # is present.

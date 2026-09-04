@@ -15,7 +15,7 @@ travel with the source.
 
 For comparable llama.cpp numbers across the fleet, the binary this agent shells
 out to should be built from the commit the phone runners pin — see
-[`fleet-runner-ios`](https://github.com/addisdev/fleet-runner-ios)'s notices.
+[`runner-ios`](../runner-ios)'s notices.
 Two machines running different llama.cpp builds produce two numbers that are
 not each other's comparison, which is the same reason the phones pin at all.
 

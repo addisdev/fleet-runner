@@ -1,9 +1,15 @@
-name: CI
+name: runner-ios
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
+    paths: ["runner-ios/**", ".github/workflows/runner-ios.yml"]
   pull_request:
+    paths: ["runner-ios/**", ".github/workflows/runner-ios.yml"]
+
+defaults:
+  run:
+    working-directory: runner-ios
 
 jobs:
   build:

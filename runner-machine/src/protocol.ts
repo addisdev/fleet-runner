@@ -1,5 +1,5 @@
 /**
- * TypeScript mirror of fleet-collector's schemas/{job,result}.schema.json
+ * TypeScript mirror of the collector's schemas/{job,result}.schema.json
  * ("schema": 1).
  *
  * Shared protocol, not shared code. The collector's own `src/fleet-client.ts`
@@ -39,7 +39,7 @@ export type JobSpec = {
  * The descriptor a machine registers with.
  *
  * The first five fields are the ones `targets.match` expressions already read
- * (see fleet-collector/src/match.ts), so an expression written for the phones
+ * (see collector/src/match.ts), so an expression written for the phones
  * — `ram_mb >= 8000`, `os ~ 'macos'` — keeps working against a laptop without
  * being rewritten. The rest are new, and describe the things that are only
  * true of a computer.
@@ -83,7 +83,7 @@ export type BeaconSample = {
 };
 
 /**
- * Metrics. Only names that appear in fleet-collector/schemas/metrics.json —
+ * Metrics. Only names that appear in collector/schemas/metrics.json —
  * the generated list is the contract, and inventing a name here is how the
  * plant-ID eval's accuracy ended up living in `decode_tok_s`.
  */

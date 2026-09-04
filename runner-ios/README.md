@@ -1,7 +1,7 @@
 # fleet-runner-ios
 
 The iOS half of **Fleet Runner**, a personal device lab. This app turns an
-iPhone or iPad into a node that a [collector](https://github.com/addisdev/fleet-collector)
+iPhone or iPad into a node that a [collector](../collector)
 can send work to: llama.cpp and Core ML benchmarks, batch inference, and image
 classification evals, with a telemetry beacon reporting battery, thermal state
 and memory every 60 seconds.
@@ -12,7 +12,7 @@ It is deliberately a plain agent rather than an app with a UI — the screen
 above is all of it. The interesting part is what happens after you press the
 button.
 
-It mirrors [`fleet-runner-android`](https://github.com/addisdev/fleet-runner-android)'s
+It mirrors [`fleet-runner-android`](../runner-android)'s
 JSON protocol without sharing any code, and its synthetic SHA-256 backend is
 identical to the Android one token for token. That is what makes tok/s
 comparable across a shelf holding both platforms, which is the whole point of
@@ -42,9 +42,9 @@ same pinned llama.cpp commit the Android JNI backend uses, which is what makes
 the two platforms' tok/s comparable at all.
 
 ```
-cd ../fleet-runner-android/third_party/llama.cpp
+cd ../runner-android/third_party/llama.cpp
 ./build-xcframework.sh
-cp -R build-apple/llama.xcframework ../../../fleet-runner-ios/Frameworks/
+cp -R build-apple/llama.xcframework ../../../runner-ios/Frameworks/
 cd ../../../fleet-runner-ios && ./generate.sh
 ```
 

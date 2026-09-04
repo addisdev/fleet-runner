@@ -1,0 +1,57 @@
+name: collector
+
+# Path-filtered: a change to a phone runner should not spin up a Node matrix.
+#
+# The trap this creates is worth knowing about before you add a required check
+# in branch protection. A filtered workflow does not run on a PR that touches
+# nothing it watches, and GitHub reports a required check that never ran as
+# pending forever, so an iOS-only PR would block on the collector's suite. Keep
+# these advisory, or add a merge-gate job that always runs.
+on:
+  push:
+    branches: [main, develop]
+    paths: ["collector/**", ".github/workflows/collector.yml"]
+  pull_request:
+    paths: ["collector/**", ".github/workflows/collector.yml"]
+
+defaults:
+  run:
+    working-directory: collector
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both versions report, so a failure on one does not hide the other.
+      fail-fast: false
+      matrix:
+        node: ["22", "24"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: |
+            collector/package-lock.json
+            collector/dash/package-lock.json
+
+      - run: npm ci
+
+      # The dashboard has its own package.json, so `npm test` skips building it
+      # when its modules are absent rather than failing on a missing binary.
+      # This step is what makes that build actually happen here.
+      - name: Install dashboard dependencies
+        run: npm --prefix dash ci
+
+      # Playwright is a dependency but its browsers are not downloaded: nothing
+      # in this suite drives a browser. The web-* workloads that do are run by
+      # an executor on real hardware, not here.
+      #
+      # CI=1 also makes the metric-name check fail on a stale schemas/metrics.json
+      # rather than quietly regenerating it. That file is what an agent working in
+      # a runner directory reads, and a mirror that lags its schema states a
+      # contract confidently and wrongly.
+      - run: npm test

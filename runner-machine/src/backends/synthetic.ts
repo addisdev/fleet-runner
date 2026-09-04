@@ -13,8 +13,8 @@
  * against an independently computed digest chain.
  *
  * Sources this was matched against, which agree with each other:
- *   fleet-runner-android/app/src/main/java/com/taylab/fleetrunner/backend/SyntheticBackend.kt
- *   fleet-runner-ios/FleetRunner/SyntheticBackend.swift
+ *   runner-android/app/src/main/java/com/taylab/fleetrunner/backend/SyntheticBackend.kt
+ *   runner-ios/FleetRunner/SyntheticBackend.swift
  *
  * The backend name in results is "synthetic": hardware-comparison numbers,
  * never LLM numbers.

@@ -224,7 +224,7 @@ export type MemorySample = { mb: number; method: string };
  * a third label rather than one of the phones' two.
  *
  * NOTE: `max_rss` is not in the `mem_method` enum in
- * fleet-collector/schemas/result.schema.json, which lists only
+ * collector/schemas/result.schema.json, which lists only
  * `phys_footprint` and `pss`. Calling an RSS reading either of those would be
  * exactly the laundering that schema comment exists to forbid, so the honest
  * label is emitted and the collector's enum needs the third value added.

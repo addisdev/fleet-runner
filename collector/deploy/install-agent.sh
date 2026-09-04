@@ -53,7 +53,7 @@ NODE="$(cd "$(dirname "$NODE")" && pwd)/$(basename "$NODE")"
 : "${ANDROID_PLATFORM_TOOLS:=$HOME/Library/Android/sdk/platform-tools}"
 : "${ADB_BIN:=$ANDROID_PLATFORM_TOOLS/adb}"
 : "${JAVA_HOME:=$(/usr/libexec/java_home 2>/dev/null || echo "$HOME/.local/jdk/Contents/Home")}"
-: "${IOS_PROJECT:=$(cd "$FLEET_HOME/.." 2>/dev/null && pwd)/fleet-runner-ios/FleetRunner.xcodeproj}"
+: "${IOS_PROJECT:=$(cd "$FLEET_HOME/.." 2>/dev/null && pwd)/runner-ios/FleetRunner.xcodeproj}"
 
 # tsx is how the agent runs TypeScript without a build step. If it is missing,
 # the agent would respawn every ten seconds forever, so say so now.

@@ -69,8 +69,11 @@ export type Job = {
 // any app via TEST_RUNNER_-passed env (FLEET_APP_ID / FLEET_ASSERTS).
 const WEB_SPECS_DIR = process.env.FLEET_WEB_SPECS_DIR ?? path.resolve("web-specs");
 
+// A sibling directory in the mono repo. It used to be a sibling checkout, and
+// FLEET_IOS_PROJECT still overrides it, which is what the executor host on the
+// workstation uses when the tree lives somewhere else entirely.
 const IOS_PROJECT = process.env.FLEET_IOS_PROJECT ??
-  path.resolve("../fleet-runner-ios/FleetRunner.xcodeproj");
+  path.resolve("../runner-ios/FleetRunner.xcodeproj");
 
 type Target = { id: string; platform: "android" | "ios"; kind?: "device" | "simulator" };
 

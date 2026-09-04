@@ -36,7 +36,7 @@ const PLACEHOLDER = `<!doctype html>
 </style></head><body>
 <h1>Dashboard not built</h1>
 <p>The collector is running and its API is live — only the browser bundle is missing.</p>
-<pre>cd fleet-collector/dash
+<pre>cd collector/dash
 npm install
 npm run build</pre>
 <p>Then reload. The collector picks up <code>dash/dist</code> without a restart.</p>

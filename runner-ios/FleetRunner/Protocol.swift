@@ -1,6 +1,6 @@
 import Foundation
 
-// Swift mirror of fleet-collector/schemas ("schema": 1). Shared protocol, not
+// Swift mirror of collector/schemas ("schema": 1). Shared protocol, not
 // shared code — the Android runner mirrors these independently in Kotlin.
 // JSONEncoder/Decoder snake_case strategies map jobId <-> job_id etc.
 

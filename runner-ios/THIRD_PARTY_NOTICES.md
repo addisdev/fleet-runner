@@ -5,7 +5,7 @@ the app links when you build it, so the terms travel with the source.
 
 | Component | How it gets here | License |
 |---|---|---|
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) | You build `llama.xcframework` yourself, from the commit pinned as a submodule in [`fleet-runner-android`](https://github.com/addisdev/fleet-runner-android) (`a94d563`, tag `b10423`). Gitignored here — see the README. | MIT — Copyright (c) 2023-2026 The ggml authors |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) | You build `llama.xcframework` yourself, from the commit pinned as a submodule in [`runner-android`](../runner-android) (`a94d563`, tag `b10423`). Gitignored here — see the README. | MIT — Copyright (c) 2023-2026 The ggml authors |
 | Core ML, Accelerate, SwiftUI | Apple system frameworks, linked from the SDK | Apple SDK terms |
 
 The pinned llama.cpp commit is the same one the Android runner compiles into

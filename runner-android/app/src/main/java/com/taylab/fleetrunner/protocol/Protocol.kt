@@ -9,7 +9,7 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
- * Kotlin mirror of fleet-collector's schemas/{job,result}.schema.json ("schema": 1).
+ * Kotlin mirror of the collector's schemas/{job,result}.schema.json ("schema": 1).
  * Shared protocol, not shared code: the iOS runner mirrors these independently.
  */
 val FleetJson = Json {
