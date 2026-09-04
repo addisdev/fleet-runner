@@ -21,14 +21,16 @@ final class CollectorClient: Sendable {
         self.session = URLSession(configuration: config)
     }
 
-    private func post<T: Encodable>(_ path: String, body: T) async throws {
+    @discardableResult
+    private func post<T: Encodable>(_ path: String, body: T) async throws -> Data {
         var req = URLRequest(url: base.appendingPathComponent(path))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "content-type")
         req.httpBody = try FleetJSON.encoder.encode(body)
-        let (_, res) = try await session.data(for: req)
+        let (data, res) = try await session.data(for: req)
         let code = (res as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else { throw CollectorError.http(code, path) }
+        return data
     }
 
     func register(_ body: RegisterPost) async throws {
@@ -47,6 +49,20 @@ final class CollectorClient: Sendable {
 
     func postResult(_ row: ResultPost) async throws {
         try await post("results", body: row)
+    }
+
+    /// Posts a beacon and returns the collector's `lease_renewed` flag: false
+    /// means the claim on the beacon's job is gone — cancelled from the
+    /// dashboard, or swept for a missed lease — and the job should stop.
+    ///
+    /// Only an explicit false in a 2xx body says that. An absent field reads as
+    /// true, so a collector that doesn't send one changes nothing here, and a
+    /// non-2xx response or a transport failure throws rather than quietly
+    /// looking like a cancel.
+    func postBeacon(_ row: ResultPost) async throws -> Bool {
+        let data = try await post("results", body: row)
+        struct Ack: Decodable { let leaseRenewed: Bool? }
+        return (try? FleetJSON.decoder.decode(Ack.self, from: data))?.leaseRenewed ?? true
     }
 
     /// Uploads raw bytes to the artifact store; returns the sha256.

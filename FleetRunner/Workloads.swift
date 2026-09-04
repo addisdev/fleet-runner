@@ -47,6 +47,8 @@ enum Workloads {
                     var thermals: [String] = []
                     var perImage: [[String: Any]] = []
                     for (i, item) in items.enumerated() {
+                        // Iteration boundary: a beacon may have found the lease gone.
+                        if CancellationRegistry.shared.isCancelled(job.jobId) { throw JobCancelled() }
                         let file = item["file"] as! String
                         let label = item["label"] as! Int
                         guard let img = UIImage(contentsOfFile: setDir.appendingPathComponent(file).path) else { continue }
@@ -131,6 +133,8 @@ enum Workloads {
                 else { throw CollectorError.http(0, "llama.cpp failed to load") }
                 var out: [[String: Any]] = []
                 for (i, prompt) in items.enumerated() {
+                    // Iteration boundary: a beacon may have found the lease gone.
+                    if CancellationRegistry.shared.isCancelled(job.jobId) { throw JobCancelled() }
                     let t0 = DispatchTime.now()
                     let text = try backend.generate(prompt: prompt, maxTokens: Int32(maxTokens))
                     let ms = Double(DispatchTime.now().uptimeNanoseconds - t0.uptimeNanoseconds) / 1e6
@@ -174,6 +178,8 @@ enum Workloads {
             else { await fail("llama.cpp failed to load"); return }
             var processed = 0
             while processed < maxEvents {
+                // Iteration boundary: a beacon may have found the lease gone.
+                if CancellationRegistry.shared.isCancelled(job.jobId) { throw JobCancelled() }
                 guard let event = try await client.pollEvent(topic: topic, after: cursor) else { continue }
                 cursor = event.id
                 let prompt = (event.payload["prompt"] as? String) ?? String(describing: event.payload)

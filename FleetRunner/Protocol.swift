@@ -107,6 +107,9 @@ struct RegisterPost: Codable {
     let deviceId: String
     let descriptor: DeviceDescriptor
     let pools: [String]
+    /// The workloads this runner can actually dispatch, so the queue only
+    /// offers it work it can run. See FleetAgent.dispatchedWorkloads.
+    let capabilities: [String]
 }
 
 enum FleetJSON {
