@@ -70,13 +70,29 @@ blog post, a slide. Its labels are light, so without a ground it would be
 invisible on white. The mermaid source in the docs stays a mermaid block, which
 the site themes correctly on its own.
 
-!!! note "The dashboard screenshots were taken with the fleet offline"
+!!! note "Two of these were captured against different fleets, on purpose"
 
-    `overview.png` and `devices.png` show six devices offline and a queue whose
-    oldest job is twenty days old, because the laptop that captured them was on
-    a different network from the shelf. It is honest and it reads as abandoned.
-    Retake them from the fleet's own network. `results.png` and
-    `first-result.png` are unaffected — they show stored history.
+    `overview.png`, `devices.png` and `jobs.png` show a **live** two-device
+    fleet — a laptop and an iPhone simulator, both running the real agents,
+    with a thermal run in progress and a `self-check` correctly failing because
+    the agent was started by hand rather than by launchd. They were captured
+    against a throwaway collector with a fresh database, which is why the queue
+    is small and the history is minutes old.
+
+    They replaced a set showing six offline devices and a twenty-day-old queue,
+    captured while the laptop was on a different network from the shelf. That
+    set was honest and read as abandoned.
+
+    **`results.png` is deliberately not from that fleet.** It shows real
+    llama.cpp measurements from an SM-X930 — 125.0 prefill and 47.4 decode
+    tok/s on a Dimensity 9400 — which is stored history a fresh database cannot
+    have, and it is the front-page image. Do not regenerate it against a
+    throwaway collector.
+
+    To retake the live three, run a collector on a spare port with its own data
+    directory, point the machine runner and a simulator at it, enqueue a
+    fan-out benchmark and a `thermal` job, and capture `/dash`,
+    `/dash/devices` and `/dash/jobs` at 1440×900 with `colorScheme: "dark"`.
 
 ## Voice
 
