@@ -1,0 +1,82 @@
+name: docs
+
+# Builds the documentation site and publishes it to GitHub Pages.
+#
+# `--strict` is the point: MkDocs treats a link to a page that does not exist as
+# a warning by default, and this turns those into a failed build. Every relative
+# link in the old 900-line manual broke the last time it moved directories, and
+# nothing said so.
+#
+# lychee then checks what MkDocs cannot: the external links, and the links from
+# the READMEs that never pass through MkDocs at all.
+
+on:
+  push:
+    branches: [main]
+    paths: ["docs/**", "mkdocs.yml", ".github/workflows/docs.yml", "collector/examples/**"]
+  pull_request:
+    paths: ["docs/**", "mkdocs.yml", ".github/workflows/docs.yml", "collector/examples/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install mkdocs-material==9.6.22
+
+      # The cookbook includes collector/examples/jobs/*.json verbatim via the
+      # snippets extension, so a missing or renamed example fails the build
+      # here as well as failing the collector's own suite.
+      - name: Build
+        run: mkdocs build --strict
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # The built HTML rather than the Markdown: this way the snippet
+          # includes and the nav are checked as a reader would meet them.
+          args: >-
+            --no-progress
+            --max-concurrency 8
+            --exclude-path site/history/plan.html
+            --exclude '^https://github\.com/addisdev/fleet-runner/(edit|tree|blob)/'
+            --exclude '^https://addisdev\.github\.io/'
+            --accept 200,206,429
+            site/**/*.html README.md CHANGELOG.md
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    # Only main publishes; a pull request builds and link-checks without
+    # touching the live site.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
