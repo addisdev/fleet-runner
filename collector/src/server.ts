@@ -35,6 +35,7 @@ import {
   validateDepRefs, validateDependencies, type DepSettlement,
 } from "./api/mutations.js";
 import { registerDashStatic } from "./dash-static.js";
+import { registerRunnerWeb } from "./runner-web.js";
 import { startPowerSampler } from "./power.js";
 import { endMirror } from "./api/mirror.js";
 
@@ -1314,6 +1315,10 @@ app.get("/dash/legacy/bench", async (_req, reply) => {
 // decide precedence — Fastify prefers static routes over the /dash/* wildcard —
 // but reading them in this order matches how a request resolves.
 registerApi(app, announce, matchingDevices);
+// Before the dashboard's wildcard, though Fastify prefers the static route
+// either way. /runner is the one page in this collector that is itself an
+// agent: opening it enrols the browser that opened it.
+registerRunnerWeb(app);
 registerDashStatic(app);
 
 app.get("/", async (_req, reply) => reply.redirect("/dash"));

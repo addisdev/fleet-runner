@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Fleet Runner — this tab</title>
+<style>
+  /* The dashboard's palette, hand-copied rather than imported: this page is
+     served from a bare checkout with no build step, and a stylesheet it had to
+     fetch is one more thing that can be missing on the device that needs this
+     page most. */
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --ink: #1c2025; --dim: #5c6470;
+    --line: #dfe3e9; --accent: #2f6fed; --ok: #1f9d55; --warn: #b7791f; --bad: #cc3340;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c; --panel: #1d2025; --ink: #e6e8ec; --dim: #9aa3af;
+      --line: #2b2f36; --accent: #6f9dff; --ok: #43c07b; --warn: #e0a94a; --bad: #ff6b74;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 1.5rem 1rem 3rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* A TV browser renders this ten feet away; a watch renders it on a wrist. */
+    max-width: 46rem; margin-inline: auto;
+  }
+  h1 { font-size: 1.35rem; margin: 0 0 0.25rem; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); margin: 0 0 1.5rem; font-size: 0.92rem; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1rem 1.1rem; margin-bottom: 1rem;
+  }
+  .row { display: flex; gap: 0.75rem; align-items: baseline; justify-content: space-between; padding: 0.3rem 0; }
+  .row + .row { border-top: 1px solid var(--line); }
+  .k { color: var(--dim); font-size: 0.86rem; }
+  .v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.86rem; text-align: right; word-break: break-all; }
+  button {
+    font: inherit; font-weight: 600; padding: 0.6rem 1.1rem; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: #fff; min-height: 44px;
+  }
+  button.off { background: transparent; color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  label { display: block; font-size: 0.86rem; color: var(--dim); margin-bottom: 0.3rem; }
+  input {
+    font: inherit; width: 100%; padding: 0.55rem 0.7rem; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink); min-height: 44px;
+  }
+  .dot { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--dim); margin-right: 0.45em; }
+  .dot.on { background: var(--ok); }
+  .dot.busy { background: var(--accent); }
+  .dot.bad { background: var(--bad); }
+  #log {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8rem;
+    white-space: pre-wrap; word-break: break-word; color: var(--dim);
+    max-height: 14rem; overflow-y: auto; margin: 0;
+  }
+  .note { font-size: 0.84rem; color: var(--dim); margin: 0.6rem 0 0; }
+  .warn { color: var(--warn); }
+  .controls { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<h1>Fleet Runner</h1>
+<p class="sub">This browser tab, as a device on the shelf. Nothing to install.</p>
+
+<div class="panel">
+  <label for="url">Collector</label>
+  <input id="url" autocomplete="off" spellcheck="false">
+  <div class="controls" style="margin-top:0.9rem">
+    <button id="toggle">Start agent</button>
+    <span id="status"><span class="dot"></span><span id="statusText">idle</span></span>
+  </div>
+  <p class="note" id="context"></p>
+</div>
+
+<div class="panel">
+  <div class="row"><span class="k">device</span><span class="v" id="deviceId">—</span></div>
+  <div class="row"><span class="k">platform</span><span class="v" id="platform">—</span></div>
+  <div class="row"><span class="k">backends</span><span class="v" id="backends">—</span></div>
+  <div class="row"><span class="k">jobs run</span><span class="v" id="jobs">0</span></div>
+</div>
+
+<div class="panel"><pre id="log">not started</pre></div>
+
+<script>
+"use strict";
+/**
+ * The browser runner: a fleet device that needs no install.
+ *
+ * The point is reach. A smart TV's built-in browser, a games console, a
+ * Chromebook, a Kindle, an iPad too old for the App Store, a Windows PC with
+ * nothing on it, a friend's phone via a QR code — none of them will ever run a
+ * signed native agent, and all of them have a browser. Opening a URL is the
+ * lowest-friction way anything joins this fleet.
+ *
+ * It speaks the same JSON protocol as the three native runners and shares no
+ * code with them, which is the same bargain those three already made with each
+ * other. `npm run conformance -- --device <id>` is what keeps it honest.
+ *
+ * ## The one thing to understand before reading a number from this
+ *
+ * This runner does NOT declare `benchmark:synthetic`, and the reason is the
+ * whole design.
+ *
+ * The fleet's synthetic backend measures SHA-256 throughput because that is a
+ * fair CPU proxy that three platforms can implement identically. A browser has
+ * exactly one native hash — `crypto.subtle.digest` — and it is ASYNCHRONOUS.
+ * The fold is inherently sequential, so a thousand rounds is a thousand promise
+ * dispatches, and at 4 KiB per round the scheduler overhead is a large fraction
+ * of the measurement. A number produced that way is not the same quantity as a
+ * phone's, and putting it in the same column would be laundering.
+ *
+ * `crypto.subtle` is also unavailable on a plain-HTTP LAN address — it is a
+ * secure-context API, and `http://fleet-host.local:8788` is not a secure
+ * context — so on the device this page most exists for, a TV browser, it is
+ * simply not there.
+ *
+ * So there are two backends, each named for what it actually is:
+ *
+ *   jssha      a synchronous SHA-256 in JavaScript, in this file. Works in
+ *              every context including plain HTTP. No dispatch overhead, so the
+ *              rate is a clean measure of the JS engine's throughput and is
+ *              comparable between browsers. Always declared.
+ *   webcrypto  the platform's native SHA-256, when the page is a secure
+ *              context. Faster per round, and paying async dispatch per round.
+ *              Declared only when available.
+ *
+ * Neither is comparable with a native runner's `synthetic` rate, and neither
+ * pretends to be. What IS comparable is correctness: both fold the identical
+ * block through the identical rounds, and both report `synthetic_digest`, so
+ * the conformance suite proves this runner is doing the fleet's arithmetic even
+ * though its clock means something different.
+ *
+ * ## Honesty about being a tab
+ *
+ * A hidden tab is throttled by every browser, and a benchmark measured in one
+ * is a measurement of the throttle. So the agent stops asking for work when the
+ * page is hidden, and says so. It keeps beaconing, because a tab someone
+ * switched away from for a minute has not left the fleet — but it registers
+ * with a TTL, so a tab that is CLOSED does leave, rather than sitting on the
+ * shelf forever as an offline device nobody can find.
+ */
+
+const APP_VER = "0.1.0";
+const SCHEMA = 1;
+const BLOCK_SIZE = 4096;
+const ROUNDS_PER_TOKEN = 1000;
+/** Matches the machine runner's ATTEST_ROUNDS: one token's worth. */
+const ATTEST_ROUNDS = ROUNDS_PER_TOKEN;
+const BEACON_MS = 30000;
+/**
+ * How long the collector remembers this tab after it goes quiet.
+ *
+ * Long enough to survive a phone locking its screen or a laptop sleeping for a
+ * moment, short enough that a closed tab is gone from the shelf before anybody
+ * wonders what it is. Beacons slide the window, so an agent that is still here
+ * never expires.
+ */
+const TTL_S = 300;
+
+// --- SHA-256, synchronously ------------------------------------------------
+//
+// Written out rather than pulled from a library on purpose: this page is served
+// from a checkout with no build step and must work on a device that cannot
+// reach a CDN. It is the standard FIPS 180-4 compression function; the only
+// thing worth checking is that it produces the fleet's documented digest, which
+// the conformance suite does from the other end.
+
+const K = new Uint32Array([
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
+]);
+
+/** Scratch, reused across calls: this runs a million times and allocation shows. */
+const W = new Uint32Array(64);
+
+function sha256(bytes) {
+  let h0=0x6a09e667,h1=0xbb67ae85,h2=0x3c6ef372,h3=0xa54ff53a,
+      h4=0x510e527f,h5=0x9b05688c,h6=0x1f83d9ab,h7=0x5be0cd19;
+
+  const len = bytes.length;
+  const bitLenHi = Math.floor(len / 536870912);      // len * 8 / 2^32
+  const bitLenLo = (len << 3) >>> 0;
+  // Padded length: message + 0x80 + zeros + 8 bytes of length, to a 64 multiple.
+  const total = ((len + 9 + 63) & ~63);
+  const buf = new Uint8Array(total);
+  buf.set(bytes);
+  buf[len] = 0x80;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(total - 8, bitLenHi, false);
+  dv.setUint32(total - 4, bitLenLo, false);
+
+  for (let off = 0; off < total; off += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + i * 4, false);
+    for (let i = 16; i < 64; i++) {
+      const w15 = W[i-15], w2 = W[i-2];
+      const s0 = ((w15>>>7)|(w15<<25)) ^ ((w15>>>18)|(w15<<14)) ^ (w15>>>3);
+      const s1 = ((w2>>>17)|(w2<<15)) ^ ((w2>>>19)|(w2<<13)) ^ (w2>>>10);
+      W[i] = (W[i-16] + s0 + W[i-7] + s1) >>> 0;
+    }
+    let a=h0,b=h1,c=h2,d=h3,e=h4,f=h5,g=h6,h=h7;
+    for (let i = 0; i < 64; i++) {
+      const S1 = ((e>>>6)|(e<<26)) ^ ((e>>>11)|(e<<21)) ^ ((e>>>25)|(e<<7));
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + K[i] + W[i]) >>> 0;
+      const S0 = ((a>>>2)|(a<<30)) ^ ((a>>>13)|(a<<19)) ^ ((a>>>22)|(a<<10));
+      const maj = (a & b) ^ (a & c) ^ (b & c);
+      const t2 = (S0 + maj) >>> 0;
+      h=g; g=f; f=e; e=(d + t1)>>>0; d=c; c=b; b=a; a=(t1 + t2)>>>0;
+    }
+    h0=(h0+a)>>>0; h1=(h1+b)>>>0; h2=(h2+c)>>>0; h3=(h3+d)>>>0;
+    h4=(h4+e)>>>0; h5=(h5+f)>>>0; h6=(h6+g)>>>0; h7=(h7+h)>>>0;
+  }
+  const out = new Uint8Array(32);
+  const odv = new DataView(out.buffer);
+  odv.setUint32(0,h0,false);  odv.setUint32(4,h1,false);  odv.setUint32(8,h2,false);  odv.setUint32(12,h3,false);
+  odv.setUint32(16,h4,false); odv.setUint32(20,h5,false); odv.setUint32(24,h6,false); odv.setUint32(28,h7,false);
+  return out;
+}
+
+const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+// --- the synthetic block ----------------------------------------------------
+
+/** block[i] = (i * 31) & 0xff — the same initialisation on all four runners. */
+function initBlock() {
+  const b = new Uint8Array(BLOCK_SIZE);
+  for (let i = 0; i < BLOCK_SIZE; i++) b[i] = (i * 31) & 0xff;
+  return b;
+}
+
+function foldSync(block, rounds) {
+  for (let i = 0; i < rounds; i++) block.set(sha256(block), 0);
+}
+
+async function foldWebCrypto(block, rounds) {
+  for (let i = 0; i < rounds; i++) {
+    const out = new Uint8Array(await crypto.subtle.digest("SHA-256", block));
+    block.set(out, 0);
+  }
+}
+
+const hasWebCrypto = typeof crypto !== "undefined" && crypto.subtle && typeof crypto.subtle.digest === "function";
+
+/** The fleet's attestation: a fresh block, a fixed number of folds, hex. */
+function attestDigest() {
+  const b = initBlock();
+  foldSync(b, ATTEST_ROUNDS);
+  return hex(sha256(b));
+}
+
+// Exposed so scripts/test-runner-web.ts can check the hash directly, not only
+// through a job's result row. A hand-rolled SHA-256 that is subtly wrong would
+// still produce entirely plausible tok/s; the digest is the only thing that
+// says so, and it should be checkable without running a benchmark first.
+window.__fleetAttest = attestDigest;
+
+// --- describing a browser ---------------------------------------------------
+
+/**
+ * What this tab can honestly say about the machine under it.
+ *
+ * Browsers deliberately hide most of it, and the fields that stay null are the
+ * point rather than a gap: a descriptor that guessed an SoC would put an
+ * invented string in a table people use to compare hardware.
+ */
+function describe() {
+  const ua = navigator.userAgent;
+  const brands = navigator.userAgentData && navigator.userAgentData.brands;
+  const named = brands
+    ? brands.filter((b) => !/not.a.brand/i.test(b.brand)).map((b) => `${b.brand} ${b.version}`).join(", ")
+    : null;
+  // deviceMemory is Chromium-only and deliberately coarse (rounded to a power
+  // of two, capped at 8). Reported because "at least this much" is useful for a
+  // match expression, and null elsewhere rather than estimated.
+  const gib = typeof navigator.deviceMemory === "number" ? navigator.deviceMemory : null;
+  return {
+    model: named || (ua.split(") ").pop() || "browser").slice(0, 80),
+    // No browser exposes the CPU model. Cores is what there is.
+    soc: navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} cores` : null,
+    ram_mb: gib === null ? null : gib * 1024,
+    os: `web-${(navigator.userAgentData && navigator.userAgentData.platform) || platformFromUA(ua)}`,
+    app_ver: APP_VER,
+    platform: "web",
+    kind: "browser",
+    cpu_cores: navigator.hardwareConcurrency || null,
+    // Which of the two backends this context actually has, so a person reading
+    // the shelf can see why a tab declares what it declares.
+    secure_context: !!window.isSecureContext,
+  };
+}
+
+function platformFromUA(ua) {
+  if (/android/i.test(ua)) return "Android";
+  if (/iphone|ipad|ipod/i.test(ua)) return "iOS";
+  if (/mac os x/i.test(ua)) return "macOS";
+  if (/windows/i.test(ua)) return "Windows";
+  if (/cros/i.test(ua)) return "ChromeOS";
+  if (/linux/i.test(ua)) return "Linux";
+  if (/tizen|web0s|webos|smart-?tv|hbbtv|viera|bravia/i.test(ua)) return "TV";
+  return "unknown";
+}
+
+/**
+ * What this tab declares it can run.
+ *
+ * Never bare `benchmark`, and never `benchmark:synthetic`. Declaring either
+ * would let a job asking for the fleet's cross-platform number land here, and
+ * this runner cannot produce that number — see the header. Naming the two
+ * backends it does have is what keeps a browser's rate out of a column of
+ * phones' rates while still letting a job ask for it deliberately.
+ */
+function capabilities() {
+  const caps = ["benchmark:jssha"];
+  if (hasWebCrypto) caps.push("benchmark:webcrypto");
+  return caps;
+}
+
+// --- agent ------------------------------------------------------------------
+
+const el = (id) => document.getElementById(id);
+let running = false;
+let jobsRun = 0;
+let beaconTimer = null;
+let deviceId = null;
+
+function log(msg) {
+  const t = new Date().toISOString().slice(11, 19);
+  const pre = el("log");
+  if (pre.textContent === "not started") pre.textContent = "";
+  pre.textContent += `${t}  ${msg}\n`;
+  pre.scrollTop = pre.scrollHeight;
+}
+
+function setStatus(text, cls) {
+  el("statusText").textContent = text;
+  el("status").querySelector(".dot").className = `dot ${cls || ""}`;
+}
+
+/**
+ * A stable id for THIS tab.
+ *
+ * sessionStorage rather than localStorage: a reload should be the same device
+ * (its history is continuous) but a second tab must not be, or two agents would
+ * poll under one id and race for the same job. Session storage is per-tab and
+ * survives reload, which is exactly that rule.
+ */
+function tabDeviceId() {
+  let id = null;
+  try { id = sessionStorage.getItem("fleet-device-id"); } catch { /* private mode */ }
+  if (!id) {
+    const rand = Math.random().toString(36).slice(2, 8);
+    id = `web-${platformFromUA(navigator.userAgent).toLowerCase()}-${rand}`;
+    try { sessionStorage.setItem("fleet-device-id", id); } catch { /* fine, per-load id */ }
+  }
+  return id;
+}
+
+function base() {
+  return el("url").value.replace(/\/+$/, "");
+}
+
+async function api(method, path, body, signal) {
+  const res = await fetch(base() + path, {
+    method,
+    headers: body ? { "content-type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+    signal,
+  });
+  if (!res.ok && res.status !== 204) throw new Error(`${method} ${path} -> ${res.status}`);
+  return res.status === 204 ? null : res.json().catch(() => null);
+}
+
+/**
+ * The in-flight claim, so becoming hidden can abandon it.
+ *
+ * The collector holds a claim request open for 25 seconds. Without this, a tab
+ * that went hidden one second into that window would keep waiting — and the
+ * collector could hand it a job at second twenty-four, which it would then run
+ * throttled. Checking visibility only at the top of the loop makes the refusal
+ * up to 25 seconds late, and a job claimed in that gap is exactly the number
+ * this runner exists not to report.
+ */
+let pollAbort = null;
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden" && pollAbort) {
+    // Abandon the wait, not the job: this only ever aborts the claim request,
+    // and a job already running keeps running to its end.
+    pollAbort.abort();
+  }
+});
+
+function beaconSample() {
+  const s = {
+    // A browser has no battery API worth trusting (it was removed for
+    // fingerprinting) and no thermal signal at all. Reporting -1 is what the
+    // iOS simulator does for the same reason: absent, not flat.
+    battery_pct: -1,
+    charging: null,
+    thermal: null,
+    // performance.memory is Chromium-only and measures the JS heap, not the
+    // process. It is reported under its own name so nothing folds it in with a
+    // phone's PSS.
+    mem_mb: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
+    mem_method: performance.memory ? "js_heap" : null,
+    visibility: document.visibilityState,
+  };
+  return s;
+}
+
+async function register() {
+  await api("POST", "/devices/register", {
+    device_id: deviceId,
+    descriptor: describe(),
+    pools: ["web"],
+    capabilities: capabilities(),
+    ttl_s: TTL_S,
+  });
+}
+
+async function beacon(jobId) {
+  const body = { schema: SCHEMA, kind: "beacon", device_id: deviceId, beacon: beaconSample() };
+  if (jobId) body.job_id = jobId;
+  const r = await api("POST", "/results", body);
+  // Only an explicit false is a cancellation. A missing field, a proxy's HTML
+  // error page, the string "false" — all of those must read as renewed, or a
+  // flaky network silently kills every job.
+  return !(r && r.lease_renewed === false);
+}
+
+/** Yield to the event loop so a long fold does not freeze the tab. */
+function yieldToBrowser() {
+  if (typeof scheduler !== "undefined" && scheduler.yield) return scheduler.yield();
+  return new Promise((r) => setTimeout(r, 0));
+}
+
+async function runBenchmark(job) {
+  const p = job.params || {};
+  const promptTokens = p.prompt_tokens != null ? p.prompt_tokens : 512;
+  const genTokens = p.gen_tokens != null ? p.gen_tokens : 128;
+  const warmups = p.warmup_iters != null ? p.warmup_iters : 1;
+  const measures = p.measure_iters != null ? p.measure_iters : 3;
+  const backend = job.backend === "webcrypto" ? "webcrypto" : "jssha";
+  if (backend === "webcrypto" && !hasWebCrypto) {
+    throw new Error(
+      "backend 'webcrypto' needs crypto.subtle, which is a secure-context API. " +
+      "This page is on plain HTTP, so it is unavailable — ask for backend 'jssha', " +
+      "or serve the collector over HTTPS.",
+    );
+  }
+
+  const loadStart = performance.now();
+  let block = initBlock();
+  const loadMs = performance.now() - loadStart;
+
+  /** One "token" is ROUNDS_PER_TOKEN folds, yielding between tokens. */
+  async function tokens(n) {
+    for (let i = 0; i < n; i++) {
+      if (backend === "webcrypto") await foldWebCrypto(block, ROUNDS_PER_TOKEN);
+      else foldSync(block, ROUNDS_PER_TOKEN);
+      // Between tokens, never inside one: a yield per round would dominate the
+      // measurement, and a fold with no yields at all gets the tab killed.
+      await yieldToBrowser();
+    }
+  }
+
+  for (let w = 0; w < warmups; w++) { block = initBlock(); await tokens(1); }
+
+  const rows = [];
+  let lastBeacon = Date.now();
+  for (let i = 1; i <= measures; i++) {
+    if (cancelled === job.job_id) {
+      await api("POST", "/results", {
+        schema: SCHEMA, kind: "result", job_id: job.job_id, device_id: deviceId,
+        iter: 0, final: true, ok: false, device: describe(), error: "cancelled",
+      });
+      return;
+    }
+    block = initBlock();
+    const t0 = performance.now();
+    await tokens(promptTokens);
+    const prefillMs = performance.now() - t0;
+    const t1 = performance.now();
+    await tokens(1);
+    const firstTokenMs = performance.now() - t1;
+    const t2 = performance.now();
+    await tokens(Math.max(genTokens - 1, 0));
+    const decodeMs = firstTokenMs + (performance.now() - t2);
+
+    // The phones' arithmetic exactly, including the 1 ms clamp that keeps a
+    // fast iteration reporting a large number rather than Infinity.
+    const row = {
+      prefill_tok_s: (promptTokens * 1000) / Math.max(prefillMs, 1),
+      decode_tok_s: (genTokens * 1000) / Math.max(decodeMs, 1),
+      ttft_ms: prefillMs + firstTokenMs,
+    };
+    rows.push(row);
+    await api("POST", "/results", {
+      schema: SCHEMA, kind: "result", job_id: job.job_id, device_id: deviceId, iter: i, metrics: row,
+    });
+    log(`iter ${i}/${measures}: ${row.decode_tok_s.toFixed(1)} decode tok/s (${backend})`);
+
+    // On a clock, for the same reason the machine runner beacons on one: this
+    // is the only way a running job hears that it was cancelled, and it is what
+    // renews the lease.
+    if (Date.now() - lastBeacon >= BEACON_MS) {
+      lastBeacon = Date.now();
+      if (!(await beacon(job.job_id))) cancelled = job.job_id;
+    }
+  }
+
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  await api("POST", "/results", {
+    schema: SCHEMA, kind: "result", job_id: job.job_id, device_id: deviceId,
+    iter: 0, final: true, ok: true, device: describe(),
+    metrics: {
+      load_ms: loadMs,
+      prefill_tok_s: mean(rows.map((r) => r.prefill_tok_s)),
+      decode_tok_s: mean(rows.map((r) => r.decode_tok_s)),
+      ttft_ms: mean(rows.map((r) => r.ttft_ms)),
+      mem_mb: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : undefined,
+      // Correctness, even though the rate above is this runner's own column.
+      // Both backends fold the identical block through identical rounds, so
+      // this proves the arithmetic matches the fleet's specification.
+      synthetic_digest: attestDigest(),
+      synthetic_rounds: ATTEST_ROUNDS,
+    },
+  });
+}
+
+let cancelled = null;
+
+async function runJob(job) {
+  log(`claimed ${job.job_id} (${job.workload}${job.backend ? "/" + job.backend : ""})`);
+  setStatus(`running ${job.job_id}`, "busy");
+  try {
+    if (job.workload === "benchmark") await runBenchmark(job);
+    else throw new Error(`workload '${job.workload}' is not supported by the browser runner`);
+    jobsRun++;
+    el("jobs").textContent = String(jobsRun);
+    log(`finished ${job.job_id}`);
+  } catch (e) {
+    log(`FAILED ${job.job_id}: ${e.message}`);
+    await api("POST", "/results", {
+      schema: SCHEMA, kind: "result", job_id: job.job_id, device_id: deviceId,
+      iter: 0, final: true, ok: false, device: describe(), error: String(e.message).slice(0, 500),
+    }).catch(() => {});
+  } finally {
+    cancelled = null;
+  }
+}
+
+async function loop() {
+  while (running) {
+    // A hidden tab is throttled by every browser, and a benchmark measured in
+    // one measures the throttle. Not polling is how this runner refuses rather
+    // than reporting a number produced under a condition nobody asked for.
+    if (document.visibilityState === "hidden") {
+      setStatus("hidden — not asking for work", "");
+      await new Promise((r) => setTimeout(r, 2000));
+      continue;
+    }
+    setStatus("waiting for work", "on");
+    try {
+      pollAbort = new AbortController();
+      const job = await api("GET", `/devices/${encodeURIComponent(deviceId)}/next-job`, null, pollAbort.signal);
+      pollAbort = null;
+      if (job) await runJob(job);
+    } catch (e) {
+      pollAbort = null;
+      // An aborted claim is this runner refusing work on purpose, not a fault.
+      // It goes round the loop, sees the tab is hidden, and says so.
+      if (e.name === "AbortError") continue;
+      log(`poll error: ${e.message}; retrying in 10s`);
+      setStatus("collector unreachable", "bad");
+      await new Promise((r) => setTimeout(r, 10000));
+    }
+  }
+  setStatus("stopped", "");
+}
+
+async function start() {
+  deviceId = tabDeviceId();
+  el("deviceId").textContent = deviceId;
+  try {
+    await register();
+  } catch (e) {
+    log(`cannot register: ${e.message}`);
+    setStatus("registration failed", "bad");
+    return false;
+  }
+  log(`registered as ${deviceId}; capabilities: ${capabilities().join(", ")}`);
+  running = true;
+  beaconTimer = setInterval(() => {
+    // Beacons keep the TTL window open while a tab is merely hidden. A CLOSED
+    // tab stops beaconing and the collector forgets it, which is the whole
+    // reason this runner registers with a TTL at all.
+    register().catch(() => {});
+    beacon(null).catch(() => {});
+  }, BEACON_MS);
+  loop();
+  return true;
+}
+
+function stop() {
+  running = false;
+  if (beaconTimer) clearInterval(beaconTimer);
+  beaconTimer = null;
+  log("stopped");
+}
+
+// --- wiring -----------------------------------------------------------------
+
+el("url").value = location.origin;
+el("platform").textContent = `web · ${platformFromUA(navigator.userAgent)}`;
+el("backends").textContent = capabilities().map((c) => c.split(":")[1]).join(", ");
+el("deviceId").textContent = tabDeviceId();
+el("context").innerHTML = hasWebCrypto
+  ? "Secure context: both backends available."
+  : '<span class="warn">Not a secure context, so <code>crypto.subtle</code> is unavailable and only ' +
+    "<code>jssha</code> is declared. This is normal over plain HTTP on a LAN.</span>";
+
+el("toggle").addEventListener("click", async () => {
+  const btn = el("toggle");
+  if (running) {
+    stop();
+    btn.textContent = "Start agent";
+    btn.classList.remove("off");
+    return;
+  }
+  btn.disabled = true;
+  const ok = await start();
+  btn.disabled = false;
+  if (ok) {
+    btn.textContent = "Stop agent";
+    btn.classList.add("off");
+  }
+});
+
+// Autostart, so a QR code on the enrol screen is one scan rather than a scan
+// and a tap — and so a TV browser with no convenient pointer needs neither.
+if (new URLSearchParams(location.search).get("autostart") === "1") {
+  el("toggle").click();
+}
+</script>
+</body>
+</html>

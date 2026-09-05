@@ -113,18 +113,33 @@ enum Telemetry {
     }
 
     /// Simulators report battery level -1; treat as 100 so constraints behave.
+    ///
+    /// tvOS has no battery API at all -- not a battery that reads -1, but an
+    /// `isBatteryMonitoringEnabled` that does not exist, because an Apple TV is
+    /// mains-powered and Apple removed the question. Reporting 100 there is the
+    /// same answer a plugged-in device gives and is the one that makes
+    /// `min_battery_pct` and `require_charging` behave sensibly: a television
+    /// is, permanently, a charging device.
     static func batteryPct() -> Int {
+        #if os(tvOS)
+        return 100
+        #else
         UIDevice.current.isBatteryMonitoringEnabled = true
         let level = UIDevice.current.batteryLevel
         return level < 0 ? 100 : Int(level * 100)
+        #endif
     }
 
     static func isCharging() -> Bool {
+        #if os(tvOS)
+        return true
+        #else
         UIDevice.current.isBatteryMonitoringEnabled = true
         switch UIDevice.current.batteryState {
         case .charging, .full: return true
         default: return false
         }
+        #endif
     }
 
     /// Shared thermal enum: nominal / fair / serious / critical.

@@ -3,6 +3,8 @@ options:
   bundleIdPrefix: com.taylab
   deploymentTarget:
     iOS: "17.0"
+    tvOS: "17.0"
+    visionOS: "1.0"
 targets:
   FleetRunner:
     type: application
@@ -37,6 +39,77 @@ targets:
           # The collector speaks plain HTTP inside the Tailscale mesh / localhost.
           NSAllowsLocalNetworking: true
 
+
+  # --- the other screens -----------------------------------------------------
+  #
+  # One source tree, three products. The agent, the protocol, the synthetic
+  # backend and the Core ML backend all compile unchanged for tvOS and
+  # visionOS; what differs is what each platform HAS, and that is expressed as
+  # compile-time conditions in the sources rather than as forks of them.
+  #
+  # These are separate targets rather than one target with more device
+  # families because they are separate binaries built against separate SDKs.
+  # That is also exactly why the runner resolves its `platform` at compile
+  # time: a tvOS build and an iOS build are different products from one source,
+  # and a benchmark table has to be able to tell them apart.
+
+  FleetRunnerTV:
+    type: application
+    platform: tvOS
+    # WebKit does not exist on tvOS, so the WKWebView capture workload cannot
+    # compile here. Excluded from the target rather than #if'd inside the file:
+    # the whole file is that one workload, and its route in FleetAgent is
+    # already gated on `canImport(WebKit)`, so an Apple TV never declares the
+    # capability either.
+    #
+    # WebShotsManifest.swift stays IN, and that is not an oversight. Its own
+    # header says it is deliberately free of UIKit and WebKit so its parsing can
+    # be checked without a device, and Protocol.swift refers to the type it
+    # defines -- excluding it as well took the whole protocol down with it,
+    # which is the tidy-looking mistake this note exists to stop somebody
+    # repeating.
+    sources:
+      - path: FleetRunner
+        excludes:
+          - WebShotsWorkload.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner.tv
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "3"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+
+  # NEVER COMPILED. Stated plainly because everything else in this repository
+  # that claims to build has been built.
+  #
+  # visionOS keeps UIKit and WebKit, so there is no source-level reason this
+  # would not compile -- unlike tvOS, which needed two guards and an exclusion
+  # before it did. But the visionOS platform is not installed on the machine
+  # this target was written on (`xcodebuild -showsdks` lists the SDK; the
+  # platform itself is a separate download), so nobody has run the compiler
+  # over it and this target is a hypothesis.
+  #
+  # The zero-risk alternative, if you want a headset on the shelf today: the
+  # iOS target runs on Vision Pro unmodified as a "Designed for iPad" app. It
+  # reports `platform: ios` when it does, which is correct -- it IS the iOS
+  # binary -- and is exactly why this separate target exists at all: a native
+  # visionOS build is a different product and should say so.
+  FleetRunnerVision:
+    type: application
+    platform: visionOS
+    sources: [FleetRunner]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner.vision
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+
   FleetRunnerUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -56,3 +129,11 @@ schemes:
         FleetRunner: all
     test:
       targets: [FleetRunnerUITests]
+  FleetRunnerTV:
+    build:
+      targets:
+        FleetRunnerTV: all
+  FleetRunnerVision:
+    build:
+      targets:
+        FleetRunnerVision: all
