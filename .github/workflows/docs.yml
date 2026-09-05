@@ -58,6 +58,8 @@ jobs:
             --exclude-path site/history/plan.html
             --exclude '^https://github\.com/addisdev/fleet-runner/(edit|tree|blob)/'
             --exclude '^https://addisdev\.github\.io/'
+            --exclude '^https?://(127\.0\.0\.1|localhost|\[::1\])(:|/|$)'
+            --exclude '^https?://[^/]*\.local(:|/|$)'
             --accept 200,206,429
             site/**/*.html README.md CHANGELOG.md
           fail: true
