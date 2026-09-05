@@ -15,15 +15,30 @@ class LlamaCppBackend(private val artifacts: ArtifactCache) : ModelBackend {
     private var handle = 0L
 
     override fun load(job: JobSpec): Long {
+        val pp = job.params.intParam("prompt_tokens", 512)
+        val tg = job.params.intParam("gen_tokens", 128)
+        return open(job, nCtx = maxOf(1024, pp + tg + 8), embeddings = false)
+    }
+
+    /**
+     * Loads the same model into a context that yields mean-pooled embedding
+     * vectors instead of generated tokens (embed-eval).
+     *
+     * A llama.cpp context is built for one or the other, so this is a separate
+     * entry point rather than a flag on [runIteration] — and `n_ctx` is the
+     * per-document token budget here, not a prompt-plus-generation window,
+     * which is why it does not reuse the benchmark's sizing.
+     */
+    fun loadForEmbedding(job: JobSpec): Long =
+        open(job, nCtx = job.params.intParam("n_ctx", 512), embeddings = true)
+
+    private fun open(job: JobSpec, nCtx: Int, embeddings: Boolean): Long {
         val model = job.model
             ?: throw IllegalArgumentException("llama.cpp job needs a model ref")
         require(model.format == "gguf") { "llama.cpp needs gguf, got ${model.format}" }
 
         val file = artifacts.ensure(model.sha256)
 
-        val pp = job.params.intParam("prompt_tokens", 512)
-        val tg = job.params.intParam("gen_tokens", 128)
-        val nCtx = maxOf(1024, pp + tg + 8)
         // Big cores only by default: all-core on big.LITTLE hurts throughput.
         val nThreads = job.params.intParam(
             "n_threads",
@@ -31,9 +46,20 @@ class LlamaCppBackend(private val artifacts: ArtifactCache) : ModelBackend {
         )
 
         val t0 = System.nanoTime()
-        handle = LlamaNative.nativeLoad(file.absolutePath, nCtx, nThreads)
+        handle = LlamaNative.nativeLoad(file.absolutePath, nCtx, nThreads, embeddings)
         if (handle == 0L) throw IllegalStateException("llama.cpp failed to load ${model.name}")
         return (System.nanoTime() - t0) / 1_000_000
+    }
+
+    /**
+     * One embedding vector for [text]. Requires [loadForEmbedding]; a context
+     * opened for generation has no embedding tensor and throws here rather
+     * than returning zeros.
+     */
+    fun embed(text: String): FloatArray {
+        check(handle != 0L) { "loadForEmbedding() not called" }
+        return LlamaNative.nativeEmbed(handle, text)
+            ?: throw IllegalStateException("llama.cpp returned no embedding (see logcat)")
     }
 
     override fun runIteration(job: JobSpec): IterResult {

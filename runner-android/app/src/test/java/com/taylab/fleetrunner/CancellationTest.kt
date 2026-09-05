@@ -73,16 +73,24 @@ class CancellationTest {
 
     @Test
     fun `registration declares the workloads this runner dispatches`() {
+        // The list itself now comes from RunnerService.routes — one entry per
+        // dispatched workload, so the declaration and the dispatch cannot
+        // disagree. What this pins is the wire shape: the collector routes on
+        // these exact strings, and "embed_eval" or "batch:coreml" would be a
+        // runner that never gets offered the work it can do.
         val post = RegisterPost(
             deviceId = "d1",
             descriptor = DeviceDescriptor("Pixel", "tensor", 8192, "Android 15", "0.2.0"),
             pools = listOf("ml-capable"),
-            capabilities = listOf("benchmark", "batch", "batch:litert", "pipeline", "thermal"),
+            capabilities = listOf(
+                "benchmark", "batch", "batch:litert", "pipeline", "thermal", "embed-eval", "vantage",
+            ),
         )
         val json = FleetJson.encodeToString(post)
         assertTrue(
             json.contains(
-                "\"capabilities\":[\"benchmark\",\"batch\",\"batch:litert\",\"pipeline\",\"thermal\"]",
+                "\"capabilities\":[\"benchmark\",\"batch\",\"batch:litert\",\"pipeline\"," +
+                    "\"thermal\",\"embed-eval\",\"vantage\"]",
             ),
         )
     }

@@ -1,0 +1,10 @@
+# At the repository root because that is the only place git reads it from.
+#
+# The migration to a mono repo moved the Android runner into a subdirectory and
+# its .gitmodules moved with it, where git never looks — so the gitlink at
+# runner-android/third_party/llama.cpp survived with no URL registered against
+# it, and `git submodule update --init` in a fresh clone silently found nothing
+# to do. The path below is the only line that had to change.
+[submodule "runner-android/third_party/llama.cpp"]
+	path = runner-android/third_party/llama.cpp
+	url = https://github.com/ggml-org/llama.cpp

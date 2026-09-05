@@ -155,6 +155,11 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   font-size: 0.72rem; font-weight: 550; border: 1px solid transparent; white-space: nowrap;
 }
 .pill.queued  { color: var(--ink-dim); border-color: var(--line); }
+/* Waiting is not queued: the queue is not looking at it yet, and the reason is
+   another job rather than a busy fleet. Same palette as queued so it reads as
+   the same family, but dashed, so a parked chain is distinguishable at a glance
+   from work the fleet is failing to pick up. */
+.pill.waiting { color: var(--ink-dim); border-color: var(--line); border-style: dashed; }
 /* Cancelled is deliberately not styled like failed: a person stopped it,
    nothing went wrong. */
 .pill.cancelled { color: var(--ink-faint); border-color: var(--line); text-decoration: line-through; }
@@ -182,6 +187,13 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 }
 
 .skeleton { color: var(--ink-faint); font-size: 0.85rem; }
+
+/* Announced to a screen reader, never painted. Used by the skeletons, whose
+   blocks are decoration — the sentence they replace still has to be said. */
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
 
 .stub { color: var(--ink-dim); font-size: 0.88rem; max-width: 42rem; }
 .stub code {
@@ -505,3 +517,229 @@ pre.cmd {
 .vr-compare figure { margin: 0; }
 .vr-compare figcaption { font-size: 0.72rem; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.3rem; }
 .vr-compare img { max-width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); }
+
+/* ==========================================================================
+   Motion
+   ==========================================================================
+
+   Six movements, each with one job, and one rule: a loop runs only while
+   something is genuinely in progress. Everything else plays once, on mount,
+   and stops — a dashboard you leave open all day must not be animating at
+   3pm because it animated at 9am.
+
+   Durations are short enough to read as feedback rather than as choreography:
+   240ms for a panel arriving, 180ms for a number changing. The one long
+   animation is the lease drain, whose duration is the lease itself.
+
+   Every loop and transition below is switched off under
+   prefers-reduced-motion at the end of this section; each piece is authored
+   so its resting frame is the correct static rendering, not an empty one. */
+
+/* --- panel enter --- */
+
+/* Plays when a panel mounts: on first load and on navigation. It does NOT
+   replay on a live refresh, because <Loaded> keeps its children mounted while
+   refetching — a number updating in place must not re-animate the panel that
+   contains it. */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+main .panel {
+  animation: panel-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Staggered top to bottom, so the page assembles in reading order. Capped at
+   five: beyond that the last panel would arrive late enough to feel slow. */
+main .panel:nth-of-type(2) { animation-delay: 40ms; }
+main .panel:nth-of-type(3) { animation-delay: 80ms; }
+main .panel:nth-of-type(4) { animation-delay: 120ms; }
+main .panel:nth-of-type(5) { animation-delay: 160ms; }
+main .panel:nth-of-type(n + 6) { animation-delay: 160ms; }
+
+/* --- value swap --- */
+
+/* A stat tile whose number changed on a live event. The old value leaves
+   upward and the new one arrives from below, so a change is visible without a
+   flash — and without moving the tile, which would shove the row around. */
+@keyframes value-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.stat.changed b { animation: value-in 180ms ease both; }
+
+/* --- skeleton --- */
+
+/* Shape-true placeholders: a stat row gets tiles, a table gets its header and
+   three rows. The sweep is the only thing that says "still loading", so it is
+   the only thing that moves. */
+@keyframes skeleton-sweep {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+.sk {
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--panel-2) 0%,
+    color-mix(in srgb, var(--panel-2) 82%, var(--ink)) 45%,
+    var(--panel-2) 60%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.6s linear infinite;
+}
+
+.sk-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr)); gap: 0.75rem; }
+.sk-stat { height: 4.1rem; border-radius: 6px; }
+.sk-rows { display: flex; flex-direction: column; gap: 0.55rem; }
+.sk-row { height: 1.05rem; }
+.sk-head { height: 0.7rem; width: 40%; margin-bottom: 0.7rem; }
+
+/* --- lease drain --- */
+
+/* The bar is re-rendered every second from lease_deadline rather than every
+   30s from the poll, so this transition only has to smooth the correction
+   when a renewal lands — not fake a countdown the page cannot see. */
+.lease-bar i { transition: width 900ms linear, background-color 300ms ease; }
+
+/* ==========================================================================
+   Device shelf
+   ========================================================================== */
+
+/* The shelf is what the fleet actually is: objects on a rack, not rows in a
+   table. Hardware sits on the top shelf and simulators below it, because
+   "which physical phone is wedged" is the question the table answered slowly.
+   The table view is still one click away and keeps its place in the URL. */
+
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr)); gap: 0.9rem; }
+
+/* A real shelf edge under each row of devices. Thicker than a table rule and
+   in --line, so it reads as a plank rather than as a cell border. */
+.shelf-row { padding-bottom: 0.9rem; border-bottom: 3px solid var(--line); margin-bottom: 1.4rem; }
+.shelf-row:last-child { margin-bottom: 0; }
+.shelf-row > h3.sub { margin-top: 0; }
+
+.dev-card {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+.dev-card:hover { border-color: var(--ink-faint); transform: translateY(-1px); }
+.dev-body { flex: 1; min-width: 0; }
+.dev-top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+.dev-hw { font-size: 0.8rem; color: var(--ink-dim); margin-top: 0.35rem; }
+.dev-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.9rem; margin-top: 0.55rem; font-size: 0.8rem; }
+.dev-doing { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+/* The silhouette carries battery as a fill level, so a shelf of phones reads
+   as a shelf of phones — charge visible before any number is. */
+.dev-glyph { flex: none; display: block; }
+.dev-glyph .body { fill: var(--panel); stroke: var(--ink-faint); stroke-width: 1.5; }
+.dev-glyph.simulator .body { stroke-dasharray: 3 2.4; }
+.dev-glyph .screen { fill: var(--line); }
+.dev-glyph.online .screen { fill: var(--ok); opacity: 0.85; }
+.dev-glyph.stale .screen { fill: var(--warn); opacity: 0.3; }
+.dev-glyph .pulse { stroke: var(--bg); stroke-width: 1.5; fill: none; }
+.dev-glyph .chin { stroke: var(--ink-faint); stroke-width: 1.5; }
+
+/* A device that is running a job breathes. This is the only loop on the
+   Devices screen, and it stops the moment the job does. */
+@keyframes screen-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+.dev-glyph.busy .screen { animation: screen-breathe 2.4s ease-in-out infinite; }
+
+/* Inline battery meter beside the percentage. */
+.batt-track { width: 34px; height: 4px; border-radius: 2px; background: var(--panel); overflow: hidden; display: inline-block; vertical-align: middle; }
+.batt-track i { display: block; height: 100%; background: var(--ok); }
+.batt-track.low i { background: var(--warn); }
+.batt-track.critical i { background: var(--bad); }
+
+/* Shelf/table toggle: a segmented control, not two buttons — the two views
+   are one setting with two values. */
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; font-size: 0.78rem; }
+.segmented button {
+  font: inherit; font-size: 0.78rem; padding: 0.25rem 0.6rem; cursor: pointer;
+  background: none; border: 0; color: var(--ink-dim);
+}
+.segmented button[aria-pressed="true"] { background: var(--panel-2); color: var(--ink); font-weight: 550; }
+.segmented button:hover:not([aria-pressed="true"]) { color: var(--ink); }
+
+/* ==========================================================================
+   Empty states
+   ========================================================================== */
+
+/* An empty panel is a state worth drawing, not a gap to apologise for. The
+   copy is unchanged — the drawing sits above the same sentence the dashboard
+   printed before. */
+.empty-art { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; padding: 1.4rem 0 1rem; text-align: center; }
+.empty-art svg { display: block; max-width: 260px; width: 100%; height: auto; }
+.empty-art p { margin: 0; color: var(--ink-dim); font-size: 0.86rem; }
+
+.art-shelf { stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
+.art-body { fill: var(--panel-2); stroke: var(--ink-faint); stroke-width: 1.5; }
+.art-body.ghost { fill: none; stroke-dasharray: 4 3; }
+.art-screen { fill: var(--bg); }
+.art-flat { stroke: var(--line); stroke-width: 1.5; stroke-linecap: round; fill: none; }
+.art-pulse { stroke: #e3a44a; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+.art-ok { stroke: var(--ok); stroke-width: 2; fill: none; }
+.art-bar { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 3; fill: none; }
+
+/* One phone blips every few seconds: the fleet is idle, not dead. */
+@keyframes art-blip { 0%, 72% { stroke-dashoffset: 60; } 88%, 100% { stroke-dashoffset: 0; } }
+.art-pulse.blip { stroke-dasharray: 60; animation: art-blip 6s cubic-bezier(0.4, 0, 0.2, 1) infinite; }
+
+/* The tick draws once per visit, then stays drawn. */
+@keyframes art-check { from { stroke-dashoffset: 40; } to { stroke-dashoffset: 0; } }
+.art-ok.check { stroke-dasharray: 40; animation: art-check 700ms cubic-bezier(0.2, 0.8, 0.2, 1) 200ms both; }
+
+/* ==========================================================================
+   Nav icons
+   ========================================================================== */
+
+/* The icons are for the narrow nav, and only for it.
+   Eleven tabs and their words already fill the 76rem shell to within a few
+   pixels, so an icon on every desktop tab buys scannability the desktop nav
+   did not need and pays for it by making the row scroll — a regression. Below
+   the phone breakpoint the row is full width, already scrolls, and shows three
+   or four tabs at a time: that is where a picture beside the word is worth its
+   space, so that is the only place it appears. */
+.nav a { display: inline-flex; align-items: center; }
+.nav a .icon { display: none; color: var(--ink-faint); }
+.nav a:hover .icon, .nav a[aria-current="page"] .icon { color: inherit; }
+
+@media (max-width: 720px) {
+  .nav a { gap: 0.3rem; padding: 0.3rem 0.5rem; }
+  .nav a .icon { display: block; }
+}
+
+/* ==========================================================================
+   Reduced motion
+   ==========================================================================
+
+   Everything above is decoration over a layout that is already correct. Under
+   this query each piece drops to its resting frame: panels are simply there,
+   skeletons are flat blocks, the lease bar jumps rather than glides, and the
+   pulse and tick are drawn rather than drawing. */
+
+@media (prefers-reduced-motion: reduce) {
+  main .panel,
+  .stat.changed b,
+  .sk,
+  .dev-glyph.busy .screen,
+  .art-pulse.blip,
+  .art-ok.check {
+    animation: none;
+  }
+  .art-pulse.blip, .art-ok.check { stroke-dasharray: none; }
+  .lease-bar i, .dev-card { transition: none; }
+  .dev-card:hover { transform: none; }
+  .live.connecting i { animation: none; }
+  .spinner { animation: none; }
+}

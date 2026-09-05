@@ -1,0 +1,133 @@
+name: ci
+
+# The entry point for every push and pull request, and the only workflow whose
+# name belongs in branch protection.
+#
+# Why this exists at all: the four component suites are path-filtered, because
+# a change to a phone runner has no business spinning up a Node matrix or a
+# macOS runner. But GitHub reports a required check that never ran as *pending
+# forever*, so a path-filtered workflow can never itself be a required check --
+# an iOS-only pull request would sit blocked on the collector's suite until
+# somebody force-merged it.
+#
+# So the suites became reusable workflows, called from here behind a change
+# detector, and `ci-ok` at the bottom always runs and reports. It is the one
+# check to require. A suite that was skipped because nothing it watches changed
+# counts as success; a suite that actually failed fails the gate.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+# A second push to a pull request makes the first one's answer irrelevant.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: what changed
+    runs-on: ubuntu-latest
+    outputs:
+      collector: ${{ steps.filter.outputs.collector }}
+      android: ${{ steps.filter.outputs.android }}
+      ios: ${{ steps.filter.outputs.ios }}
+      machine: ${{ steps.filter.outputs.machine }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The diff below needs both ends of the range in this checkout, and
+          # the default shallow clone has neither.
+          fetch-depth: 0
+
+      - id: filter
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+
+          # An absent base, the all-zero sha of a branch's first push, or a sha
+          # this checkout does not have all mean the same thing: the range is
+          # unknowable. Run everything. Guessing wrong in the other direction
+          # skips a suite silently, which is the failure this file exists to
+          # prevent.
+          if [ -z "${BASE:-}" ] \
+            || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "base unusable ('${BASE:-}') -- running every suite"
+            CHANGED="__ALL__"
+          else
+            CHANGED="$(git diff --name-only "$BASE" HEAD)"
+            echo "changed files:"
+            printf '%s\n' "$CHANGED" | sed 's/^/  /'
+          fi
+
+          match() {
+            if [ "$CHANGED" = "__ALL__" ]; then
+              echo true
+            elif printf '%s\n' "$CHANGED" | grep -qE "$1"; then
+              echo true
+            else
+              echo false
+            fi
+          }
+
+          # ci.yml is in every pattern on purpose: a change to the gate itself
+          # should be proved against all four suites, not merged on the word of
+          # a detector it just edited.
+          {
+            echo "collector=$(match '^(collector/|\.github/workflows/(collector|ci)\.yml)')"
+            echo "android=$(match '^(runner-android/|\.github/workflows/(runner-android|ci)\.yml)')"
+            echo "ios=$(match '^(runner-ios/|\.github/workflows/(runner-ios|ci)\.yml)')"
+            echo "machine=$(match '^(runner-machine/|\.github/workflows/(runner-machine|ci)\.yml)')"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  collector:
+    needs: changes
+    if: needs.changes.outputs.collector == 'true'
+    uses: ./.github/workflows/collector.yml
+
+  runner-android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
+    uses: ./.github/workflows/runner-android.yml
+
+  runner-ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    uses: ./.github/workflows/runner-ios.yml
+
+  runner-machine:
+    needs: changes
+    if: needs.changes.outputs.machine == 'true'
+    uses: ./.github/workflows/runner-machine.yml
+
+  ci-ok:
+    name: ci-ok
+    needs: [changes, collector, runner-android, runner-ios, runner-machine]
+    # Without this the gate inherits the default "only if every dependency
+    # succeeded", which makes a skipped suite skip the gate -- and a skipped
+    # required check never reports, which is the exact bug being fixed.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every suite green or skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "suite results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *)
+                echo "::error::a suite reported '$result'"
+                exit 1
+                ;;
+            esac
+          done
+          echo "all suites green or skipped"

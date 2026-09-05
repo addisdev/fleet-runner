@@ -27,7 +27,16 @@ import { evaluate, expireSnoozes, notify, reconcile } from "./alerts.js";
 import { requireToken } from "./api/guard.js";
 import { invalidateOverview, publish, registerApi } from "./api/index.js";
 import { capabilityMatches, deviceCapabilities, effectivePools } from "./api/shared.js";
+// Dependency chains live beside the cancel path, which also has to settle
+// waiters; imported here rather than duplicated. mutations.ts imports nothing
+// from this file, so there is no cycle.
+import {
+  dependencyState, firstArtifactSha, settleWaiters, substituteDepRefs,
+  validateDepRefs, validateDependencies, type DepSettlement,
+} from "./api/mutations.js";
 import { registerDashStatic } from "./dash-static.js";
+import { startPowerSampler } from "./power.js";
+import { endMirror } from "./api/mirror.js";
 
 mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -51,7 +60,14 @@ const LONG_LEASE_TTL_S = 4 * 60 * 60;
 // thermal is minutes rather than hours, but a 15-minute sustained run is still
 // well past the 600 s default, and a swept lease mid-run would requeue a job
 // whose whole value is an unbroken curve.
-const LONG_LEASE_WORKLOADS = new Set(["drain", "soak", "thermal"]);
+// build compiles for tens of minutes; app-soak runs for hours; the eval
+// workloads chew through a corpus on a phone.
+const LONG_LEASE_WORKLOADS = new Set([
+  "drain", "soak", "thermal", "build", "app-soak", "speech-eval", "embed-eval",
+  // A conversion quantises a multi-GB checkpoint; a dataset is downloaded and
+  // resized; a served model is up for as long as someone is using it.
+  "model-convert", "dataset-prep", "serve", "push-latency",
+]);
 const MAX_LEASE_TTL_S = 24 * 60 * 60;
 // Agents beacon every 60 s. Two missed beacons and a state claim is no longer
 // evidence of anything, which matters because these claims gate work rather
@@ -64,6 +80,11 @@ const app = Fastify({ logger: { level: process.env.FLEET_LOG ?? "info" } });
 // Artifact uploads arrive as raw bytes and are streamed to disk while the
 // hash is computed — a multi-GB GGUF never lives in collector memory.
 app.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
+// Mirror frames, unlike artifacts, are small, capped, and consumed immediately
+// rather than streamed to disk — so they are buffered here. Kept to its own
+// content type precisely so the artifact path above keeps streaming: a
+// multi-GB GGUF must never be buffered into collector memory.
+app.addContentTypeParser("image/jpeg", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
 
 type JobSpec = {
   schema: number;
@@ -105,6 +126,14 @@ type JobSpec = {
   // instructions to the runner, which ignores them.
   priority?: number;
   template_id?: string;
+  // Job ids this one waits for. The job is inserted 'waiting' and promoted to
+  // 'queued' when the last of them is 'done' — a build → install → ui-test
+  // chain is three POSTs and nothing watching the queue.
+  depends_on?: string[];
+  // The runner will stand down and checkpoint if higher-priority work arrives
+  // for the same claimant. Honoured by the collector's beacon reply; a runner
+  // that ignores it simply keeps running, which is the old behaviour.
+  preemptible?: boolean;
   [k: string]: unknown;
 };
 
@@ -125,6 +154,12 @@ const WORKLOADS = new Set([
   // views and the dashboard ships their icons and skeletons — a workload the
   // collector renders is a workload the collector knows about.
   "thermal", "cold-start", "self-check",
+  // Wave 2. build and the eval workloads are claimed by agents that declare
+  // them; the rest are host work. All are listed because the collector renders
+  // their results, and a workload the dashboard draws is one it knows about.
+  "build", "speech-eval", "embed-eval", "vantage", "locale-shots", "app-soak", "a11y-audit",
+  // Wave 3: pipelines that feed the evals, and the workloads that need hardware.
+  "model-convert", "dataset-prep", "serve", "shell", "push-latency", "camera-eval", "desktop-ui-test",
 ]);
 
 function touchDevice(deviceId: string) {
@@ -243,38 +278,96 @@ export function constraintsSatisfied(
   return true;
 }
 
-// Atomically claim the oldest queued job this claimant is eligible for, and
-// start its lease clock.
-const claimTx = db.transaction((
-  executor: string,
-  claimant: string,
-  devicePools: string[],
-  deviceCaps: string[] | null = null,
-): JobSpec | null => {
-  let descriptor: Record<string, unknown> = {};
+/** Everything about a claimant a job spec can be judged against: the pools and
+ *  capabilities it works under, the descriptor a `targets.match` expression
+ *  reads, and the last beacon the collector-side constraints are measured
+ *  against. Built fresh per claim attempt and per preemption check, so those
+ *  two can never be answering from different pictures of the same device. */
+type ClaimantContext = {
+  executor: "device" | "host";
+  claimant: string;
+  pools: string[];
+  capabilities: string[] | null;
+  descriptor: Record<string, unknown>;
+  beacon: Record<string, unknown> | null;
+  beaconAgeS: number | null;
+};
+
+function claimantContext(executor: "device" | "host", claimant: string): ClaimantContext {
+  const empty = { executor, claimant, pools: [] as string[], capabilities: null, descriptor: {}, beacon: null, beaconAgeS: null };
+  // A host executor has no device row: it is judged only on targets.executor.
+  if (executor !== "device") return empty;
+  const dev = db
+    .prepare(
+      `SELECT pools, pools_override, capabilities, descriptor, last_beacon,
+              CAST(strftime('%s','now') - strftime('%s', last_seen) AS INTEGER) AS age_s
+       FROM devices WHERE device_id = ?`,
+    )
+    .get(claimant) as
+    | { pools: string; pools_override: string | null; capabilities: string | null;
+        descriptor: string; last_beacon: string | null; age_s: number | null }
+    | undefined;
+  if (!dev) return empty;
+  const pools = effectivePools(dev);
+  const capabilities = deviceCapabilities(dev);
   let beacon: Record<string, unknown> | null = null;
-  let beaconAgeS: number | null = null;
+  try { beacon = dev.last_beacon ? JSON.parse(dev.last_beacon) : null; } catch { beacon = null; }
+  return {
+    executor, claimant, pools, capabilities,
+    // targets.match expressions can read `pools`, so they see the effective set
+    // rather than the runner's raw report.
+    descriptor: {
+      ...JSON.parse(dev.descriptor),
+      device_id: claimant, pools, capabilities: capabilities ?? [],
+    },
+    beacon,
+    beaconAgeS: dev.age_s ?? null,
+  };
+}
+
+/**
+ * Would this claimant be handed this spec if it asked right now?
+ *
+ * The single copy of the queue's eligibility rules. The claim loop walks the
+ * queue with it, and the preemption check asks it what a higher-priority job
+ * would do — a second implementation would eventually promise a preemption
+ * that the claim loop then refuses, which is a running job stopped for nothing.
+ */
+function specEligibleFor(ctx: ClaimantContext, spec: JobSpec): boolean {
+  // Host jobs may name the executor that should take them. Unset stays
+  // permissive: any executor claims it.
+  if (ctx.executor === "host") return !spec.targets?.executor || spec.targets.executor === ctx.claimant;
+
+  if (spec.targets?.device_id && spec.targets.device_id !== ctx.claimant) return false;
+  const pool = spec.targets?.pool;
+  if (pool && !ctx.pools.includes(pool)) return false;
+  // An agent is never handed a workload it did not say it could run. This sits
+  // above targets.match on purpose: an expression narrows the set of eligible
+  // agents, it does not grant one a workload its code lacks.
+  if (!capabilityMatches(ctx.capabilities, spec.workload, spec.backend ?? null)) return false;
+  // Not a rejection: an unsatisfied constraint leaves the job queued for the
+  // next poll, which is the whole difference between "the laptop is busy right
+  // now" and "this job failed".
+  if (!constraintsSatisfied(spec.constraints, ctx.beacon, ctx.beaconAgeS)) return false;
+  // targets.match: descriptor expression ("ram_mb >= 4000 && os ~ 'android'").
+  if (spec.targets?.match) {
+    try { if (!evalMatch(spec.targets.match, ctx.descriptor)) return false; } catch { return false; }
+  }
+  return true;
+}
+
+// Atomically claim the oldest queued job this claimant is eligible for, and
+// start its lease clock. 'waiting' jobs are invisible here by construction:
+// the SELECT asks for 'queued', which is the whole reason a dependency chain
+// needed its own status rather than a flag on a queued row.
+const claimTx = db.transaction((executor: "device" | "host", claimant: string): JobSpec | null => {
   if (executor === "device") {
     // A host-executor job holding this device (exclusive ui-test, drain…)
     // means the agent must idle until the lock is released.
     const locked = db.prepare("SELECT job_id FROM device_locks WHERE device_id = ?").get(claimant);
     if (locked) return null;
-    const dev = db
-      .prepare(
-        `SELECT descriptor, last_beacon,
-                CAST(strftime('%s','now') - strftime('%s', last_seen) AS INTEGER) AS age_s
-         FROM devices WHERE device_id = ?`,
-      )
-      .get(claimant) as { descriptor: string; last_beacon: string | null; age_s: number | null } | undefined;
-    try { beacon = dev?.last_beacon ? JSON.parse(dev.last_beacon) : null; } catch { beacon = null; }
-    beaconAgeS = dev?.age_s ?? null;
-    // targets.match expressions can read `pools`, so they see the effective set
-    // the caller resolved, not the runner's raw report.
-    descriptor = {
-      ...(dev ? JSON.parse(dev.descriptor) : {}),
-      device_id: claimant, pools: devicePools, capabilities: deviceCaps ?? [],
-    };
   }
+  const ctx = claimantContext(executor, claimant);
   // Priority first, then age. A job promoted from the dashboard jumps the queue
   // without anyone falsifying its created_at.
   const rows = db
@@ -284,26 +377,7 @@ const claimTx = db.transaction((
     .all(executor) as { job_id: string; spec: string }[];
   for (const row of rows) {
     const spec = JSON.parse(row.spec) as JobSpec;
-    // Host jobs may name the executor that should take them. Unset stays
-    // permissive: any executor claims it, exactly as before.
-    if (executor === "host" && spec.targets?.executor && spec.targets.executor !== claimant) continue;
-    if (executor === "device") {
-      if (spec.targets?.device_id && spec.targets.device_id !== claimant) continue;
-      const pool = spec.targets?.pool;
-      if (pool && !devicePools.includes(pool)) continue;
-      // An agent is never handed a workload it did not say it could run. This
-      // sits above targets.match on purpose: an expression narrows the set of
-      // eligible agents, it does not grant one a workload its code lacks.
-      if (!capabilityMatches(deviceCaps, spec.workload, spec.backend ?? null)) continue;
-      // Not a rejection: an unsatisfied constraint leaves the job queued for
-      // the next poll, which is the whole difference between "the laptop is
-      // busy right now" and "this job failed".
-      if (!constraintsSatisfied(spec.constraints, beacon, beaconAgeS)) continue;
-      // targets.match: descriptor expression ("ram_mb >= 4000 && os ~ 'android'").
-      if (spec.targets?.match) {
-        try { if (!evalMatch(spec.targets.match, descriptor)) continue; } catch { continue; }
-      }
-    }
+    if (!specEligibleFor(ctx, spec)) continue;
     db.prepare(
       `UPDATE jobs SET status = 'claimed', claimed_by = ?, claimed_at = datetime('now'),
                        attempts = attempts + 1,
@@ -320,14 +394,42 @@ const claimTx = db.transaction((
   return null;
 });
 
-async function longPollClaim(
-  executor: "device" | "host",
-  claimant: string,
-  pools: string[],
-  capabilities: string[] | null = null,
-) {
+/**
+ * Is there queued work that outranks this claim and would go to the same
+ * claimant? Answered with the same eligibility rules the claim loop uses, so a
+ * runner is only ever asked to step aside for a job that would really replace
+ * it — and only when its own spec said it could be interrupted.
+ *
+ * The collector never kills anything. It answers a beacon with `preempt: true`
+ * and the runner decides when to stop, checkpoints, and posts a final row
+ * carrying `preempted: true`.
+ */
+function preemptionPending(job: {
+  spec: string; priority: number; executor: string; claimed_by: string | null;
+}): boolean {
+  if (!job.claimed_by) return false;
+  let spec: JobSpec;
+  try { spec = JSON.parse(job.spec) as JobSpec; } catch { return false; }
+  if (spec.preemptible !== true) return false;
+
+  const ctx = claimantContext(job.executor === "host" ? "host" : "device", job.claimed_by);
+  // Strictly higher: equal priority is not a reason to throw away work in
+  // progress, and two jobs trading the same device back and forth is worse
+  // than either of them finishing late.
+  const rows = db
+    .prepare(
+      `SELECT spec FROM jobs WHERE status = 'queued' AND executor = ? AND priority > ?
+        ORDER BY priority DESC, created_at`,
+    )
+    .all(job.executor, job.priority) as { spec: string }[];
+  return rows.some((r) => {
+    try { return specEligibleFor(ctx, JSON.parse(r.spec) as JobSpec); } catch { return false; }
+  });
+}
+
+async function longPollClaim(executor: "device" | "host", claimant: string) {
   for (let i = 0; i < LONG_POLL_S; i++) {
-    const spec = claimTx(executor, claimant, pools, capabilities);
+    const spec = claimTx(executor, claimant);
     if (spec) {
       // Announced here rather than inside claimTx: the transaction has
       // committed by the time it returns.
@@ -445,12 +547,12 @@ app.get("/devices", async () =>
 
 app.get("/devices/:id/next-job", async (req, reply) => {
   const { id } = req.params as { id: string };
-  const dev = db
-    .prepare("SELECT pools, pools_override, capabilities FROM devices WHERE device_id = ?")
-    .get(id) as { pools: string; pools_override: string | null; capabilities: string | null } | undefined;
+  const dev = db.prepare("SELECT 1 FROM devices WHERE device_id = ?").get(id);
   if (!dev) return reply.code(404).send({ error: "unknown device; register first" });
   touchDevice(id);
-  const spec = await longPollClaim("device", id, effectivePools(dev), deviceCapabilities(dev));
+  // Pools and capabilities are read inside the claim rather than passed in, so
+  // an override applied mid-poll takes effect on the next second's attempt.
+  const spec = await longPollClaim("device", id);
   if (!spec) return reply.code(204).send();
   return spec;
 });
@@ -464,7 +566,7 @@ app.get("/executor/next-job", async (req, reply) => {
     `INSERT INTO executors (name, last_seen, polls) VALUES (?, datetime('now'), 1)
      ON CONFLICT(name) DO UPDATE SET last_seen = excluded.last_seen, polls = polls + 1`,
   ).run(claimant);
-  const spec = await longPollClaim("host", claimant, []);
+  const spec = await longPollClaim("host", claimant);
   if (!spec) return reply.code(204).send();
   db.prepare("UPDATE executors SET last_job = ? WHERE name = ?").run(spec.job_id, claimant);
   // Hand back the lease the collector actually granted, not the one the job
@@ -540,6 +642,34 @@ app.post("/jobs", async (req, reply) => {
   if (!Number.isInteger(priority)) return reply.code(400).send({ error: "priority must be an integer" });
   const templateId = typeof spec.template_id === "string" ? spec.template_id : null;
 
+  if (spec.preemptible !== undefined && typeof spec.preemptible !== "boolean")
+    return reply.code(400).send({ error: "preemptible must be a boolean" });
+
+  // Dependencies. Refused at enqueue rather than discovered later: a chain that
+  // names a job nobody ever posted would otherwise sit in 'waiting' forever,
+  // looking exactly like a chain whose build is merely slow.
+  let deps: string[] = [];
+  if (spec.depends_on !== undefined) {
+    if (!Array.isArray(spec.depends_on) || spec.depends_on.some((d) => typeof d !== "string" || !d))
+      return reply.code(400).send({ error: "depends_on must be an array of job ids" });
+    deps = [...new Set(spec.depends_on)];
+    const bad = validateDependencies(spec.job_id, deps);
+    if (bad) return reply.code(400).send({ error: bad });
+  }
+  const badRef = validateDepRefs(JSON.stringify(spec), deps);
+  if (badRef) return reply.code(400).send({ error: badRef });
+
+  const depState = dependencyState(deps);
+  // A chain whose dependencies are all closed already gets no promotion event,
+  // so the substitution that promotion would have done happens here instead.
+  if (depState.status === "queued" && deps.length > 0) {
+    const filled = substituteDepRefs(spec);
+    if (filled.unresolved.length > 0)
+      return reply.code(422).send({ error: `cannot resolve ${filled.unresolved.join("; ")}` });
+    spec = filled.spec;
+  }
+  const dependsOn = deps.length > 0 ? JSON.stringify(deps) : null;
+
   // Fan-out: one queued child per registered device in the target pool, each
   // pinned via targets.device_id. Host jobs already fan across attached
   // targets inside the executor, so fanout is a device-executor concept.
@@ -585,9 +715,11 @@ app.post("/jobs", async (req, reply) => {
       devices = [...seen.values()];
     }
 
+    // Every child inherits the parent's dependencies, so a fan-out can hang off
+    // a single build the same way one pinned job can.
     const insert = db.prepare(
-      `INSERT OR IGNORE INTO jobs (job_id, executor, workload, spec, lease_ttl_s, max_attempts, priority, parent_job_id, template_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO jobs (job_id, executor, workload, spec, lease_ttl_s, max_attempts, priority, parent_job_id, template_id, depends_on, status, last_error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const created: string[] = [];
     for (const d of devices) {
@@ -599,27 +731,34 @@ app.post("/jobs", async (req, reply) => {
       delete child.fanout;
       const r = insert.run(
         child.job_id, child.executor, child.workload, JSON.stringify(child), ttlS, maxAttempts,
-        priority, spec.job_id, templateId,
+        priority, spec.job_id, templateId, dependsOn, depState.status,
+        depState.status === "failed" ? depState.reason : null,
       );
       if (r.changes > 0) created.push(child.job_id);
     }
+    if (depState.status === "failed")
+      for (const jobId of created)
+        db.prepare("UPDATE jobs SET finished_at = datetime('now') WHERE job_id = ?").run(jobId);
     for (const jobId of created)
-      announce({ type: "job", job_id: jobId, status: "queued", workload: spec.workload, executor: spec.executor, parent: spec.job_id });
-    return reply.code(201).send({ ok: true, fanout: created });
+      announce({ type: "job", job_id: jobId, status: depState.status, workload: spec.workload, executor: spec.executor, parent: spec.job_id });
+    return reply.code(201).send({ ok: true, fanout: created, status: depState.status });
   }
 
   try {
     db.prepare(
-      `INSERT INTO jobs (job_id, executor, workload, spec, lease_ttl_s, max_attempts, priority, template_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(spec.job_id, spec.executor, spec.workload, JSON.stringify(spec), ttlS, maxAttempts, priority, templateId);
+      `INSERT INTO jobs (job_id, executor, workload, spec, lease_ttl_s, max_attempts, priority, template_id, depends_on, status, last_error, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${depState.status === "failed" ? "datetime('now')" : "NULL"})`,
+    ).run(
+      spec.job_id, spec.executor, spec.workload, JSON.stringify(spec), ttlS, maxAttempts, priority, templateId,
+      dependsOn, depState.status, depState.status === "failed" ? depState.reason : null,
+    );
   } catch (e: unknown) {
     if ((e as { code?: string }).code === "SQLITE_CONSTRAINT_PRIMARYKEY")
       return reply.code(409).send({ error: "job_id already exists" });
     throw e;
   }
-  announce({ type: "job", job_id: spec.job_id, status: "queued", workload: spec.workload, executor: spec.executor });
-  return reply.code(201).send({ ok: true, job_id: spec.job_id });
+  announce({ type: "job", job_id: spec.job_id, status: depState.status, workload: spec.workload, executor: spec.executor });
+  return reply.code(201).send({ ok: true, job_id: spec.job_id, status: depState.status });
 });
 
 // Runs on a timer too; exposed so an operator (or the smoke test) can force a
@@ -642,10 +781,60 @@ app.get("/jobs/:id", async (req, reply) => {
 
 // --- results ---
 
+/** Closing a job and settling whatever was queued behind it are one write.
+ *  A crash between the two would leave a chain permanently stalled on a
+ *  dependency that is already finished, which nothing on the collector would
+ *  ever come back and fix. */
+const closeJobTx = db.transaction((jobId: string, status: "done" | "failed"): DepSettlement => {
+  // Dropping the deadline takes the job out of the sweep's reach for good.
+  db.prepare(
+    "UPDATE jobs SET status = ?, finished_at = datetime('now'), lease_deadline = NULL WHERE job_id = ?",
+  ).run(status, jobId);
+  db.prepare("DELETE FROM device_locks WHERE job_id = ?").run(jobId);
+  return settleWaiters(jobId);
+});
+
+/**
+ * A preempted job stood aside; it did not fail and it did not run out of road.
+ *
+ * So the attempt it burned is handed back — being interrupted by the operator's
+ * own priorities is not evidence that the job is flaky, and counting it would
+ * exhaust `max_attempts` on a job that never once misbehaved. The checkpoint
+ * the runner uploaded with its final row is recorded as `params.resume_from`,
+ * so the next claim continues rather than starting the hour again.
+ */
+const requeuePreemptedTx = db.transaction((jobId: string, finalRow: Record<string, unknown>) => {
+  const row = db.prepare("SELECT spec, status, claimed_by FROM jobs WHERE job_id = ?").get(jobId) as
+    | { spec: string; status: string; claimed_by: string | null }
+    | undefined;
+  if (!row || row.status !== "claimed") return { ok: false as const };
+
+  const resumeFrom = firstArtifactSha(finalRow as Record<string, any>);
+  const spec = JSON.parse(row.spec) as JobSpec;
+  if (resumeFrom)
+    spec.params = { ...((spec.params as Record<string, unknown>) ?? {}), resume_from: resumeFrom };
+
+  db.prepare(
+    `UPDATE jobs SET status = 'queued', claimed_by = NULL, claimed_at = NULL, finished_at = NULL,
+                     lease_deadline = NULL, attempts = MAX(attempts - 1, 0), spec = ?, last_error = ?
+     WHERE job_id = ?`,
+  ).run(
+    JSON.stringify(spec),
+    `preempted on ${row.claimed_by ?? "unknown claimant"}; requeued` +
+      (resumeFrom ? ` to resume from ${resumeFrom.slice(0, 12)}` : " with no checkpoint"),
+    jobId,
+  );
+  db.prepare("DELETE FROM device_locks WHERE job_id = ?").run(jobId);
+  return { ok: true as const, resume_from: resumeFrom };
+});
+
 app.post("/results", async (req, reply) => {
   const b = req.body as {
     schema?: number; kind?: string; job_id?: string; device_id?: string;
     iter?: number; final?: boolean; ok?: boolean;
+    // A final row that closes nothing: the runner was asked to step aside and
+    // has checkpointed. See requeuePreemptedTx.
+    preempted?: boolean;
   };
   if (b?.schema !== 1) return reply.code(400).send({ error: "schema must be 1" });
   if (!b.device_id) return reply.code(400).send({ error: "device_id required" });
@@ -672,14 +861,28 @@ app.post("/results", async (req, reply) => {
           )
           .run(b.job_id).changes > 0;
     }
+    // The beacon is also where a preemptible job is asked to step aside. It
+    // costs one indexed read on the overwhelming majority of beacons, because
+    // anything that is not a live claim with `preemptible: true` in its spec
+    // stops right there.
+    let preempt = false;
+    if (b.job_id && leaseRenewed) {
+      const running = db
+        .prepare("SELECT spec, priority, executor, claimed_by FROM jobs WHERE job_id = ? AND status = 'claimed'")
+        .get(b.job_id) as
+        | { spec: string; priority: number; executor: string; claimed_by: string | null }
+        | undefined;
+      if (running) preempt = preemptionPending(running);
+    }
     announce({
       type: "beacon",
       device_id: b.device_id,
       job_id: b.job_id ?? null,
       lease_renewed: leaseRenewed,
+      preempt,
       beacon: (b as { beacon?: unknown }).beacon ?? null,
     });
-    return { ok: true, lease_renewed: leaseRenewed };
+    return { ok: true, lease_renewed: leaseRenewed, preempt };
   }
 
   if (b.kind !== "result") return reply.code(400).send({ error: "kind must be 'result' or 'beacon'" });
@@ -692,20 +895,39 @@ app.post("/results", async (req, reply) => {
   announce({ type: "result", job_id: b.job_id, device_id: b.device_id, iter: b.iter ?? 0, final: !!b.final });
 
   if (b.final) {
-    // Dropping the deadline takes the job out of the sweep's reach for good.
-    db.prepare(
-      "UPDATE jobs SET status = ?, finished_at = datetime('now'), lease_deadline = NULL WHERE job_id = ?",
-    ).run(b.ok === false ? "failed" : "done", b.job_id);
-    db.prepare("DELETE FROM device_locks WHERE job_id = ?").run(b.job_id);
-    announce({
-      type: "job",
-      job_id: b.job_id,
-      status: b.ok === false ? "failed" : "done",
-      device_id: b.device_id,
-    });
-    reportStatus(b.job_id, b.ok === false ? "failure" : "success").catch((e) =>
+    // A preempted job did not fail and did not finish: it stood aside. It goes
+    // back on the queue before anything else looks at it.
+    if ((b as { preempted?: boolean }).preempted === true) {
+      const out = requeuePreemptedTx(b.job_id, b as Record<string, unknown>);
+      if (out.ok) {
+        announce({
+          type: "job", job_id: b.job_id, status: "queued",
+          reason: "preempted", device_id: b.device_id, resume_from: out.resume_from,
+        });
+        return { ok: true, preempted: true, resume_from: out.resume_from };
+      }
+      // Not claimed any more — swept, cancelled or already closed. Fall through
+      // and record it the ordinary way rather than resurrecting a closed job.
+      app.log.warn({ job_id: b.job_id }, "preempted result for a job that is no longer claimed");
+    }
+
+    const status = b.ok === false ? "failed" : "done";
+    const settled = closeJobTx(b.job_id, status);
+    // A finished job has nothing left to show. Outside the transaction, because
+    // closing viewer sockets must not be able to roll back a device's result.
+    endMirror(b.job_id);
+    announce({ type: "job", job_id: b.job_id, status, device_id: b.device_id });
+    // Announced after the transaction commits: a broken browser pipe must not
+    // roll back a device's result.
+    for (const jobId of settled.promoted)
+      announce({ type: "job", job_id: jobId, status: "queued", reason: `dependency ${b.job_id} finished` });
+    for (const f of settled.failed)
+      announce({ type: "job", job_id: f.job_id, status: "failed", reason: f.reason });
+
+    reportStatus(b.job_id, status === "failed" ? "failure" : "success").catch((e) =>
       app.log.error(e, "status report failed"),
     );
+    return { ok: true, status, promoted: settled.promoted, failed: settled.failed.map((f) => f.job_id) };
   }
   return { ok: true };
 });
@@ -1121,6 +1343,10 @@ app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" }).then(() => {
     );
   }
   sweepLeases(); // catch claims that lapsed while the collector was down
+  // Only samples pools whose power.json entry declares how to read watts, so a
+  // fleet with no metering plugs starts exactly as before. Its timers are
+  // unref'd, so this never holds the process open on its own.
+  startPowerSampler({ log: app.log });
   setInterval(sweepLeases, SWEEP_MS).unref();
   setInterval(() => {
     schedulerTick().catch((e) => app.log.error(e, "scheduler tick failed"));

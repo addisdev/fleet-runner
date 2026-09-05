@@ -9,16 +9,54 @@ import assert from "node:assert/strict";
 import { mkdtemp, writeFile, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { capabilitiesFrom, resolveLlamaBench, hasMlx, probeCapabilities } from "../src/capabilities.js";
+import { capabilitiesFrom, resolveLlamaBench, hasMlx, probeCapabilities, probeBuildKinds } from "../src/capabilities.js";
 import { which } from "../src/probe.js";
 
-test("benchmark is unconditional; the pairings are not", () => {
-  assert.deepEqual(capabilitiesFrom({ llamaBench: false, mlx: false }), ["benchmark"]);
-  assert.deepEqual(capabilitiesFrom({ llamaBench: true, mlx: false }), ["benchmark", "benchmark:llama.cpp"]);
-  assert.deepEqual(capabilitiesFrom({ llamaBench: false, mlx: true }), ["benchmark", "benchmark:mlx"]);
-  assert.deepEqual(capabilitiesFrom({ llamaBench: true, mlx: true }), [
-    "benchmark", "benchmark:llama.cpp", "benchmark:mlx",
+/** Nothing installed: the floor every other case is a delta from. */
+const bare = { llamaBench: false, mlx: false, gradle: false, xcodebuild: false, node: false };
+
+test("benchmark and self-check are unconditional; the pairings are not", () => {
+  assert.deepEqual(capabilitiesFrom(bare), ["benchmark", "self-check"]);
+  assert.deepEqual(capabilitiesFrom({ ...bare, llamaBench: true }), [
+    "benchmark", "benchmark:llama.cpp", "self-check",
   ]);
+  assert.deepEqual(capabilitiesFrom({ ...bare, mlx: true }), ["benchmark", "benchmark:mlx", "self-check"]);
+  assert.deepEqual(capabilitiesFrom({ ...bare, llamaBench: true, mlx: true }), [
+    "benchmark", "benchmark:llama.cpp", "benchmark:mlx", "self-check",
+  ]);
+});
+
+test("a build kind is declared only when its binary resolves", () => {
+  assert.deepEqual(capabilitiesFrom({ ...bare, gradle: true }), [
+    "benchmark", "build", "build:gradle", "self-check",
+  ]);
+  assert.deepEqual(capabilitiesFrom({ ...bare, xcodebuild: true }), [
+    "benchmark", "build", "build:xcode", "self-check",
+  ]);
+  assert.deepEqual(capabilitiesFrom({ ...bare, node: true }), [
+    "benchmark", "build", "build:npm", "self-check",
+  ]);
+});
+
+test("bare `build` rides along with any kind, and only with a kind", () => {
+  // The collector's claim path matches a job's workload against this list, and
+  // a build job's spec carries its kind in params where capabilityMatches
+  // cannot see it. Without bare `build` a machine with every toolchain
+  // installed would never claim a build job at all.
+  assert.ok(!capabilitiesFrom(bare).includes("build"));
+  for (const kind of ["gradle", "xcodebuild", "node"] as const) {
+    const caps = capabilitiesFrom({ ...bare, [kind]: true });
+    assert.ok(caps.includes("build"), `${kind} alone should still declare bare build`);
+  }
+  const all = capabilitiesFrom({ ...bare, gradle: true, xcodebuild: true, node: true });
+  assert.equal(all.filter((c) => c === "build").length, 1, "build is declared once, not once per kind");
+  assert.deepEqual(all, ["benchmark", "build", "build:gradle", "build:xcode", "build:npm", "self-check"]);
+});
+
+test("an empty PATH declares no build kind at all", async () => {
+  assert.deepEqual(await probeBuildKinds({ PATH: "" }), {
+    gradle: false, xcodebuild: false, node: false,
+  });
 });
 
 test("llama-bench does not resolve with an empty PATH", async () => {
@@ -69,6 +107,10 @@ test("a python that cannot import mlx_lm is not an mlx declaration", async () =>
 });
 
 test("probeCapabilities degrades to the synthetic-only list on a bare machine", async () => {
-  // Exactly the CI runner's situation: no GPU, no llama-bench, no mlx.
-  assert.deepEqual(await probeCapabilities({ PATH: "", FLEET_PYTHON: "/nonexistent/python3" }), ["benchmark"]);
+  // No GPU, no llama-bench, no mlx, and no toolchain — and still a useful
+  // fleet member, because both remaining workloads need nothing installed.
+  assert.deepEqual(
+    await probeCapabilities({ PATH: "", FLEET_PYTHON: "/nonexistent/python3" }),
+    ["benchmark", "self-check"],
+  );
 });

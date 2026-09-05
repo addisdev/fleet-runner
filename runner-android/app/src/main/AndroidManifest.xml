@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- vantage reports which transport carried each timing (wifi / cellular /
+         ethernet). Without this the workload can only ever say "unknown", and
+         a latency figure with no idea what carried it is not comparable to
+         anything. Normal permission: granted at install, no runtime prompt. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Fleet devices are dedicated hardware: exempting the agent from doze
          keeps beacons and the agent loop alive on battery (observed: Samsung
@@ -13,8 +18,9 @@
 
     <application
         android:label="Fleet Runner"
-        android:icon="@drawable/ic_launcher"
-        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.FleetRunner"
         android:usesCleartextTraffic="true">
         <!-- Cleartext is deliberate: the collector speaks plain HTTP and is only
              reachable inside the Tailscale mesh / adb reverse. -->

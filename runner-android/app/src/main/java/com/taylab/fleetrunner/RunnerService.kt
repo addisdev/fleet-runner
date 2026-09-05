@@ -9,13 +9,17 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.taylab.fleetrunner.net.CollectorClient
+import com.taylab.fleetrunner.protocol.BeaconSample
+import com.taylab.fleetrunner.protocol.JobSpec
 import com.taylab.fleetrunner.protocol.RegisterPost
 import com.taylab.fleetrunner.protocol.ResultPost
 import com.taylab.fleetrunner.telemetry.Telemetry
 import com.taylab.fleetrunner.workload.BatchEngine
 import com.taylab.fleetrunner.workload.BenchmarkEngine
+import com.taylab.fleetrunner.workload.EmbedEvalEngine
 import com.taylab.fleetrunner.workload.PipelineEngine
 import com.taylab.fleetrunner.workload.ThermalEngine
+import com.taylab.fleetrunner.workload.VantageEngine
 import com.taylab.fleetrunner.workload.VisionEvalEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +43,61 @@ class RunnerService : Service() {
 
         private val _status = MutableStateFlow("stopped")
         val status: StateFlow<String> = _status
+
+        /**
+         * What the agent is doing, as a value rather than as prose.
+         *
+         * [status] is still the sentence — it carries job ids and error text,
+         * and Maestro flows read it off the screen. This is the same
+         * information in the form a layout needs: something to colour a dot by
+         * and to choose a headline from, without the Activity parsing English
+         * out of a string.
+         */
+        enum class Phase {
+            STOPPED, STARTING, REGISTERING, POLLING, RUNNING, FAILING;
+
+            val headline: String
+                get() = when (this) {
+                    STOPPED -> "Stopped"
+                    STARTING -> "Starting"
+                    REGISTERING -> "Registering"
+                    POLLING -> "Polling for work"
+                    RUNNING -> "Running a job"
+                    FAILING -> "Cannot reach the collector"
+                }
+
+            /** True while the agent is in contact with the collector. */
+            val connected: Boolean get() = this == POLLING || this == RUNNING
+        }
+
+        /** A job this device is running, or has just finished. */
+        data class JobState(
+            val jobId: String,
+            val workload: String,
+            val startedAt: Long,
+            val finishedAt: Long? = null,
+        )
+
+        private val _phase = MutableStateFlow(Phase.STOPPED)
+        val phase: StateFlow<Phase> = _phase
+
+        /**
+         * The last beacon, so the screen shows the numbers the collector was
+         * sent rather than readings taken a second later. Null until the first
+         * beacon goes out; the Activity fills the tiles locally before then.
+         */
+        private val _beacon = MutableStateFlow<BeaconSample?>(null)
+        val beacon: StateFlow<BeaconSample?> = _beacon
+
+        private val _network = MutableStateFlow("unknown")
+        val network: StateFlow<String> = _network
+
+        /** When the last beacon went out, as elapsed-realtime millis. */
+        private val _lastBeaconAt = MutableStateFlow<Long?>(null)
+        val lastBeaconAt: StateFlow<Long?> = _lastBeaconAt
+
+        private val _job = MutableStateFlow<JobState?>(null)
+        val job: StateFlow<JobState?> = _job
 
         fun start(context: Context, baseUrl: String, deviceId: String) {
             val intent = Intent(context, RunnerService::class.java)
@@ -67,6 +126,7 @@ class RunnerService : Service() {
         val deviceId = intent.getStringExtra(EXTRA_DEVICE_ID) ?: return START_NOT_STICKY
 
         startForeground(NOTIF_ID, buildNotification(deviceId))
+        _phase.value = Phase.STARTING
 
         // Screen-off CPU throttling silently poisons benchmarks (observed:
         // 0.6s -> 85s per batch item on an SM-X930 as the screen slept). A
@@ -88,27 +148,72 @@ class RunnerService : Service() {
     }
 
     /**
-     * What this runner declares at registration, so the collector's capability
-     * routing only offers it work it can run. Defined here, immediately beside
-     * the dispatch `when` in [agentLoop] that it mirrors, so the declared list
-     * and the dispatched workloads cannot drift apart.
+     * One workload this runner can run: what it declares to the collector, and
+     * what it does when a job of that kind arrives.
+     *
+     * [capability] is the string the queue routes on. Usually that is the
+     * workload name; where a runner can only serve one backend of a workload it
+     * is the backend-qualified form the collector understands ("batch:litert").
      */
-    private val capabilities = listOf("benchmark", "batch", "batch:litert", "pipeline", "thermal")
+    private class Route(
+        val capability: String,
+        val workload: String,
+        /** null matches any backend; a value claims only that backend. */
+        val backend: String? = null,
+        val run: (JobSpec) -> Unit,
+    )
+
+    /**
+     * Every workload this runner dispatches, with what it declares for each.
+     *
+     * This list is the single source for both halves: the capabilities sent at
+     * registration are its `capability` column, and the dispatch in [agentLoop]
+     * is its `run` column, so declaring a workload and being able to run it are
+     * now one act. They used to be a hand-kept list sitting next to a `when`,
+     * which is a pair of things that agree only until someone edits one of them
+     * — and the failure is silent in the worst direction: the collector routes
+     * us work we bounce straight back as "not supported by this runner yet".
+     */
+    private fun routes(client: CollectorClient, deviceId: String) = listOf(
+        Route("benchmark", "benchmark") { BenchmarkEngine(this, client, deviceId).run(it) },
+        Route("batch", "batch") { BatchEngine(this, client, deviceId).run(it) },
+        Route("batch:litert", "batch", "litert") { VisionEvalEngine(this, client, deviceId).run(it) },
+        Route("pipeline", "pipeline") { PipelineEngine(this, client, deviceId).run(it) },
+        Route("thermal", "thermal") { ThermalEngine(this, client, deviceId).run(it) },
+        Route("embed-eval", "embed-eval") { EmbedEvalEngine(this, client, deviceId).run(it) },
+        Route("vantage", "vantage") { VantageEngine(this, client, deviceId).run(it) },
+    )
+
+    /**
+     * The route for a job, or null when this runner has none. A route naming a
+     * backend wins over the workload's general route — that is what makes
+     * `batch` + backend litert reach the vision eval — and declaration order
+     * stays free to be the order we want to register in.
+     */
+    private fun routeFor(routes: List<Route>, job: JobSpec): Route? =
+        routes.firstOrNull { it.workload == job.workload && it.backend != null && it.backend == job.backend }
+            ?: routes.firstOrNull { it.workload == job.workload && it.backend == null }
 
     private suspend fun agentLoop(client: CollectorClient, deviceId: String) {
+        val routes = routes(client, deviceId)
         while (true) {
             try {
                 _status.value = "registering as $deviceId"
+                _phase.value = Phase.REGISTERING
                 client.register(
                     RegisterPost(
                         deviceId = deviceId,
                         descriptor = Telemetry.descriptor(this),
                         pools = listOf("ml-capable"),
-                        capabilities = capabilities,
+                        // Derived from the routes above rather than written
+                        // out again: the collector's routing only offers this
+                        // runner work it can actually dispatch.
+                        capabilities = routes.map { it.capability },
                     ),
                 )
                 while (true) {
                     _status.value = "polling for work"
+                    _phase.value = Phase.POLLING
                     val job = client.nextJob(deviceId) ?: continue
 
                     // Enforce the job's device-state contract before burning
@@ -128,16 +233,15 @@ class RunnerService : Service() {
                     }
 
                     _status.value = "running ${job.jobId}"
+                    _phase.value = Phase.RUNNING
+                    _job.value = JobState(job.jobId, job.workload, System.currentTimeMillis())
                     currentJobId = job.jobId
                     try {
-                        when (job.workload) {
-                            "benchmark" -> BenchmarkEngine(this, client, deviceId).run(job)
-                            "batch" ->
-                                if (job.backend == "litert") VisionEvalEngine(this, client, deviceId).run(job)
-                                else BatchEngine(this, client, deviceId).run(job)
-                            "pipeline" -> PipelineEngine(this, client, deviceId).run(job)
-                            "thermal" -> ThermalEngine(this, client, deviceId).run(job)
-                            else -> client.postResult(
+                        val route = routeFor(routes, job)
+                        if (route != null) {
+                            route.run(job)
+                        } else {
+                            client.postResult(
                                 ResultPost(
                                     kind = "result", jobId = job.jobId, deviceId = deviceId,
                                     iter = 0, final = true, ok = false,
@@ -150,15 +254,20 @@ class RunnerService : Service() {
                         JobCancellation.clear(job.jobId)
                     }
                     _status.value = "finished ${job.jobId}"
+                    // No ok/failed verdict: the engines post their own final
+                    // rows and the service never sees the outcome, so a badge
+                    // here would be a guess. The collector has the verdict.
+                    _job.value = _job.value?.copy(finishedAt = System.currentTimeMillis())
                 }
             } catch (e: Exception) {
                 _status.value = "error: ${e.message} — retrying in ${ERROR_BACKOFF_MS / 1000}s"
+                _phase.value = Phase.FAILING
                 delay(ERROR_BACKOFF_MS)
             }
         }
     }
 
-    private fun checkConstraints(job: com.taylab.fleetrunner.protocol.JobSpec): String? {
+    private fun checkConstraints(job: JobSpec): String? {
         val c = job.constraints ?: return null
         if (c.requireCharging == true && !Telemetry.isCharging(this)) {
             return "constraint not met: require_charging (device is on battery)"
@@ -181,6 +290,11 @@ class RunnerService : Service() {
                         beacon = Telemetry.beacon(this),
                     ),
                 )
+                // Published after the post, so the screen shows what was
+                // actually sent rather than what we were about to send.
+                _beacon.value = Telemetry.beacon(this)
+                _network.value = Telemetry.networkType(this)
+                _lastBeaconAt.value = System.currentTimeMillis()
                 // The collector answering a job-carrying beacon with
                 // lease_renewed:false means the claim is gone — cancelled from
                 // the dashboard, or swept — so tell the engine to stop. Only
@@ -215,6 +329,8 @@ class RunnerService : Service() {
         wakeLock?.release()
         wakeLock = null
         _status.value = "stopped"
+        _phase.value = Phase.STOPPED
+        _job.value = null
         super.onDestroy()
     }
 }

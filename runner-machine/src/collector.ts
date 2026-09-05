@@ -7,7 +7,7 @@
  * protocol, not on the collector's source tree.
  */
 import { createHash } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { rename, mkdir, stat, open } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { Readable, Transform } from "node:stream";
@@ -92,6 +92,54 @@ export class CollectorClient {
     const got = hash.digest("hex");
     if (got !== sha256) throw new Error(`artifact hash mismatch: wanted ${sha256} got ${got}`);
     await rename(tmp, dest);
+  }
+
+  /**
+   * Uploads a file to the artifact store and returns its sha256.
+   *
+   * `app`, `build` and `platform` are what turn an upload into a *published
+   * build*: the collector stamps `published_at`/`publish_seq` on any upload
+   * carrying `x-artifact-app`, and `resolveLatestBuild` reads exactly that
+   * ordering when a job spec asks for `"sha256": "latest"`. There is no
+   * separate publish endpoint — POST /artifacts with those headers IS the
+   * publish, which is also what collector/scripts/ci-upload.ts does.
+   *
+   * Omitting `app` uploads an anonymous blob instead, which is the right thing
+   * for a failed build's log: a log is not a build, and publishing one under
+   * an app name would make it the artifact a nightly asks for by "latest".
+   */
+  async uploadArtifact(
+    file: string,
+    name: string,
+    opts: { app?: string; build?: string; platform?: string | null } = {},
+  ): Promise<{ sha256: string; size: number }> {
+    const headers: Record<string, string> = {
+      "content-type": "application/octet-stream",
+      "x-artifact-name": name,
+    };
+    if (opts.app) headers["x-artifact-app"] = opts.app;
+    if (opts.build) headers["x-artifact-build"] = opts.build;
+    if (opts.platform) headers["x-artifact-platform"] = opts.platform;
+    const token = process.env.FLEET_DASH_TOKEN;
+    if (token) headers["x-fleet-token"] = token;
+
+    // Streamed, not buffered. An APK or a zipped .app is tens to hundreds of
+    // megabytes and this agent is a long-lived process: reading one into a
+    // Buffer to hand to fetch would spike the RSS of the same process that
+    // reports peak_mem_mb for benchmarks.
+    const stream = Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array>;
+    const res = await fetch(`${this.base}/artifacts`, {
+      method: "POST",
+      headers,
+      body: stream,
+      // Required by fetch for a streaming request body.
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const text = await res.text().catch(() => "");
+    if (!res.ok) throw new CollectorError(res.status, `artifact upload (${name})`);
+    const parsed = JSON.parse(text) as { sha256?: string; size?: number };
+    if (typeof parsed.sha256 !== "string") throw new Error(`artifact upload answered no sha256: ${text.slice(0, 200)}`);
+    return { sha256: parsed.sha256, size: parsed.size ?? 0 };
   }
 
   private async post(p: string, body: unknown): Promise<string> {

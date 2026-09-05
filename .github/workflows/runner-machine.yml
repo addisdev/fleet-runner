@@ -1,11 +1,9 @@
 name: runner-machine
 
+# Called by ci.yml, which owns the change detection and the `ci-ok` check
+# that branch protection requires. Nothing else triggers this file.
 on:
-  push:
-    branches: [main, develop]
-    paths: ["runner-machine/**", ".github/workflows/runner-machine.yml"]
-  pull_request:
-    paths: ["runner-machine/**", ".github/workflows/runner-machine.yml"]
+  workflow_call:
 
 defaults:
   run:

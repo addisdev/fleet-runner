@@ -22,16 +22,76 @@
  * machine and NOT a claim that a workload exists: there is no MLX backend in
  * this repo yet, and an mlx-backed job is refused with an error row the way
  * the iOS runner refuses llama.cpp when its framework is missing.
+ *
+ * `self-check` is unconditional for the same reason `benchmark` is: it shells
+ * out to whatever is installed and reports a skipped check for whatever is
+ * not, so a machine that can answer none of its questions still answers "I
+ * could not", which is the reading the alert engine needs.
+ *
+ * `build` is the one capability that is BOTH a claim and a label. The
+ * `build:<kind>` entries are toolchain statements like the benchmark pairings,
+ * but bare `build` is what the collector's claim path actually matches on — a
+ * build job carries its kind in `params`, where `capabilityMatches` cannot
+ * see it, so without the bare entry a machine with the whole toolchain
+ * installed would sit there declaring three kinds and never claim a build.
  */
 import { which, run } from "./probe.js";
+import { KIND_BINARY } from "./buildkinds.js";
+import { convertersAvailable, probeConverters } from "./converters.js";
+import { loadAllowlist } from "./allowlist.js";
 
-export type CapabilityFlags = { llamaBench: boolean; mlx: boolean };
+export type CapabilityFlags = {
+  llamaBench: boolean;
+  mlx: boolean;
+  gradle: boolean;
+  xcodebuild: boolean;
+  node: boolean;
+  /** Which model converters resolved: gguf, coreml, tflite. */
+  converters?: string[];
+  /** Whether a non-empty shell allowlist exists on this machine. */
+  shellAllowlist?: boolean;
+  /** Whether a llama-server binary resolved, for the serve workload. */
+  llamaServer?: boolean;
+};
 
 /** The list, given the answers. Pure, so the ordering is testable. */
 export function capabilitiesFrom(flags: CapabilityFlags): string[] {
   const caps = ["benchmark"];
   if (flags.llamaBench) caps.push("benchmark:llama.cpp");
   if (flags.mlx) caps.push("benchmark:mlx");
+  // Bare `build` is what the collector's claim path matches on: a job spec has
+  // no place to put a build kind that `capabilityMatches` would read — its
+  // `backend` is a closed enum of inference runtimes — so `build:gradle` alone
+  // would be a machine that can build and never claims a build. It is declared
+  // when at least one kind resolves, which is the honest statement: this
+  // machine can build something. The `build:<kind>` labels then say WHICH,
+  // readable from a targets.match expression, exactly as the benchmark
+  // pairings are.
+  const kinds: string[] = [];
+  if (flags.gradle) kinds.push("build:gradle");
+  if (flags.xcodebuild) kinds.push("build:xcode");
+  if (flags.node) kinds.push("build:npm");
+  if (kinds.length > 0) caps.push("build", ...kinds);
+  // self-check needs nothing installed: it shells out to whatever is there and
+  // reports a skipped check for whatever is not. A machine that cannot answer
+  // any of its questions still answers "I could not", which is the whole point.
+  caps.push("self-check");
+  // Same bare-plus-specific shape as build, for the same reason: a job spec has
+  // nowhere to put an output format that the collector's capabilityMatches
+  // would read, so `convert:gguf` alone would be a machine that can convert and
+  // never claims a conversion.
+  if (flags.converters && flags.converters.length > 0) {
+    caps.push("model-convert", ...flags.converters.map((c) => `model-convert:${c}`));
+    // dataset-prep needs only Node and the image tooling the converters bring
+    // along, so it rides on the same answer rather than probing twice.
+    caps.push("dataset-prep");
+  }
+  if (flags.llamaServer) caps.push("serve");
+  // shell is declared ONLY when this machine has a non-empty allowlist. That is
+  // the trust boundary: POST /jobs is unauthenticated by design, so a machine
+  // whose owner has pinned nothing must be unable to claim a shell job at all,
+  // rather than claiming it and refusing it afterwards.
+  if (flags.shellAllowlist) caps.push("shell");
   return caps;
 }
 
@@ -60,7 +120,42 @@ export async function hasMlx(env: NodeJS.ProcessEnv = process.env): Promise<bool
   return r.code === 0;
 }
 
+/**
+ * The build toolchains this machine actually has.
+ *
+ * `which` and nothing cheaper: the collector will hand this agent a build job
+ * on the strength of these answers, and a `build:xcode` declared on a machine
+ * with no Xcode takes an iOS build off the queue, away from the Mac that could
+ * have run it, and returns an error row an hour later.
+ *
+ * Gradle is the one asymmetry: a repo with a `gradlew` wrapper needs no system
+ * gradle at all, but a wrapper is a property of a repo and this is a statement
+ * about a machine, so the system binary is what is asked about. A machine with
+ * only wrappers under-declares, which costs a claim; the reverse would cost a
+ * failed nightly.
+ */
+export async function probeBuildKinds(env: NodeJS.ProcessEnv = process.env): Promise<{
+  gradle: boolean; xcodebuild: boolean; node: boolean;
+}> {
+  const [gradle, xcodebuild, node] = await Promise.all([
+    which(KIND_BINARY.gradle, env),
+    which(KIND_BINARY.xcode, env),
+    which(KIND_BINARY.npm, env),
+  ]);
+  return { gradle: gradle !== null, xcodebuild: xcodebuild !== null, node: node !== null };
+}
+
 export async function probeCapabilities(env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
-  const [llamaBench, mlx] = await Promise.all([resolveLlamaBench(env), hasMlx(env)]);
-  return capabilitiesFrom({ llamaBench: llamaBench !== null, mlx });
+  const [llamaBench, mlx, kinds, converters, allowlist, llamaServer] = await Promise.all([
+    resolveLlamaBench(env),
+    hasMlx(env),
+    probeBuildKinds(env),
+    probeConverters(env).then(convertersAvailable).catch(() => [] as string[]),
+    loadAllowlist(env).then((a) => a.allowed.length > 0).catch(() => false),
+    which("llama-server", env).then((p) => p !== null).catch(() => false),
+  ]);
+  return capabilitiesFrom({
+    llamaBench: llamaBench !== null, mlx, ...kinds,
+    converters, shellAllowlist: allowlist, llamaServer,
+  });
 }

@@ -25,7 +25,58 @@ struct JobCancelled: Error, LocalizedError {
 /// Agent loop + telemetry beacon, mirroring the Android RunnerService.
 @MainActor
 final class FleetAgent: ObservableObject {
+    /// What the agent is doing, as a value rather than as prose.
+    ///
+    /// `status` is still the sentence — it carries job ids and error text, and
+    /// the host executor's smoke flows read it. This is the same information in
+    /// the form a screen needs: something to colour a dot by and to choose a
+    /// headline from, without any view parsing English out of a string.
+    enum Phase {
+        case stopped, starting, registering, polling, running, failing
+
+        var headline: String {
+            switch self {
+            case .stopped: return "Stopped"
+            case .starting: return "Starting"
+            case .registering: return "Registering"
+            case .polling: return "Polling for work"
+            case .running: return "Running a job"
+            case .failing: return "Cannot reach the collector"
+            }
+        }
+
+        /// True while the agent is in contact with the collector — what the
+        /// header's live dot and the hero's pulse animation key off.
+        var connected: Bool {
+            switch self {
+            case .polling, .running: return true
+            default: return false
+            }
+        }
+    }
+
+    /// A job this device has finished, as much as the agent itself knows.
+    ///
+    /// Deliberately not carrying an ok/failed verdict: the workloads post their
+    /// own final rows and the agent never sees the outcome, so a badge here
+    /// would be a guess. The collector is where a job's verdict lives.
+    struct FinishedJob {
+        let jobId: String
+        let workload: String
+        let elapsed: TimeInterval
+        let at: Date
+    }
+
     @Published var status = "stopped"
+    @Published private(set) var phase: Phase = .stopped
+    /// The most recent beacon, so a running agent's screen shows the same
+    /// numbers the collector was sent rather than readings taken a second
+    /// later. Before the first beacon this is a local sample — see `sampleNow`.
+    @Published private(set) var telemetry: BeaconSample?
+    @Published private(set) var network = "unknown"
+    @Published private(set) var lastBeacon: Date?
+    @Published private(set) var runningJob: (id: String, workload: String, since: Date)?
+    @Published private(set) var lastJob: FinishedJob?
 
     private var agentTask: Task<Void, Never>?
     private var beaconTask: Task<Void, Never>?
@@ -46,14 +97,24 @@ final class FleetAgent: ObservableObject {
         stop()
         self.baseURL = baseURL
         status = "starting"
+        phase = .starting
         UIApplication.shared.isIdleTimerDisabled = true
         let client = CollectorClient(baseURL: baseURL)
 
         agentTask = Task { await self.agentLoop(client: client, deviceId: deviceId) }
         let jobBox = currentJobId
-        beaconTask = Task.detached {
+        beaconTask = Task.detached { [weak self] in
             while !Task.isCancelled {
                 let beacon = await Telemetry.beacon()
+                let net = Telemetry.networkType()
+                // The screen shows the sample that was actually sent, stamped
+                // with when it went — a tile that re-read the battery on every
+                // redraw would drift away from what the collector believes.
+                await MainActor.run {
+                    self?.telemetry = beacon
+                    self?.network = net
+                    self?.lastBeacon = Date()
+                }
                 let jobId = jobBox.get()
                 // `try?` still swallows every failure: a throw, a timeout or a
                 // non-2xx leaves `renewed` nil, and only an explicit false in a
@@ -68,6 +129,19 @@ final class FleetAgent: ObservableObject {
         }
     }
 
+    /// Take a reading without sending one.
+    ///
+    /// The battery and thermal tiles are worth something before the agent is
+    /// started — deciding whether to enrol a phone that is on 8% is exactly a
+    /// pre-start question — and until Start is pressed there is no beacon to
+    /// show. This fills them in locally; the beacon loop overwrites it a minute
+    /// later with what was actually reported.
+    func sampleNow() {
+        guard phase == .stopped else { return }
+        telemetry = Telemetry.beacon()
+        network = Telemetry.networkType()
+    }
+
     func stop() {
         agentTask?.cancel()
         beaconTask?.cancel()
@@ -75,19 +149,85 @@ final class FleetAgent: ObservableObject {
         beaconTask = nil
         UIApplication.shared.isIdleTimerDisabled = false
         status = "stopped"
+        phase = .stopped
+        runningJob = nil
     }
 
-    /// Exactly the workloads the dispatch switch in `agentLoop` handles, sent
-    /// at registration as this device's capabilities. One list for both, so
-    /// that the switch and what the collector's routing believes we can run
-    /// cannot drift apart and earn us work we'd only bounce back as
-    /// "not supported".
-    static let dispatchedWorkloads = ["benchmark", "batch", "batch:coreml", "pipeline", "thermal"]
+    /// One workload this runner can run: what it declares to the collector, and
+    /// what it does when a job of that kind arrives.
+    ///
+    /// `capability` is the string the queue routes on. Usually that is the
+    /// workload name; where a runner serves only one backend of a workload it
+    /// is the backend-qualified form the collector understands ("batch:coreml").
+    private struct Route {
+        let capability: String
+        let workload: String
+        /// nil matches any backend; a value claims only that backend.
+        var backend: String?
+        let run: (FleetAgent, JobSpec, CollectorClient, String, ArtifactCache) async -> Void
+    }
+
+    /// Every workload this runner dispatches, with what it declares for each.
+    ///
+    /// This list is the single source for both halves: the capabilities sent at
+    /// registration are its `capability` column, and the dispatch in `agentLoop`
+    /// is its `run` column, so declaring a workload and being able to run it are
+    /// one act. They used to be a hand-kept array beside a `switch`, which is a
+    /// pair of things that agree only until someone edits one of them — and the
+    /// failure is silent in the worst direction: the collector routes us work we
+    /// bounce straight back as "not supported by this runner yet".
+    private static let routes: [Route] = [
+        Route(capability: "benchmark", workload: "benchmark") { agent, job, client, deviceId, _ in
+            await agent.runBenchmark(job: job, client: client, deviceId: deviceId)
+        },
+        Route(capability: "batch", workload: "batch") { _, job, client, deviceId, cache in
+            await Workloads.runBatch(job: job, client: client, deviceId: deviceId, artifacts: cache)
+        },
+        Route(capability: "batch:coreml", workload: "batch", backend: "coreml") { _, job, client, deviceId, cache in
+            await Workloads.runVisionEval(job: job, client: client, deviceId: deviceId, artifacts: cache)
+        },
+        Route(capability: "pipeline", workload: "pipeline") { _, job, client, deviceId, cache in
+            await Workloads.runPipeline(job: job, client: client, deviceId: deviceId, artifacts: cache)
+        },
+        Route(capability: "thermal", workload: "thermal") { _, job, client, deviceId, cache in
+            await Workloads.runThermal(job: job, client: client, deviceId: deviceId, artifacts: cache)
+        },
+        Route(capability: "embed-eval", workload: "embed-eval") { _, job, client, deviceId, cache in
+            await Workloads.runEmbedEval(job: job, client: client, deviceId: deviceId, artifacts: cache)
+        },
+        Route(capability: "vantage", workload: "vantage") { _, job, client, deviceId, _ in
+            await Workloads.runVantage(job: job, client: client, deviceId: deviceId)
+        },
+        // Backend-qualified, like batch:coreml, and for the same reason: most
+        // web-shots jobs are the host executor's Playwright matrix, which this
+        // runner cannot run. Declaring a bare "web-shots" would have the queue
+        // hand us those and get them bounced straight back. `webkit` is the
+        // backend because a WKWebView is what captures — see WebShots.profile
+        // for why that word is not "safari".
+        Route(capability: "web-shots:webkit", workload: "web-shots", backend: "webkit") { _, job, client, deviceId, cache in
+            await Workloads.runWebShots(job: job, client: client, deviceId: deviceId, artifacts: cache)
+        },
+    ]
+
+    /// What this device declares at registration, so the collector's routing
+    /// only offers it work it can run. Derived from `routes` rather than
+    /// written out, which makes drift impossible rather than merely unlikely.
+    static var dispatchedWorkloads: [String] { routes.map(\.capability) }
+
+    /// The route for a job, or nil when this runner has none. A route naming a
+    /// backend wins over the workload's general route — that is what sends
+    /// `batch` + backend coreml to the vision eval — so declaration order stays
+    /// free to be the order we want to register in.
+    private static func route(for job: JobSpec) -> Route? {
+        routes.first { $0.workload == job.workload && $0.backend != nil && $0.backend == job.backend }
+            ?? routes.first { $0.workload == job.workload && $0.backend == nil }
+    }
 
     private func agentLoop(client: CollectorClient, deviceId: String) async {
         while !Task.isCancelled {
             do {
                 status = "registering as \(deviceId)"
+                phase = .registering
                 try await client.register(
                     RegisterPost(
                         deviceId: deviceId,
@@ -96,6 +236,7 @@ final class FleetAgent: ObservableObject {
                         capabilities: Self.dispatchedWorkloads))
                 while !Task.isCancelled {
                     status = "polling for work"
+                    phase = .polling
                     guard let job = try await client.nextJob(deviceId: deviceId) else { continue }
 
                     // Same contract as Android: refuse jobs whose numbers would lie.
@@ -118,23 +259,15 @@ final class FleetAgent: ObservableObject {
                     }
 
                     status = "running \(job.jobId)"
+                    phase = .running
+                    let startedAt = Date()
+                    runningJob = (id: job.jobId, workload: job.workload, since: startedAt)
                     currentJobId.set(job.jobId)
                     defer { currentJobId.set(nil); CancellationRegistry.shared.clear() }
                     let cache = ArtifactCache(collectorURL: baseURL!)
-                    // Every case here is a string in `dispatchedWorkloads` above,
-                    // which is what we registered as our capabilities.
-                    switch (job.workload, job.backend) {
-                    case ("benchmark", _):
-                        await runBenchmark(job: job, client: client, deviceId: deviceId)
-                    case ("batch", "coreml"):
-                        await Workloads.runVisionEval(job: job, client: client, deviceId: deviceId, artifacts: cache)
-                    case ("batch", _):
-                        await Workloads.runBatch(job: job, client: client, deviceId: deviceId, artifacts: cache)
-                    case ("pipeline", _):
-                        await Workloads.runPipeline(job: job, client: client, deviceId: deviceId, artifacts: cache)
-                    case ("thermal", _):
-                        await Workloads.runThermal(job: job, client: client, deviceId: deviceId, artifacts: cache)
-                    default:
+                    if let route = Self.route(for: job) {
+                        await route.run(self, job, client, deviceId, cache)
+                    } else {
                         try await client.postResult(
                             ResultPost(
                                 kind: "result", jobId: job.jobId, deviceId: deviceId,
@@ -142,9 +275,15 @@ final class FleetAgent: ObservableObject {
                                 error: "workload '\(job.workload)' not supported by this runner yet"))
                     }
                     status = "finished \(job.jobId)"
+                    lastJob = FinishedJob(
+                        jobId: job.jobId, workload: job.workload,
+                        elapsed: Date().timeIntervalSince(startedAt), at: Date())
+                    runningJob = nil
                 }
             } catch {
                 status = "error: \(error.localizedDescription) — retrying in 10s"
+                phase = .failing
+                runningJob = nil
                 try? await Task.sleep(for: .seconds(10))
             }
         }

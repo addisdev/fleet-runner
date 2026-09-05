@@ -97,9 +97,66 @@ export type Metrics = {
   thermal?: string[];
   battery_start_pct?: number;
   battery_end_pct?: number;
+
+  /** build: wall-clock seconds for the build itself, excluding checkout and upload. */
+  build_s?: number;
+  /** build: size of the produced app or package. */
+  artifact_bytes?: number;
+
+  /** self-check: free space on this machine's data volume. */
+  disk_free_gb?: number;
+  /** self-check: offset against NTP, positive when this machine is behind. */
+  clock_offset_ms?: number;
+  /** self-check: how many checks failed, so the alert rule needs no parsing. */
+  checks_failed?: number;
+
+  /** model-convert: seconds for one output format. */
+  convert_s?: number;
+  /** model-convert: how many artifacts the conversion produced. */
+  outputs?: number;
+  /** dataset-prep: items in the prepared manifest, after dedupe. */
+  items?: number;
+  /** shell: the script's exit status. Named rather than folded into `ok`,
+   *  because a script that exits 3 deliberately is not one that could not start. */
+  exit_code?: number;
+  /** serve and any long run: seconds since the job started. */
+  elapsed_s?: number;
+};
+
+/**
+ * One self-check finding.
+ *
+ * `ok` is deliberately three-valued. `false` is a failure and counts toward
+ * `checks_failed`; `null` is a check that could not run — the tool is not
+ * installed, the network is down — which is information, not a fault, and
+ * counting it would make every Linux box permanently red for not having Xcode.
+ */
+export type CheckRow = {
+  name: string;
+  ok: boolean | null;
+  value?: string | number;
+  detail?: string;
+};
+
+/** build: what a successful build produced, so the row is traceable to a commit. */
+export type BuildRow = {
+  app: string;
+  build: string;
+  sha256: string;
+  commit: string;
+  ref: string;
+  repo: string;
+  kind: string;
 };
 
 export type ResultPost = {
+  /** serve: where the hosted model can be reached. Declared in the collector's
+   *  result schema; see there for why it is never bound to 0.0.0.0. */
+  endpoint?: string;
+  /** model-convert: one produced artifact — format, quant, name, sha256, bytes. */
+  model_out?: Record<string, unknown>;
+  /** dataset-prep: the prepared manifest's summary, licence and source included. */
+  dataset?: Record<string, unknown>;
   schema: number;
   kind: "result" | "beacon";
   job_id?: string;
@@ -112,6 +169,15 @@ export type ResultPost = {
   beacon?: BeaconSample;
   error?: string;
   artifacts?: string[];
+  /**
+   * self-check's per-check breakdown and build's provenance. Neither is in
+   * collector/schemas/result.schema.json — the collector stores a result's
+   * whole payload as JSON, so a named field survives and can be rendered
+   * later, whereas folding either into `metrics` would mean inventing metric
+   * names outside schemas/metrics.json.
+   */
+  checks?: CheckRow[];
+  build?: BuildRow;
 };
 
 export type RegisterPost = {

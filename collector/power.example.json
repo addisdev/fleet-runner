@@ -1,9 +1,33 @@
 {
   "//": "Copy to power.json (gitignored). Each pool maps to smart-plug webhooks — Tasmota, Shelly, or Home Assistant all speak this shape. The collector POSTs the URL on /power/<pool>/<on|off>; Phase 4's drain workloads will call these to unplug the battery pool before a run and restore the 40-70% charge band after.",
+  "//read": "A pool that also sets read_url + watts_path is METERED: the collector polls it into power_samples and can integrate watt-hours across a job (src/power.ts). watts_path is a path expression, not a vendor name, because Tasmota, Shelly and Kasa each put the number somewhere different. Segments split on '.' and '[…]'; use [\"key\"] when a key contains a dot, and watts_scale for a plug that reports milliwatts.",
+  "//energy_method": "REQUIRED for any energy figure — the collector will not guess it. 'plug' means this plug feeds EXACTLY ONE device. 'plug-shared' means several devices sit behind it, and the watt-hours are the POOL's: they must NOT be divided by the number of devices to get a per-device number. A pool that omits this gets no energy figure at all, which is the intended outcome of not knowing how the shelf is wired.",
+  "//idle_watts": "What this pool draws plugged in and idle — charger bricks, the powered hub, the switch itself. Measure it with the shelf quiet and nothing claimed, then put it here; it is subtracted from every integration. Omit it and the collector estimates it from the pool's own samples and labels the figure as estimated. NOTE: this removes the STANDING load only. A phone on a plug is also charging, and no idle baseline can separate battery charging current from the work — so every result also carries includes_charging, and the dashboard says in words that a charging window's watt-hours include replenishing the battery.",
   "pools": {
     "battery": {
       "on": "http://tasmota-plug.local/cm?cmnd=Power%20On",
-      "off": "http://tasmota-plug.local/cm?cmnd=Power%20Off"
+      "off": "http://tasmota-plug.local/cm?cmnd=Power%20Off",
+      "read_url": "http://tasmota-plug.local/cm?cmnd=Status%2010",
+      "watts_path": "StatusSNS.ENERGY.Power",
+      "read_interval_s": 30,
+      "energy_method": "plug",
+      "idle_watts": 1.4
+    },
+    "ml-capable": {
+      "//": "Four phones on one powered hub behind one Shelly. Shared on purpose: the figure below is the whole shelf's.",
+      "on": "http://shelly-shelf.local/relay/0?turn=on",
+      "off": "http://shelly-shelf.local/relay/0?turn=off",
+      "read_url": "http://shelly-shelf.local/status",
+      "watts_path": "meters[0].power",
+      "energy_method": "plug-shared",
+      "idle_watts": 6.2
+    },
+    "kasa-example": {
+      "//": "Shelly Gen2 would be watts_path \"[\\\"switch:0\\\"].apower\" against /rpc/Switch.GetStatus?id=0. Kasa reports milliwatts, hence the scale.",
+      "read_url": "http://kasa-bridge.local/emeter",
+      "watts_path": "emeter.get_realtime.power_mw",
+      "watts_scale": 0.001,
+      "energy_method": "plug"
     }
   }
 }

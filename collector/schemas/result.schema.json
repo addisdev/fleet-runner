@@ -23,6 +23,18 @@
         "app_ver": { "type": "string" }
       }
     },
+    "endpoint": {
+      "type": "string",
+      "description": "serve: where the model this job is hosting can be reached, announced so a dependent job can consume it. Bound to loopback or the tailnet, never 0.0.0.0 — an unauthenticated inference server on a laptop's hotel wifi is a different product to the one anybody asked for."
+    },
+    "model_out": {
+      "type": "object",
+      "description": "model-convert: what one conversion produced — format, quant, name, sha256 and size. One row per output, so a job converting to three formats is three rows and the sha of each is addressable by a dependent job."
+    },
+    "dataset": {
+      "type": "object",
+      "description": "dataset-prep: the prepared set's manifest summary, including its licence and source. A prepared set that loses its licence is one nobody can publish results from, which is why it rides on the row rather than only inside the zip."
+    },
     "metrics": {
       "type": "object",
       "description": "Workload metrics; memory is labeled, never laundered.\n\nEvery field here means one thing. Before the vision-eval and drain fields existed, those workloads reused the LLM slots — vision put top-1 accuracy in decode_tok_s, p50 latency in ttft_ms and images/sec in prefill_tok_s; drain put percent-per-hour in decode_tok_s — and top-5 and p95 had nowhere to go at all, so they were only ever in the hand-written eval report. Rows predating these fields still carry that convention, and the dashboard marks anything it had to infer that way. New runners must populate the named fields instead.",
@@ -55,6 +67,51 @@
       "disk_free_gb": { "type": "number", "description": "self-check: free space on the executor host's data volume" },
       "clock_offset_ms": { "type": "number", "description": "self-check: offset against NTP. A skewed executor clock makes every duration in the results table wrong in a way nothing else would reveal" },
       "checks_failed": { "type": "number", "description": "self-check: how many host checks failed, so the alert rule needs no parsing" },
+
+      "build_s": { "type": "number", "description": "build: wall-clock seconds for the build itself, excluding checkout and upload" },
+      "artifact_bytes": { "type": "number", "description": "build: size of the produced app or package" },
+
+      "wer_pct": { "type": "number", "description": "speech-eval: word error rate after case and punctuation normalisation. Lower is better, and it can exceed 100 when a model inserts more words than the reference contains" },
+      "rtf": { "type": "number", "description": "speech-eval: real-time factor, audio seconds per wall second. Above 1 means the device transcribes faster than the clip plays, which is the shippability line" },
+      "clips": { "type": "number", "description": "speech-eval: how many clips the score covers, so a partial run is never mistaken for a full one" },
+
+      "recall_at_1": { "type": "number", "description": "embed-eval: fraction of queries whose top hit is relevant" },
+      "recall_at_5": { "type": "number" },
+      "recall_at_10": { "type": "number" },
+      "docs_per_s": { "type": "number", "description": "embed-eval: embedding throughput" },
+      "dim": { "type": "number", "description": "embed-eval: embedding width, because recall is only comparable within one" },
+
+      "energy_wh": { "type": "number", "description": "watt-hours drawn across the job, integrated from the pool's smart plug or the machine's own power reporting" },
+      "energy_method": {
+        "enum": ["plug", "plug-shared", "os"],
+        "description": "How energy_wh was obtained. plug-shared means several devices sit behind one plug, so the figure is the pool's and must not be divided per device — the distinction exists because dividing it silently is the obvious wrong thing to do"
+      },
+
+      "dns_ms": { "type": "number", "description": "vantage: name resolution" },
+      "connect_ms": { "type": "number", "description": "vantage: TCP connect" },
+      "tls_ms": { "type": "number", "description": "vantage: TLS handshake" },
+      "ttfb_ms": { "type": "number", "description": "vantage: time to first byte" },
+      "network_type": { "type": "string", "description": "vantage: wifi, cellular, ethernet or unknown, as the agent saw it. A latency figure with no idea what carried it is not comparable to anything" },
+
+      "pss_mb": { "type": "number", "description": "app-soak: proportional set size of the app under test at this sample" },
+      "jank_pct": { "type": "number", "description": "app-soak: percentage of janky frames since the last sample" },
+      "crashes": { "type": "number", "description": "app-soak: crashes observed in this interval" },
+
+      "locales": { "type": "number", "description": "locale-shots: how many locales the run covered" },
+      "shots": { "type": "number", "description": "locale-shots and a11y-audit: screenshots captured" },
+
+      "convert_s": { "type": "number", "description": "model-convert: seconds for one output format" },
+      "outputs": { "type": "number", "description": "model-convert: how many artifacts the conversion produced" },
+      "items": { "type": "number", "description": "dataset-prep: items in the prepared manifest, after dedupe" },
+
+      "exit_code": { "type": "number", "description": "shell: the script's exit status. Named rather than folded into ok, because a script that exits 3 deliberately is not the same as one that could not start" },
+
+      "push_latency_ms": { "type": "number", "description": "push-latency: send to arrival, measured on the device that received it" },
+      "push_delivered_pct": { "type": "number", "description": "push-latency: fraction of sends that arrived at all, which on Android is the number that varies by vendor" },
+      "app_state": {
+        "enum": ["foreground", "background", "doze", "terminated"],
+        "description": "push-latency: what the app was doing when the push landed. A delivery latency without this is not comparable to anything, because doze is where the vendor forks differ"
+      },
         "drain_pct_per_h": { "type": "number", "description": "drain: battery percent consumed per hour" },
         "diff_pct": { "type": "number", "description": "web-shots: percent of pixels differing from the accepted baseline (100 when the dimensions changed)" },
 

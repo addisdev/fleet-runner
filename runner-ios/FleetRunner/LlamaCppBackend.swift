@@ -10,7 +10,11 @@ final class LlamaCppBackend {
     private var ctx: OpaquePointer?
 
     /// Returns load time in ms, or nil on failure.
-    func load(path: String, nCtx: Int32, nThreads: Int32) -> Int64? {
+    ///
+    /// `embeddings` builds the context for embedding extraction instead of
+    /// generation (embed-eval). A llama.cpp context does one or the other, so
+    /// it is a load-time decision rather than a per-call one.
+    func load(path: String, nCtx: Int32, nThreads: Int32, embeddings: Bool = false) -> Int64? {
         let t0 = DispatchTime.now()
         llama_backend_init()
         var mparams = llama_model_default_params()
@@ -23,6 +27,16 @@ final class LlamaCppBackend {
         cparams.n_batch = UInt32(nCtx)
         cparams.n_threads = nThreads
         cparams.n_threads_batch = nThreads
+        // Mean pooling rather than none, so a document is one vector. With
+        // LLAMA_POOLING_TYPE_NONE llama.cpp returns per-token states and every
+        // caller invents its own pooling rule, which is how two runners end up
+        // producing different vectors from the same model and the recall
+        // numbers quietly stop being comparable across the fleet. The Android
+        // JNI wrapper makes the same choice, for the same reason.
+        if embeddings {
+            cparams.embeddings = true
+            cparams.pooling_type = LLAMA_POOLING_TYPE_MEAN
+        }
         guard let c = llama_init_from_model(m, cparams) else {
             llama_model_free(m)
             return nil
@@ -122,6 +136,63 @@ final class LlamaCppBackend {
             guard llama_decode(ctx, single) == 0 else { break }
         }
         return out
+    }
+
+    /// One mean-pooled embedding vector for `text` (embed-eval).
+    ///
+    /// Requires a context opened with `embeddings: true`. A context built for
+    /// generation keeps no embedding tensor, and this throws rather than
+    /// handing back a vector of zeros — a plausible-looking zero vector is
+    /// precisely the failure embed-eval exists to refuse.
+    func embed(_ text: String) throws -> [Float] {
+        guard let ctx, let model else { throw CollectorError.http(0, "model not loaded") }
+        let vocab = llama_model_get_vocab(model)
+        let utf8 = Array(text.utf8)
+        let nMax = -llama_tokenize(vocab, text, Int32(utf8.count), nil, 0, true, true)
+        guard nMax > 0 else { throw BenchUnavailable(message: "embed tokenize failed") }
+        var tokens = [llama_token](repeating: 0, count: Int(nMax))
+        guard llama_tokenize(vocab, text, Int32(utf8.count), &tokens, nMax, true, true) >= 0 else {
+            throw BenchUnavailable(message: "embed tokenize failed")
+        }
+        // A document longer than the context is truncated rather than refused:
+        // one long document should not cost the corpus its recall number, and
+        // the cut is identical on every device because n_ctx comes from the job.
+        let nTokens = min(Int(nMax), Int(llama_n_ctx(ctx)))
+        guard nTokens > 0 else { throw BenchUnavailable(message: "embed produced no tokens") }
+
+        llama_memory_clear(llama_get_memory(ctx), true)
+        var batch = llama_batch_init(Int32(nTokens), 0, 1)
+        defer { llama_batch_free(batch) }
+        for i in 0..<nTokens {
+            batch.token[i] = tokens[i]
+            batch.pos[i] = llama_pos(i)
+            batch.n_seq_id[i] = 1
+            batch.seq_id[i]![0] = 0
+            // Every token is an output: mean pooling averages the states of the
+            // tokens that were asked for, so marking only the last would pool a
+            // single state and quietly call it a document embedding.
+            batch.logits[i] = 1
+        }
+        batch.n_tokens = Int32(nTokens)
+
+        // BERT-shaped embedding models are encoder-only and llama_decode
+        // refuses them; generative GGUFs are decoder-only and llama_encode
+        // refuses those.
+        let encoderOnly = llama_model_has_encoder(model) && !llama_model_has_decoder(model)
+        let rc = encoderOnly ? llama_encode(ctx, batch) : llama_decode(ctx, batch)
+        guard rc == 0 else {
+            throw BenchUnavailable(message: "embed \(encoderOnly ? "encode" : "decode") failed: \(rc)")
+        }
+
+        var raw: UnsafeMutablePointer<Float>? = llama_get_embeddings_seq(ctx, 0)
+        if raw == nil { raw = llama_get_embeddings_ith(ctx, Int32(nTokens - 1)) }
+        guard let vector = raw else {
+            throw BenchUnavailable(
+                message: "no embedding tensor; context was not built with embeddings=true")
+        }
+        let dim = Int(llama_model_n_embd(model))
+        guard dim > 0 else { throw BenchUnavailable(message: "model reports n_embd \(dim)") }
+        return Array(UnsafeBufferPointer(start: vector, count: dim))
     }
 
     func unload() {
