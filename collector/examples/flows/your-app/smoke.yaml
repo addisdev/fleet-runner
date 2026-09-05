@@ -1,0 +1,32 @@
+# The flow to copy when wiring in your own app.
+#
+# `appId` is the only line that must change for it to run at all. Everything
+# below it is a placeholder for your own screens — and the identifiers are the
+# part that will take the time, not the steps. Two of the three apps this fleet
+# was first pointed at had no accessibility identifiers whatsoever.
+#
+# Enqueue it with:
+#   "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" }
+#
+# See docs/integration/add-your-app.md.
+appId: com.example.yourapp
+---
+- launchApp:
+    clearState: true
+
+# A launch that renders nothing still "passes" if the flow never asserts, so
+# assert something specific before doing anything else.
+- assertVisible:
+    id: "home_header"
+
+- tapOn:
+    id: "search_button"
+- inputText: "hello"
+- pressKey: Enter
+
+- assertVisible:
+    id: "results_list"
+
+# Take a screenshot at the end: a failed nightly is much cheaper to diagnose
+# with a picture of the last state than with a stack trace.
+- takeScreenshot: smoke-end

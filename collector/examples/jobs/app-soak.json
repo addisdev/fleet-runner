@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "job_id": "soak-overnight",
+  "workload": "app-soak",
+  "executor": "host",
+  "app": { "name": "your-app-android", "build": "nightly", "sha256": "latest" },
+  "params": { "flow": "your-app/browse.yaml", "duration_s": 21600, "interval_s": 300 },
+  "targets": { "exclusive": true },
+  "lease": { "ttl_s": 28800 },
+  "preemptible": true
+}

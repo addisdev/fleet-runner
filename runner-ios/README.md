@@ -1,4 +1,7 @@
-# fleet-runner-ios
+# runner-ios
+
+*Part of [Fleet Runner](../README.md). The collector is
+[`../collector`](../collector).*
 
 The iOS half of **Fleet Runner**, a personal device lab. This app turns an
 iPhone or iPad into a node that a [collector](../collector)
@@ -45,7 +48,7 @@ the two platforms' tok/s comparable at all.
 cd ../runner-android/third_party/llama.cpp
 ./build-xcframework.sh
 cp -R build-apple/llama.xcframework ../../../runner-ios/Frameworks/
-cd ../../../fleet-runner-ios && ./generate.sh
+cd ../../../runner-ios && ./generate.sh
 ```
 
 Run `build-xcframework.sh` from a path with no spaces in it; it passes paths to
@@ -65,13 +68,26 @@ because it shares the Mac's network stack. On real devices, set the Collector
 URL field to the host's address on your network (its `.local` name, or its
 tailnet address if you run one); distribution is TestFlight internal.
 
-## Phase 3 status
+## What works, and what does not
 
-- [x] Protocol, collector client, agent loop, beacon, synthetic benchmark
-- [x] Cross-platform benchmark table verified (iOS sim + Android emulator + SM-X930)
-- [x] llama.cpp backend (xcframework), Core ML backend (vision-eval), batch + pipeline engines
-- [x] host-executor iOS path (simctl + devicectl install, XCUITest bundle)
-- [ ] Real-device battery/charging telemetry validation (simulator reports -1)
+The protocol, the collector client, the agent loop, the beacon and the
+synthetic benchmark all run, and the cross-platform benchmark table has been
+verified against an iOS simulator, an Android emulator and an SM-X930 together
+— which is the claim the whole synthetic backend exists to support. The
+llama.cpp backend (via the xcframework), the Core ML backend behind
+`vision-eval`, the batch and pipeline engines, and the host-executor iOS path
+(`simctl` and `devicectl` install, XCUITest bundles) are all in place.
+
+**Battery and charging telemetry has never been validated on a real device.**
+A simulator reports `-1`, which the collector reads as "no telemetry" rather
+than as a flat battery, so the simulator path is honest — but that means the
+real-device path is unproven rather than known good.
+
+**On a simulator the Core ML backend is forced to CPU, and says so.** The
+Simulator's emulated GPU returned an all-zero logits tensor for the plant-ID
+model: silently, with no error, while `.cpuOnly` gave logits identical to the
+Mac. Cross-checking against another device is the only reason that did not ship
+as a real accuracy number.
 
 ## License
 

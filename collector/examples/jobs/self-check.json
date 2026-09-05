@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "job_id": "self-check-daily",
+  "workload": "self-check",
+  "executor": "device",
+  "targets": { "match": "capabilities ~ 'self-check'" },
+  "fanout": true
+}

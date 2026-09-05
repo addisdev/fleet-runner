@@ -1,0 +1,110 @@
+site_name: Fleet Runner
+site_description: A shelf of old phones, turned into a device lab you can send work to.
+site_url: https://addisdev.github.io/fleet-runner/
+repo_url: https://github.com/addisdev/fleet-runner
+repo_name: addisdev/fleet-runner
+edit_uri: edit/develop/docs/
+copyright: MIT licensed
+
+theme:
+  name: material
+  logo: img/mark-mono.svg
+  favicon: img/mark.svg
+  font:
+    text: Inter
+    code: JetBrains Mono
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - content.tabs.link
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    # The two colours are the mark's: charcoal #1C2025 and amber #E3A44A.
+    # Material's palette is a fixed set of names, so the accent is the nearest
+    # one and the exact hexes are pinned in docs/css/brand.css.
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+extra_css:
+  - css/brand.css
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  # The cookbook includes the example job specs verbatim from collector/, which
+  # `npm test` validates against job.schema.json. Copying them into the page
+  # instead would mean the docs could drift from what the collector accepts,
+  # which is the whole failure this guards against.
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+nav:
+  - Home: index.md
+  - Get started: getting-started.md
+  - Concepts: concepts.md
+  - Dashboard: dashboard.md
+  - Workloads:
+      - Overview: workloads/index.md
+      - On the device: workloads/device.md
+      - On a host: workloads/host.md
+      - On a machine: workloads/machine.md
+  - Integration:
+      - Wire in your app: integration/index.md
+      - Your first job: integration/first-job.md
+      - Publish on merge: integration/publish-on-merge.md
+      - Add your app: integration/add-your-app.md
+      - Add a workload: integration/add-a-workload.md
+      - Cookbook: integration/cookbook.md
+  - Reference:
+      - The protocol: protocol.md
+      - Writing a runner: writing-a-runner.md
+      - HTTP API: api.md
+  - Deploy:
+      - Overview: deploy/index.md
+      - Networking: deploy/networking.md
+      - The iOS executor: deploy/ios-executor.md
+      - Alerts: deploy/alerts.md
+  - History:
+      - Overview: history/index.md
+      - Dashboard plan: history/dashboard-plan.md
+      - UI test plan: history/ui-test-plan.md
+      - iOS nightly suites: history/ios-nightly-suites.md

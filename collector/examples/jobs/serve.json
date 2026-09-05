@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "job_id": "serve-qwen",
+  "workload": "serve",
+  "executor": "device",
+  "model": { "name": "qwen2.5-3b-instruct", "format": "gguf", "quant": "Q4_K_M", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  "params": { "port": 8081, "bind": "loopback" },
+  "targets": { "match": "capabilities ~ 'serve' && ram_mb >= 16000" },
+  "constraints": { "require_ac": true },
+  "lease": { "ttl_s": 3600 },
+  "preemptible": true
+}

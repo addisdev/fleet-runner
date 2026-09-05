@@ -1,0 +1,28 @@
+/* The mark's two colours, pinned exactly. Material's palette names are a fixed
+   set, so `accent: amber` gets close and these make it right. */
+:root {
+  --fleet-charcoal: #1C2025;
+  --fleet-amber: #E3A44A;
+  --md-accent-fg-color: #B8791F;
+}
+[data-md-color-scheme="slate"] {
+  --md-accent-fg-color: var(--fleet-amber);
+  --md-primary-fg-color: var(--fleet-charcoal);
+  --md-default-bg-color: var(--fleet-charcoal);
+}
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: var(--fleet-charcoal);
+}
+
+/* Tables carry most of the reference material here, so give them room and stop
+   long code cells from wrapping mid-identifier. */
+.md-typeset table:not([class]) th { white-space: nowrap; }
+.md-typeset table:not([class]) code { white-space: nowrap; }
+.md-typeset__table { width: 100%; }
+
+/* Figures on the workload pages are screenshots of a dark dashboard; a border
+   keeps them from bleeding into a light page. */
+.md-typeset img[src*="img/"] {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 3px;
+}

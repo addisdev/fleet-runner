@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "job_id": "cold-start-nightly",
+  "workload": "cold-start",
+  "executor": "host",
+  "app": { "name": "your-app-android", "build": "nightly", "sha256": "latest" },
+  "params": { "app_id": "com.example.yourapp", "launches": 10, "states": ["cold", "warm", "hot"] },
+  "targets": { "match": "os ~ 'android'", "exclusive": true }
+}

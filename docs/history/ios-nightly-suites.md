@@ -1,5 +1,12 @@
 # Nightly iOS UI tests for GreenFolio, Jerv and Aliquant
 
+!!! note "Kept as written, 2026-08-20. Not maintained."
+
+    A survey of three real iOS apps and what it would cost to put nightly UI
+    tests on them. It names those apps deliberately — the specifics are the
+    evidence. For what the fleet runs today, see
+    [Host workloads](../workloads/host.md).
+
 *Written 2026-08-20. Follows [`ui-test-plan.md`](ui-test-plan.md), which built the
 rails; this is about filling them for the three iOS apps.*
 
