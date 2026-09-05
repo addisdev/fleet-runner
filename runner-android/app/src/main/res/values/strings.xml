@@ -6,4 +6,16 @@
     <string name="start">Start agent</string>
     <string name="stop">Stop</string>
     <string name="status_stopped">stopped</string>
+    <string name="label_collector">COLLECTOR</string>
+    <string name="label_device_id">DEVICE ID</string>
+    <string name="label_battery">BATTERY</string>
+    <string name="label_thermal">THERMAL</string>
+    <string name="label_network">NETWORK</string>
+    <string name="label_running">RUNNING</string>
+    <string name="label_last_job">LAST JOB</string>
+    <string name="beacon_interval">60s beacon</string>
+    <string name="agent_running">Agent running</string>
+    <string name="foreground_note">Runs as a foreground service, so it survives the screen going off.</string>
+    <string name="not_registered">Not registered. Start the agent to join the fleet.</string>
+    <string name="dash">—</string>
 </resources>
