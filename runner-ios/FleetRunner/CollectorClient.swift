@@ -78,6 +78,25 @@ final class CollectorClient: Sendable {
         return try JSONDecoder().decode(R.self, from: body).sha256
     }
 
+    /// The accepted visual baselines for one suite, keyed "page|profile".
+    ///
+    /// Fetched once per web-shots job rather than once per page, so every page
+    /// in one run is judged against the same accepted set even if someone
+    /// clicks accept from the dashboard halfway through — the same rule the
+    /// host executor follows, for the same reason.
+    func visualBaselines(suite: String) async throws -> [String: String] {
+        let url = base.appendingPathComponent("api/visual/baselines")
+            .appending(queryItems: [URLQueryItem(name: "suite", value: suite)])
+        let (data, res) = try await session.data(from: url)
+        let code = (res as? HTTPURLResponse)?.statusCode ?? 0
+        guard code == 200 else { throw CollectorError.http(code, "api/visual/baselines") }
+        struct Row: Decodable { let page: String; let profile: String; let sha256: String }
+        struct Body: Decodable { let baselines: [Row] }
+        let body = try FleetJSON.decoder.decode(Body.self, from: data)
+        return Dictionary(body.baselines.map { ("\($0.page)|\($0.profile)", $0.sha256) },
+                          uniquingKeysWith: { _, last in last })
+    }
+
     func publishEvent(topic: String, payload: [String: Any]) async throws {
         var req = URLRequest(url: base.appendingPathComponent("events/\(topic)"))
         req.httpMethod = "POST"

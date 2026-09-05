@@ -16,6 +16,10 @@ import { probeCapabilities } from "./capabilities.js";
 import { runBenchmark } from "./workloads/benchmark.js";
 import { runBuild } from "./workloads/build.js";
 import { runSelfCheck } from "./workloads/selfcheck.js";
+import { runModelConvert } from "./workloads/modelconvert.js";
+import { runDatasetPrep } from "./workloads/datasetprep.js";
+import { runServe } from "./workloads/serve.js";
+import { runShell } from "./workloads/shell.js";
 import { SCHEMA, type Descriptor, type JobSpec } from "./protocol.js";
 import * as JobCancellation from "./cancellation.js";
 
@@ -205,6 +209,22 @@ async function dispatch(job: JobSpec, client: CollectorClient): Promise<void> {
   }
   if (job.workload === "self-check") {
     await runSelfCheck(job, client, deviceId, device);
+    return;
+  }
+  if (job.workload === "model-convert") {
+    await runModelConvert(job, client, deviceId, device);
+    return;
+  }
+  if (job.workload === "dataset-prep") {
+    await runDatasetPrep(job, client, deviceId, device);
+    return;
+  }
+  if (job.workload === "serve") {
+    await runServe(job, client, deviceId, device);
+    return;
+  }
+  if (job.workload === "shell") {
+    await runShell(job, client, deviceId, device);
     return;
   }
   await client.postResult({

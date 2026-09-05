@@ -53,6 +53,48 @@ const PATHS = {
       <path d="M8 7v3.5" />
     </>
   ),
+  convert: (
+    <>
+      <path d="M2.25 5.25h8.5M8.5 3l2.25 2.25L8.5 7.5M13.75 10.75h-8.5M7.5 8.5L5.25 10.75 7.5 13" />
+    </>
+  ),
+  dataset: (
+    <>
+      <ellipse cx="8" cy="3.75" rx="5.25" ry="2" />
+      <path d="M2.75 3.75v8.5c0 1.1 2.35 2 5.25 2s5.25-.9 5.25-2v-8.5M2.75 8c0 1.1 2.35 2 5.25 2s5.25-.9 5.25-2" />
+    </>
+  ),
+  serve: (
+    <>
+      <rect x="2" y="2.75" width="12" height="4.25" rx="1" />
+      <rect x="2" y="9" width="12" height="4.25" rx="1" />
+      <path d="M4.5 4.9h.01M4.5 11.15h.01" />
+    </>
+  ),
+  terminal: (
+    <>
+      <rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.5" />
+      <path d="M4.5 6.25L6.75 8l-2.25 1.75M8.5 10.25h3" />
+    </>
+  ),
+  bell: (
+    <>
+      <path d="M4.25 6.75a3.75 3.75 0 1 1 7.5 0c0 2.5 1 3.5 1 3.5h-9.5s1-1 1-3.5z" />
+      <path d="M6.75 12.5a1.5 1.5 0 0 0 2.5 0" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M1.75 5.5h2.5l1-1.75h5.5l1 1.75h2.5v7.25H1.75z" />
+      <circle cx="8" cy="9" r="2.25" />
+    </>
+  ),
+  desktop: (
+    <>
+      <rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1" />
+      <path d="M6 13.5h4" />
+    </>
+  ),
   hammer: (
     <>
       <path d="M2.75 13.25l5-5M6.5 5.25l2.5-2.5 1.5 1.5 1.75-1 1.5 1.5-1 1.75 1.5 1.5-2.5 2.5z" />
@@ -360,6 +402,13 @@ const WORKLOAD_ICON: Record<string, IconName> = {
   "locale-shots": "translate",
   "app-soak": "soak",
   "a11y-audit": "accessibility",
+  "model-convert": "convert",
+  "dataset-prep": "dataset",
+  serve: "serve",
+  shell: "terminal",
+  "push-latency": "bell",
+  "camera-eval": "camera",
+  "desktop-ui-test": "desktop",
 };
 
 /** The workload's name with its icon, for job tables. */

@@ -109,6 +109,18 @@ export type Metrics = {
   clock_offset_ms?: number;
   /** self-check: how many checks failed, so the alert rule needs no parsing. */
   checks_failed?: number;
+
+  /** model-convert: seconds for one output format. */
+  convert_s?: number;
+  /** model-convert: how many artifacts the conversion produced. */
+  outputs?: number;
+  /** dataset-prep: items in the prepared manifest, after dedupe. */
+  items?: number;
+  /** shell: the script's exit status. Named rather than folded into `ok`,
+   *  because a script that exits 3 deliberately is not one that could not start. */
+  exit_code?: number;
+  /** serve and any long run: seconds since the job started. */
+  elapsed_s?: number;
 };
 
 /**
@@ -138,6 +150,13 @@ export type BuildRow = {
 };
 
 export type ResultPost = {
+  /** serve: where the hosted model can be reached. Declared in the collector's
+   *  result schema; see there for why it is never bound to 0.0.0.0. */
+  endpoint?: string;
+  /** model-convert: one produced artifact — format, quant, name, sha256, bytes. */
+  model_out?: Record<string, unknown>;
+  /** dataset-prep: the prepared manifest's summary, licence and source included. */
+  dataset?: Record<string, unknown>;
   schema: number;
   kind: "result" | "beacon";
   job_id?: string;

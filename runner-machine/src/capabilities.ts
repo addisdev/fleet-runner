@@ -37,6 +37,8 @@
  */
 import { which, run } from "./probe.js";
 import { KIND_BINARY } from "./buildkinds.js";
+import { convertersAvailable, probeConverters } from "./converters.js";
+import { loadAllowlist } from "./allowlist.js";
 
 export type CapabilityFlags = {
   llamaBench: boolean;
@@ -44,6 +46,12 @@ export type CapabilityFlags = {
   gradle: boolean;
   xcodebuild: boolean;
   node: boolean;
+  /** Which model converters resolved: gguf, coreml, tflite. */
+  converters?: string[];
+  /** Whether a non-empty shell allowlist exists on this machine. */
+  shellAllowlist?: boolean;
+  /** Whether a llama-server binary resolved, for the serve workload. */
+  llamaServer?: boolean;
 };
 
 /** The list, given the answers. Pure, so the ordering is testable. */
@@ -68,6 +76,22 @@ export function capabilitiesFrom(flags: CapabilityFlags): string[] {
   // reports a skipped check for whatever is not. A machine that cannot answer
   // any of its questions still answers "I could not", which is the whole point.
   caps.push("self-check");
+  // Same bare-plus-specific shape as build, for the same reason: a job spec has
+  // nowhere to put an output format that the collector's capabilityMatches
+  // would read, so `convert:gguf` alone would be a machine that can convert and
+  // never claims a conversion.
+  if (flags.converters && flags.converters.length > 0) {
+    caps.push("model-convert", ...flags.converters.map((c) => `model-convert:${c}`));
+    // dataset-prep needs only Node and the image tooling the converters bring
+    // along, so it rides on the same answer rather than probing twice.
+    caps.push("dataset-prep");
+  }
+  if (flags.llamaServer) caps.push("serve");
+  // shell is declared ONLY when this machine has a non-empty allowlist. That is
+  // the trust boundary: POST /jobs is unauthenticated by design, so a machine
+  // whose owner has pinned nothing must be unable to claim a shell job at all,
+  // rather than claiming it and refusing it afterwards.
+  if (flags.shellAllowlist) caps.push("shell");
   return caps;
 }
 
@@ -122,10 +146,16 @@ export async function probeBuildKinds(env: NodeJS.ProcessEnv = process.env): Pro
 }
 
 export async function probeCapabilities(env: NodeJS.ProcessEnv = process.env): Promise<string[]> {
-  const [llamaBench, mlx, kinds] = await Promise.all([
+  const [llamaBench, mlx, kinds, converters, allowlist, llamaServer] = await Promise.all([
     resolveLlamaBench(env),
     hasMlx(env),
     probeBuildKinds(env),
+    probeConverters(env).then(convertersAvailable).catch(() => [] as string[]),
+    loadAllowlist(env).then((a) => a.allowed.length > 0).catch(() => false),
+    which("llama-server", env).then((p) => p !== null).catch(() => false),
   ]);
-  return capabilitiesFrom({ llamaBench: llamaBench !== null, mlx, ...kinds });
+  return capabilitiesFrom({
+    llamaBench: llamaBench !== null, mlx, ...kinds,
+    converters, shellAllowlist: allowlist, llamaServer,
+  });
 }

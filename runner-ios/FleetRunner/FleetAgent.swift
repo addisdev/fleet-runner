@@ -198,6 +198,15 @@ final class FleetAgent: ObservableObject {
         Route(capability: "vantage", workload: "vantage") { _, job, client, deviceId, _ in
             await Workloads.runVantage(job: job, client: client, deviceId: deviceId)
         },
+        // Backend-qualified, like batch:coreml, and for the same reason: most
+        // web-shots jobs are the host executor's Playwright matrix, which this
+        // runner cannot run. Declaring a bare "web-shots" would have the queue
+        // hand us those and get them bounced straight back. `webkit` is the
+        // backend because a WKWebView is what captures — see WebShots.profile
+        // for why that word is not "safari".
+        Route(capability: "web-shots:webkit", workload: "web-shots", backend: "webkit") { _, job, client, deviceId, cache in
+            await Workloads.runWebShots(job: job, client: client, deviceId: deviceId, artifacts: cache)
+        },
     ]
 
     /// What this device declares at registration, so the collector's routing

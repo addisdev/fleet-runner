@@ -2391,5 +2391,47 @@ runEvalChecks(check);
 // ever appear on real hardware.
 runDeviceParserChecks(check);
 
+// --- live mirror ---
+
+// Nothing here is persisted, so the assertions are about the states a viewer
+// can be in rather than about stored rows. The one that matters is the first:
+// a job with no producer must 404 rather than open a stream that never paints,
+// because an <img> that never paints is indistinguishable from a device with a
+// black screen.
+{
+  const MJOB = `smoke-mirror-${run}`;
+  const before = await json("GET", `/api/jobs/${MJOB}/mirror/status`);
+  check("no stream before a frame arrives", before.body?.streaming === false, JSON.stringify(before.body));
+
+  const viewer = await fetch(`${BASE}/api/jobs/${MJOB}/mirror`);
+  check("a viewer on a job with no producer gets 404", viewer.status === 404, `status=${viewer.status}`);
+  await viewer.body?.cancel().catch(() => {});
+
+  // The smallest thing that is still a JPEG.
+  const frame = Buffer.from(
+    "/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==",
+    "base64",
+  );
+  const post = await fetch(`${BASE}/api/jobs/${MJOB}/mirror`, {
+    method: "POST", headers: { "content-type": "image/jpeg" }, body: frame,
+  });
+  check("a frame is accepted", post.status === 204, `status=${post.status}`);
+
+  const after = await json("GET", `/api/jobs/${MJOB}/mirror/status`);
+  check("the stream exists once a frame has arrived", after.body?.streaming === true, JSON.stringify(after.body));
+
+  // A frame past the cap is refused rather than truncated: half a JPEG renders
+  // as a corrupt image and reads as a broken device.
+  const huge = await fetch(`${BASE}/api/jobs/${MJOB}/mirror`, {
+    method: "POST", headers: { "content-type": "image/jpeg" }, body: Buffer.alloc(3 * 1024 * 1024),
+  });
+  check("an oversized frame is refused", huge.status === 413, `status=${huge.status}`);
+
+  const empty = await fetch(`${BASE}/api/jobs/${MJOB}/mirror`, {
+    method: "POST", headers: { "content-type": "image/jpeg" }, body: Buffer.alloc(0),
+  });
+  check("an empty frame is refused", empty.status === 400, `status=${empty.status}`);
+}
+
 console.log(failures === 0 ? "\nsmoke: ALL PASS" : `\nsmoke: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

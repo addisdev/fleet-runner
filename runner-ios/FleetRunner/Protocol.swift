@@ -15,6 +15,21 @@ struct Targets: Codable {
     let pool: String?
     let match: String?
     let exclusive: Bool?
+    /// web-shots / web-test: what to point the browser at. No device is
+    /// involved in the host's use of it; on a device job it is the base every
+    /// manifest page path is resolved against.
+    let url: String?
+}
+
+/// ui-test / web-test / web-shots: which suite this job runs.
+///
+/// `flows` is the spec directory under the collector's web-specs/ — and for
+/// web-shots it is also the suite name that baselines are keyed by, which is
+/// why a device capture needs it even though it will never open that
+/// directory: without it the shot has no cell to land in.
+struct SuiteRef: Codable {
+    let kind: String?
+    let flows: String?
 }
 
 struct BenchParams: Codable {
@@ -53,6 +68,12 @@ struct BenchParams: Codable {
     let repeats: Int?
     /// Per-request ceiling, so one hanging host cannot consume the job.
     let timeoutS: Int?
+    // web-shots
+    /// The manifest inline, for a job written by hand rather than pointed at
+    /// an uploaded shots.json. Same shape either way — `params.input_sha256`
+    /// names an artifact holding exactly these bytes — so a suite never has
+    /// two manifest dialects to keep in step.
+    let shots: ShotsManifest?
 }
 
 struct Constraints: Codable {
@@ -68,6 +89,7 @@ struct JobSpec: Codable {
     let model: ModelRef?
     let backend: String?
     let params: BenchParams?
+    let suite: SuiteRef?
     let targets: Targets?
     let constraints: Constraints?
 }
@@ -146,6 +168,13 @@ struct Metrics: Codable {
     var ttfbMs: Double?
     var networkType: String?
 
+    // web-shots. The one number a per-page row carries: how far this capture
+    // drifted from the accepted baseline for its (suite, page, profile). A
+    // named field, never laundered through a slot that means something else —
+    // and the only metric name in the collector's closed list that means this,
+    // so nothing here invents one for "pages captured" (that lives in `test`).
+    var diffPct: Double?
+
     /// Spelled out because `.convertToSnakeCase` cannot produce three of these
     /// names. The strategy splits on capitals and a digit is not one, so
     /// `recallAt1` encodes as **`recall_at1`** — one underscore short of the
@@ -164,6 +193,7 @@ struct Metrics: Codable {
         case recallAt10 = "recall_at_10"
         case docsPerS, dim
         case dnsMs, connectMs, tlsMs, ttfbMs, networkType
+        case diffPct
     }
 }
 
@@ -171,6 +201,29 @@ struct BeaconSample: Codable {
     let batteryPct: Int
     let charging: Bool
     let thermal: String
+}
+
+/// ui-test / web-shots pass-fail counts for one row, with whatever the row
+/// produced attached. Separate from `artifacts` above: those are a job's
+/// outputs, these are the evidence for this row's verdict.
+struct TestOutcome: Codable {
+    var passed: Int
+    var failed: Int
+    var artifacts: [String]?
+}
+
+/// web-shots: which cell of the visual matrix a per-page row judges.
+///
+/// The collector assembles its review grid from these and never from `iter`
+/// order — iter maps to manifest order, and manifests change. `sha256` is
+/// absent when the capture failed, which is what makes a cell "missing"
+/// rather than "diverged".
+struct ShotRef: Codable {
+    var suite: String
+    var page: String
+    var profile: String
+    var sha256: String?
+    var diffSha256: String?
 }
 
 struct ResultPost: Codable {
@@ -186,6 +239,8 @@ struct ResultPost: Codable {
     var beacon: BeaconSample?
     var error: String?
     var artifacts: [String]?
+    var test: TestOutcome?
+    var shot: ShotRef?
 }
 
 struct RegisterPost: Codable {
