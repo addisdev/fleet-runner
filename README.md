@@ -17,6 +17,16 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 
 ![The dashboard: llama.cpp benchmark numbers measured on a real phone](docs/img/results.png)
 
+## Documentation
+
+**[addisdev.github.io/fleet-runner](https://addisdev.github.io/fleet-runner/)**
+
+| | |
+|---|---|
+| **[Get started in 15 minutes](https://addisdev.github.io/fleet-runner/getting-started/)** | A collector and a laptop agent, a real job, and a result on the dashboard. Needs Node and nothing else — no Xcode, no NDK, no phone. |
+| **[Wire in your own app](https://addisdev.github.io/fleet-runner/integration/)** | Publish builds on merge, run a nightly on your own devices, and block a pull request on the verdict. |
+| **[The protocol](https://addisdev.github.io/fleet-runner/protocol/)** | Register, long-poll, claim, beacon, report. Enough to write a runner in a language none of these are in. |
+
 ## What is in here
 
 Four projects in one repository. They ship independently and share no code —
@@ -144,10 +154,25 @@ model and dataset: **[the eval](collector/evals/greenfolio-plant-id.md)**.
 
 ## The original plan
 
-[`docs/plan.html`](docs/plan.html) is the architecture and build plan written
-before any of this existed, kept as-is. Every phase in it was built.
+[The architecture and build plan](https://addisdev.github.io/fleet-runner/history/plan.html)
+written before any of this existed, kept as-is. Every phase in it was built.
+
+## Contributing
+
+The most useful thing you can send is **a device report** — what your hardware
+measured, what it refused, and what broke. The point of the project is
+comparable numbers across hardware nobody has a lab full of, and every phone
+that is not on this shelf is data this repository does not have.
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has how to run each component's suite and
+the handful of things this project learned the hard way. Behaviour is covered by
+the [Contributor Covenant](CODE_OF_CONDUCT.md).
+
+**There is no authentication, by design** — the collector is built for a home
+LAN or a tailnet. [`SECURITY.md`](SECURITY.md) says what that does and does not
+cover before you report it.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Each repository carries its own third-party
+MIT — see [LICENSE](LICENSE). Each component carries its own third-party
 notices for what it links.

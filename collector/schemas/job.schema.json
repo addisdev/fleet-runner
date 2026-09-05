@@ -29,7 +29,14 @@
         "name": { "type": "string" },
         "format": { "enum": ["gguf", "mlmodelc", "tflite"] },
         "quant": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        "sha256": {
+          "type": "string",
+          "anyOf": [
+            { "pattern": "^[a-f0-9]{64}$" },
+            { "pattern": "^\\$\\{jobs\\.[^}]+\\}$" }
+          ],
+          "description": "A content hash, or a ${jobs.<id>.artifact} reference to a dependency's output, substituted at promotion."
+        }
       }
     },
     "app": {
@@ -39,11 +46,22 @@
       "properties": {
         "name": { "type": "string" },
         "build": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sha256": {
+          "type": "string",
+          "anyOf": [
+            { "pattern": "^[a-f0-9]{64}$" },
+            { "const": "latest" },
+            { "pattern": "^\\$\\{jobs\\.[^}]+\\}$" }
+          ],
+          "description": "A content hash, or the literal \"latest\" — which resolves to the newest artifact published under this app name, ordered by publish_seq. Pinning a literal hash tests that build forever; one of these spent six days guarding a build older than the code it was meant to guard."
+        },
         "platform": { "enum": ["android", "ios"], "default": "android" }
       }
     },
-    "backend": { "enum": ["llama.cpp", "coreml", "litert", "whisper.cpp"] },
+    "backend": {
+      "enum": ["synthetic", "llama.cpp", "coreml", "litert", "whisper.cpp", "mlx"],
+      "description": "Which implementation runs the workload. `synthetic` is a SHA-256 digest loop that every runner implements identically token for token — real, device-comparable hardware numbers, never LLM numbers — and it is the default a result row assumes when a spec names none. `mlx` is probed for by the machine agent but has no backend behind it yet."
+    },
     "suite": {
       "type": "object",
       "description": "ui-test, web-test and web-shots workloads. For playwright, `flows` is a spec directory under web-specs/ and params.browser picks the config project(s): one name, an array run in sequence, or \"all\" for every project in playwright.config.ts. web-shots reads `flows`/shots.json — the manifest of pages to capture and the profiles to capture them under (params.browser overrides the manifest's profiles).",

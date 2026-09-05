@@ -1,1 +1,6 @@
 .DS_Store
+site/
+
+# Claude Code keeps its worktrees here. They are real checkouts of this
+# repository, so committing them would nest the repo inside itself.
+.claude/

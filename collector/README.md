@@ -1,4 +1,8 @@
-# fleet-collector
+# collector
+
+*Part of [Fleet Runner](../README.md), alongside the
+[Android](../runner-android), [iOS](../runner-ios) and
+[desktop](../runner-machine) runners.*
 
 The brain of **Fleet Runner**: a personal device lab that turns a shelf of old
 phones into something you can send work to. It holds the device registry, the
@@ -97,8 +101,11 @@ so it never touches a real fleet's history.
 | `self-check` | host, machine | The fleet inspects its own hosts: disk, tool versions, clock drift, agents actually loaded |
 | `archive` / `digest` | host | Pull store reviews and Search Console data; then have the shelf summarize its own reviews using its own models |
 
-Full reference, including every parameter and the failure modes worth knowing:
-**[docs/operations.md](docs/operations.md)**.
+Full reference, including every parameter and the failure modes worth
+knowing: **[the documentation](https://addisdev.github.io/fleet-runner/)**.
+Start at [Concepts](https://addisdev.github.io/fleet-runner/concepts/) for how
+the queue thinks, or [Workloads](https://addisdev.github.io/fleet-runner/workloads/)
+for what it can be asked to do.
 
 ## Status and threat model
 

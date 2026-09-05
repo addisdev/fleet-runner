@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job_id": "convert-resnet18",
+  "workload": "model-convert",
+  "executor": "device",
+  "params": { "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "formats": ["tflite", "mlmodelc"], "quant": "int8" },
+  "targets": { "match": "capabilities ~ 'model-convert' && ram_mb >= 16000" },
+  "constraints": { "require_ac": true },
+  "lease": { "ttl_s": 7200 }
+}

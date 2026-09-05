@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "job_id": "embed-eval",
+  "workload": "embed-eval",
+  "executor": "device",
+  "params": { "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "max_items": 500 },
+  "targets": { "match": "ram_mb >= 3000" },
+  "constraints": { "require_charging": true }
+}

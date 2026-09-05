@@ -27,6 +27,7 @@
 		E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
 		F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
 		F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
+		F4EBB4A4C44824C4BE88B9EC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E9D9AE076A10932032DC657B /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,6 +62,7 @@
 		D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FleetRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLBackend.swift; sourceTree = "<group>"; };
 		D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyntheticBackend.swift; sourceTree = "<group>"; };
+		E9D9AE076A10932032DC657B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FleetRunner.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArtifactCache.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -70,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */,
+				E9D9AE076A10932032DC657B /* Assets.xcassets */,
 				C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */,
 				31632F0B6302F50DC2BD764E /* CollectorClient.swift */,
 				D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */,
@@ -127,6 +130,7 @@
 			buildConfigurationList = F3286BB877D4AA75311CE685 /* Build configuration list for PBXNativeTarget "FleetRunner" */;
 			buildPhases = (
 				A5D4950877F41D019B81DCFE /* Sources */,
+				139C8978B9F9E5329A615B5E /* Resources */,
 			);
 			buildRules = (
 			);
@@ -190,6 +194,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		139C8978B9F9E5329A615B5E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F4EBB4A4C44824C4BE88B9EC /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		33591D8880D86DC8B8E6526C /* Sources */ = {

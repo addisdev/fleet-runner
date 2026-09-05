@@ -1,0 +1,51 @@
+name: Bug
+description: Something behaves differently from what the docs say.
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - collector
+        - runner-android
+        - runner-ios
+        - runner-machine
+        - host executor
+        - dashboard
+        - docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the docs say, and what happened
+      description: >
+        A link to the page or the README line, if there is one. If the
+        documentation is what is wrong, that is a bug too and it is the easiest
+        kind to fix.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: >
+        The commands, and the job spec if one is involved. `npm test` in
+        `collector/` starts its own throwaway collector, so a repro that runs
+        there is worth more than one that needs your fleet.
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Versions
+      placeholder: |
+        fleet-runner: v0.2.0 (or a commit sha)
+        node: v22.11.0
+        os: macOS 26.1
+    validations:
+      required: true

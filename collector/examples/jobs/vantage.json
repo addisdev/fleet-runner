@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "job_id": "vantage-hourly",
+  "workload": "vantage",
+  "executor": "device",
+  "params": { "urls": ["https://example.com", "https://example.com/pricing"], "repeats": 3 },
+  "fanout": { "distinct": "os" }
+}
