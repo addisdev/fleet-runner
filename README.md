@@ -29,6 +29,7 @@ the thing that breaks and a change to it touches three of them at once.
 | **[runner-android/](runner-android)** | The Android agent. A foreground service on anything back to Android 7, with llama.cpp (NDK/JNI) and LiteRT backends. |
 | **[runner-ios/](runner-ios)** | The iOS agent. SwiftUI, with llama.cpp and Core ML backends, speaking the same JSON protocol without sharing a line of code. |
 | **[runner-machine/](runner-machine)** | The desktop agent. A Node process that makes a laptop or desktop a fleet device, so a phone's tok/s and a laptop's land in the same table. |
+| **[collector/runner-web/](collector/runner-web)** | The browser agent. One HTML file the collector serves at `/runner`: opening it enrols the browser that opened it. A smart TV, a console, a Chromebook — anything with no way to install a signed app. |
 
 Each directory has its own README, its own tests and its own CI job, filtered by
 path so a change to a phone runner does not build the dashboard.
@@ -75,6 +76,14 @@ claimed by an executor on a Mac and drive a device from outside, because
 installing an APK or tapping through a UI test is not something an app can do
 to itself.
 
+"Phone" is no longer the whole story. An agent declares what platform it runs
+and what shape it is, so the same four projects cover Android phones, tablets,
+TV sticks, headsets and watches; iPhone, iPad and Apple TV; macOS, Linux and
+Windows machines; and any browser at all. Which of those have actually been
+watched to register, and which are only believed to work, is
+**[docs/platforms.md](docs/platforms.md)** — with an honest column, because a
+list of platforms a project "supports" is worth very little.
+
 The runners share a protocol, not code — including a synthetic SHA-256
 benchmark that is identical on every platform token for token. That is what
 lets a 2019 Android phone, a current iPhone and a laptop produce numbers you can
@@ -84,6 +93,13 @@ phones.
 A runner also says what it can run. The queue routes on those declared
 capabilities rather than on a label someone applied, so adding a workload is
 something a runner can do without the collector shipping a release.
+
+Four hand-written implementations of one protocol stay honest because there is
+a test for it. `npm run conformance -- --device <id>` drives a running agent
+through eight clauses — every one of them something that has actually gone
+wrong here — including recomputing the synthetic backend's block digest from
+the written specification, so "identical token for token" is checkable rather
+than asserted.
 
 ## What came out of it
 
