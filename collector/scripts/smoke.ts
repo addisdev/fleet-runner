@@ -2422,10 +2422,43 @@ runDeviceParserChecks(check);
 
   // A frame past the cap is refused rather than truncated: half a JPEG renders
   // as a corrupt image and reads as a broken device.
-  const huge = await fetch(`${BASE}/api/jobs/${MJOB}/mirror`, {
-    method: "POST", headers: { "content-type": "image/jpeg" }, body: Buffer.alloc(3 * 1024 * 1024),
-  });
-  check("an oversized frame is refused", huge.status === 413, `status=${huge.status}`);
+  //
+  // Two outcomes are both correct, and which one happens is a race. Fastify
+  // rejects as soon as the body passes bodyLimit and closes the connection,
+  // while the client may still be writing the rest of it -- so the client
+  // either reads the 413 or gets its write reset. Node 24 surfaces the second
+  // as an uncaught `fetch failed / EPIPE`, which failed CI on one run and
+  // passed on the next. Asserting only on the 413 was asserting on who won a
+  // race.
+  //
+  // What the test is actually about is that the frame was not accepted, so
+  // both are a pass -- and the check below is what makes that safe, by
+  // proving the collector refused rather than fell over.
+  let refused = false;
+  let how = "";
+  try {
+    const huge = await fetch(`${BASE}/api/jobs/${MJOB}/mirror`, {
+      method: "POST", headers: { "content-type": "image/jpeg" }, body: Buffer.alloc(3 * 1024 * 1024),
+    });
+    refused = huge.status === 413;
+    how = `status=${huge.status}`;
+  } catch (e) {
+    const cause = (e as { cause?: { code?: string } }).cause;
+    const code = cause?.code ?? "";
+    refused = code === "EPIPE" || code === "ECONNRESET" || code === "UND_ERR_SOCKET";
+    how = `write refused mid-body (${code || (e as Error).message})`;
+  }
+  check("an oversized frame is refused", refused, how);
+
+  // And the collector is still serving, with the earlier frame intact: a
+  // rejection that took the process or the stream down with it would satisfy
+  // the check above and be a much worse bug than accepting the frame.
+  const alive = await json("GET", `/api/jobs/${MJOB}/mirror/status`);
+  check(
+    "refusing an oversized frame leaves the stream up",
+    alive.status === 200 && alive.body?.streaming === true,
+    JSON.stringify(alive.body),
+  );
 
   const empty = await fetch(`${BASE}/api/jobs/${MJOB}/mirror`, {
     method: "POST", headers: { "content-type": "image/jpeg" }, body: Buffer.alloc(0),

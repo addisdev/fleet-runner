@@ -52,6 +52,12 @@ jobs:
         with:
           # The built HTML rather than the Markdown: this way the snippet
           # includes and the nav are checked as a reader would meet them.
+          #
+          # The compare/ and releases/tag/ links are excluded because
+          # CHANGELOG.md names the version being released in the same commit
+          # that releases it. That tag does not exist until after this workflow
+          # has passed, so checking them means a release can never be prepared
+          # without a red build.
           args: >-
             --no-progress
             --max-concurrency 8
@@ -60,6 +66,7 @@ jobs:
             --exclude '^https://addisdev\.github\.io/'
             --exclude '^https?://(127\.0\.0\.1|localhost|\[::1\])(:|/|$)'
             --exclude '^https?://[^/]*\.local(:|/|$)'
+            --exclude '^https://github\.com/addisdev/fleet-runner/(compare|releases/tag)/'
             --accept 200,206,429
             site/**/*.html README.md CHANGELOG.md
           fail: true
