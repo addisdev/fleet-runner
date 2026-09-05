@@ -76,21 +76,16 @@ export function Stat({ label, value, tone }: { label: string; value: ComponentCh
   );
 }
 
-/* Every state gets an icon — device states and job states alike.
-   Device states are read across a whole shelf at a glance; job states are read
-   down a long Jobs table, where a column of identical circles differing only
-   inside is faster to scan than five words of similar length. The word stays
-   in every pill, so the icon is never the only thing carrying the meaning. */
-const PILL_ICON: Partial<Record<string, IconName>> = {
-  online: "online",
-  stale: "stale",
-  offline: "offline",
-  queued: "queued",
-  claimed: "claimed",
-  done: "done",
-  failed: "failed",
-  cancelled: "cancelled",
-};
+/* Device states get an icon; job states do not. Online/stale/offline are
+   read across a whole shelf at a glance, job status is read one row at a time.
+
+   icons.tsx does carry a matching set for the job states (queued, claimed,
+   done, failed, cancelled) — one circle differing only inside, drawn for a
+   design pass that proposed putting them here. They are deliberately not wired
+   up: the rule above is the older and the better-argued one, and a pill that
+   is already a coloured word does not get more legible for gaining a picture.
+   Add them here if a long Jobs table ever proves otherwise. */
+const PILL_ICON: Partial<Record<string, IconName>> = { online: "online", stale: "stale", offline: "offline" };
 
 export const Pill = ({ kind, children }: { kind: string; children?: ComponentChildren }) => {
   const icon = PILL_ICON[kind];
