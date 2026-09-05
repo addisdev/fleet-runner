@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="1024" height="1024" role="img" aria-label="Fleet Runner icon">
+<!-- The app-icon cut of the mark: full-bleed square, no rounded corners and no
+     alpha, because iOS and Android both apply their own mask and a source that
+     rounds itself gets rounded twice. The tile in mark.svg keeps its radius for
+     use as a favicon and in documents. -->
+<rect width="48" height="48" fill="#1C2025"/>
+<rect x="15.25" y="8.25" width="17.5" height="31.5" rx="3.25" fill="none" stroke="#E3A44A" stroke-width="2.5"/>
+<path d="M18.5 24h2.6l1.9-5.4 2.9 11 2-5.6h1.6" fill="none" stroke="#E3A44A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M21.5 35.25h5" fill="none" stroke="#E3A44A" stroke-width="2" stroke-linecap="round"/>
+</svg>

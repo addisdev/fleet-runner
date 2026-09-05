@@ -103,6 +103,7 @@ nav:
       - Networking: deploy/networking.md
       - The iOS executor: deploy/ios-executor.md
       - Alerts: deploy/alerts.md
+  - Brand: brand.md
   - History:
       - Overview: history/index.md
       - Dashboard plan: history/dashboard-plan.md
