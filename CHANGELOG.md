@@ -12,6 +12,60 @@ independently of the version below.
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-09-05
+
+Documentation, and the things a public project needs that this one did not have.
+
+### Added
+
+- **A documentation site** at
+  [addisdev.github.io/fleet-runner](https://addisdev.github.io/fleet-runner/),
+  built from `docs/` and published by its own workflow. The collector's
+  907-line operations manual is split into concepts, workloads by executor, the
+  HTTP API, deployment, networking, alerts and the dashboard.
+- **The protocol, written down.** It had existed only in the two JSON schemas
+  and three independent implementations of it.
+- **A getting-started guide that needs Node and nothing else** — the machine
+  runner rather than a phone, so a first result row costs fifteen minutes with
+  no Xcode, no NDK and no device.
+- **An integration guide**: a first job by hand, publishing builds on merge,
+  wiring in an app, adding a workload, and a cookbook of **30 complete job
+  specs validated against `job.schema.json` by `npm test`** and included
+  verbatim by the docs.
+- **A `ci-ok` merge gate** that always runs and reports, so the path-filtered
+  component suites can back a required status check.
+- **An iOS app icon.** The runner had no asset catalogue at all.
+- A social preview card, the architecture diagram as a standalone SVG, and
+  `docs/brand.md` recording how each asset is made.
+- `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue templates
+  including a device report, and a pull-request template.
+
+### Changed
+
+- The four component READMEs stop calling themselves by their old repository
+  names, and every "Phase N status" checklist becomes a "what works, and what
+  does not" section in the present tense.
+- App-specific flows and web specs move under `collector/examples/`, with
+  `FLEET_FLOWS_DIR`, `FLEET_WEB_SPECS_DIR` and Playwright's `testDir`
+  following them. The CI templates lose the app name they were pinned to.
+- `collector/docs/operations.md` becomes a table pointing at where each of its
+  sections went.
+
+### Fixed
+
+- **`job.schema.json` had drifted from what the collector accepts**, and
+  nothing had ever checked it — the collector does not validate `POST /jobs`
+  against the file. `backend` did not list `synthetic`, which all three runners
+  emit; `app.sha256` required 64 hex characters, so `"latest"` was invalid
+  against its own schema despite being what the CI docs tell everyone to
+  schedule; and neither `sha256` accepted the `${jobs.<id>.artifact}` reference
+  the `depends_on` description promises by name.
+- The Android README described its llama.cpp backend as a stub, months after
+  the NDK and JNI backend shipped.
+- Two READMEs had `cd` commands pointing at directories that no longer exist.
+- Two relative links in the design journals, broken by the move into `docs/`
+  and caught by building the site with `--strict`.
+
 ## [0.2.0] — 2026-09-05
 
 The first release from the mono repo, covering two waves of work plus the
@@ -116,6 +170,7 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/addisdev/fleet-runner/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/addisdev/fleet-runner/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/addisdev/fleet-runner/releases/tag/v0.1.0
