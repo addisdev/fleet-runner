@@ -16,6 +16,7 @@ import { runEvalChecks } from "../src/api/evals.test.js";
 import { runDeviceParserChecks } from "../src/device-parsers.test.js";
 import { runDriverChecks, runDescriptorChecks } from "../src/drivers/drivers.test.js";
 import { runZipChecks } from "../src/zip-dir.test.js";
+import { runTailnetChecks } from "../src/tailnet.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
@@ -2499,6 +2500,13 @@ runDescriptorChecks(check);
 // a size report misleads, so the arithmetic is pinned against archives built
 // here, and against the real APK when the Android runner has been built.
 runZipChecks(check);
+
+// --- who is on the other end, when the other end is elsewhere ---
+//
+// Every case in here is a way the gate could fail OPEN. A boundary that
+// wrongly refuses is noticed within the minute by whoever's laptop stopped
+// working; one that wrongly admits is noticed never.
+runTailnetChecks(check);
 
 // --- the synthetic backend's reference digest ---
 //

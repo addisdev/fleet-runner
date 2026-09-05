@@ -212,6 +212,16 @@ export type RegisterPost = {
   descriptor: Descriptor;
   pools: string[];
   capabilities: string[];
+  /**
+   * Seconds of silence this agent should survive before the collector forgets
+   * it. Omitted for a permanent machine, which is the default and the only
+   * behaviour that existed before.
+   *
+   * Set by an agent that knows it is temporary -- a CI runner, a container
+   * started for one job. Without it every CI run leaves a permanent offline
+   * device behind, and a shelf of ghosts is a shelf nobody reads.
+   */
+  ttl_s?: number;
 };
 
 /** Reads an integer job param, falling back when it is absent or not a number. */

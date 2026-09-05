@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 import { describe, APP_VER, mbFromSizeString, wmicValue, platformName, processKind } from "../src/descriptor.js";
 import { parsePmsetBatt, speedLimitToThermal, celsiusToThermal, loadOneMinute, idleSeconds, beacon } from "../src/telemetry.js";
 import { firstMatch, finite, run, out, readText, orNull } from "../src/probe.js";
-import { defaultDeviceId } from "../src/agent.js";
+import { defaultDeviceId, ttlFromEnv } from "../src/agent.js";
 
 const FOREIGN: NodeJS.Platform[] = ["linux", "win32", "darwin", "aix"];
 
@@ -195,4 +195,29 @@ test("an ordinary machine is neither", () => {
   // CI unset, or set to something that is not a truthy CI marker.
   assert.equal(processKind({ CI: "false" }), null);
   assert.equal(processKind({ CI: "" }), null);
+});
+
+// --- being temporary on purpose ---------------------------------------------
+//
+// A CI runner and a container are ephemeral; a laptop that is asleep is not.
+// Getting this backwards either fills the shelf with ghosts or expires a real
+// machine out from under its own job.
+
+test("no TTL set is a permanent device, which is the default", () => {
+  assert.equal(ttlFromEnv({}), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "   " }), undefined);
+});
+
+test("a positive integer is the window", () => {
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "300" }), 300);
+});
+
+test("a malformed TTL registers as permanent rather than as a guess", () => {
+  // An agent that silently picked its own TTL would expire out from under a
+  // job for a reason nobody wrote down.
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "soon" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "0" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "-5" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "2.5" }), undefined);
 });

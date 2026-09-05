@@ -22,11 +22,13 @@ import {
   POWER_CONFIG_PATH,
   SCHEDULER_TICK_MS,
   SWEEP_MS,
+  TAILNET_ALLOWLIST,
 } from "./config.js";
 import { evaluate, expireSnoozes, notify, reconcile } from "./alerts.js";
 import { requireToken } from "./api/guard.js";
 import { invalidateOverview, publish, registerApi } from "./api/index.js";
 import { AGE, capabilityMatches, deviceCapabilities, effectivePools, isExpired } from "./api/shared.js";
+import { admit, isTailnetAddress, normaliseIp, whois } from "./tailnet.js";
 // Dependency chains live beside the cancel path, which also has to settle
 // waiters; imported here rather than duplicated. mutations.ts imports nothing
 // from this file, so there is no cycle.
@@ -540,6 +542,25 @@ app.post("/devices/register", async (req, reply) => {
   // An agent that sends no capabilities keeps whatever it declared last, rather
   // than having them erased: an older build of the same runner re-registering
   // during a rollback would otherwise widen itself back to everything.
+  // Who is on the other end, when the other end is on the tailnet.
+  //
+  // This is not authentication and does not make POST /jobs safe to expose --
+  // see src/tailnet.ts. It is the narrow thing FLEET_BIND made necessary: once
+  // the collector answers on its tailnet address so a roaming laptop can claim
+  // work, "the network I chose" includes every node on the tailnet, and a
+  // personal fleet should be able to name which of them are its devices.
+  //
+  // Off unless FLEET_TAILNET_ALLOWLIST is set, and it never fences the LAN.
+  if (TAILNET_ALLOWLIST.length > 0) {
+    const ip = normaliseIp(req.ip);
+    // whois is only paid for when it can change the answer.
+    const peer = isTailnetAddress(ip) ? await whois(ip) : null;
+    const decision = admit(ip, TAILNET_ALLOWLIST, peer);
+    if (!decision.admit) {
+      app.log.warn({ device_id: b.device_id, ip, why: decision.why }, "registration refused");
+      return reply.code(403).send({ error: `registration refused: ${decision.why}` });
+    }
+  }
   const capabilities = b.capabilities === undefined ? null : JSON.stringify(b.capabilities);
   // Where it registered from, kept to a /24 (or the IPv6 prefix): enough to
   // tell the house from a cafe, without keeping a movement log.

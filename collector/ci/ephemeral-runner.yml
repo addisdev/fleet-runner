@@ -1,0 +1,106 @@
+# A CI runner that joins the fleet for one job, then leaves.
+#
+# EXAMPLE. Copy it into an app repository's .github/workflows/ and fill in the
+# two secrets. It is not armed anywhere in this repository, and it deliberately
+# is not: a workflow that tries to reach a collector it cannot see fails on
+# every push, and a red check nobody can fix is worse than no check.
+#
+# ## What this is for
+#
+# The fleet's hardware is at home. GitHub's runners are not, and the collector
+# has no authentication and is not going on the internet — that posture is in
+# the README and this does not change it.
+#
+# What changes is the direction. Rather than opening the collector to CI, the
+# CI runner joins the tailnet as a device, does one job, and disappears. It is
+# a fleet member for four minutes. Nothing is exposed; a node is added and then
+# is gone.
+#
+# The pieces that make it work were built for other reasons and happen to fit:
+#
+#   * `ttl_s` at registration (Wave 4) — a runner that finishes and vanishes
+#     stops beaconing, and the collector forgets it rather than leaving a ghost
+#     on the shelf forever. Without this, every CI run would leave a permanent
+#     offline device behind.
+#   * `kind: "ci"` (Wave 4) — the machine agent detects CI from the environment
+#     and overrides its chassis probe, so a runner never reads as a desktop
+#     that will still be there tomorrow.
+#   * the tailnet allowlist (Wave 8) — the collector will only accept a
+#     registration from a node it was told about. `tailscale/github-action`
+#     brings the runner up under a name you control, and that name goes in
+#     FLEET_TAILNET_ALLOWLIST on the collector.
+#   * the Docker image (Wave 5) — or, as below, just `npm ci` on the agent,
+#     which is smaller than pulling an image for a four-minute job.
+#
+# ## The chain this enables
+#
+# The CI runner claims the `build` job for its own commit and publishes the
+# artifact. Everything after that happens on real hardware at home: `install`
+# onto the shelf, `ui-test` across it, `upgrade-test` from the last release.
+# `report_to.github_status` closes the loop back to the pull request.
+#
+# The operations doc records CI integration as "built, deliberately OFF". This
+# is the shape that would turn it on, and the reason it is now safe to: the
+# collector is not reachable from the internet, the runner comes to it, and the
+# collector will only take registrations from nodes it was told about.
+
+name: fleet-ephemeral-runner
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+jobs:
+  join-and-build:
+    runs-on: ubuntu-latest
+    # A fleet member for as long as this takes and no longer.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Joins the tailnet under a name the collector's allowlist knows.
+      # Ephemeral keys are the right kind: the node is removed from the tailnet
+      # when the job ends, so a stale machine never accumulates there either.
+      - name: Join the tailnet
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:fleet-ci
+          # Deterministic, so one entry in FLEET_TAILNET_ALLOWLIST covers every
+          # run rather than the allowlist needing a wildcard.
+          hostname: fleet-ci-runner
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # The agent itself. Checked out from the fleet repository rather than
+      # installed from a registry, because it is not published to one.
+      - name: Fetch the machine agent
+        run: |
+          git clone --depth 1 https://github.com/addisdev/fleet-runner.git /tmp/fleet
+          npm --prefix /tmp/fleet/runner-machine ci
+
+      # Registers, claims the build job for this commit, publishes the
+      # artifact, exits. CI=true is already set by Actions, which is what makes
+      # the agent declare `kind: "ci"`.
+      #
+      # FLEET_DEVICE_TTL_S is what makes it ephemeral: five minutes after the
+      # last beacon the collector stops listing it. The run itself is well
+      # inside that, and beacons slide the window, so a slow build does not
+      # expire out from under its own job.
+      - name: Run as a fleet device
+        env:
+          FLEET_URL: ${{ secrets.FLEET_URL }}
+          FLEET_DEVICE_ID: ci-${{ github.run_id }}
+          FLEET_DEVICE_TTL_S: "300"
+        run: |
+          npx --prefix /tmp/fleet/runner-machine tsx /tmp/fleet/runner-machine/src/agent.ts &
+          AGENT=$!
+          # The enqueue side belongs to the app repository: see
+          # ci/example-workflow.yml, which uploads the build and polls to a
+          # verdict. This job's only role is to BE the device that runs it.
+          sleep 600
+          kill $AGENT

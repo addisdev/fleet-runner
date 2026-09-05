@@ -550,6 +550,79 @@ with nothing to explain why.
 The point is that a new runner can add a workload the collector has never heard
 of without a release here.
 
+## Leaving the house: the tailnet allowlist
+
+**This is not authentication, and turning it on does not make the collector
+safe to expose.** The threat model in the README is unchanged: there is no
+auth, the network is the access control, and anyone who can reach the collector
+can enqueue a job. Do not put this on the internet.
+
+What changed is that the network stopped being one place. `FLEET_BIND` already
+lets the collector answer on loopback plus its own tailnet address, so a laptop
+that leaves the house can still claim work — and at that point "the network I
+chose" includes every node on the tailnet, including one added by a share link.
+
+So this is the honest version of access control for a personal fleet: the
+network is still the boundary, it is just a network you can enumerate.
+
+```bash
+FLEET_TAILNET_ALLOWLIST=my-macbook,pixel-4a,fleet-ci-runner
+```
+
+| Peer | What happens |
+|---|---|
+| loopback | admitted |
+| a LAN address | admitted, under the posture that was already there |
+| a tailnet address (100.64.0.0/10) | must resolve, via `tailscale whois`, to a node in the list |
+| anything, with the list unset | admitted — nothing is checked, which is the default |
+
+Three deliberate choices:
+
+- **It fences the tailnet, not the house.** An allowlist that also fenced the
+  LAN would mean enabling it broke every phone on the shelf.
+- **A tailnet address that cannot be identified is refused.** If an unavailable
+  `tailscale` binary made the lookup fail open, the allowlist would disable
+  itself exactly when it was needed.
+- **Entries are names, not patterns.** No globs. An allowlist that can be got
+  wrong quietly is worse than one that has to be typed out.
+
+Refusals are a 403 on `POST /devices/register` and a warning in the log naming
+the node and the reason.
+
+## CI runners as devices, and `npm run chaos`
+
+**A CI runner can be a fleet device for four minutes.** Rather than opening the
+collector to GitHub, the runner joins the tailnet, registers with a TTL, claims
+the `build` job for its own commit, publishes the artifact and disappears.
+Everything after that runs on real hardware at home.
+
+`collector/ci/ephemeral-runner.yml` is the example, and it is an example on
+purpose — a workflow that tries to reach a collector it cannot see fails on
+every push. Three pieces built for other reasons make it work: `ttl_s` at
+registration so a finished runner leaves the shelf instead of becoming a
+permanent ghost, `kind: "ci"` so it never reads as a desktop that will be there
+tomorrow, and the allowlist so the collector only accepts nodes it was told
+about. The machine agent reads `FLEET_DEVICE_TTL_S`; a malformed value
+registers as permanent rather than as a guess.
+
+**`npm run chaos`** turns the collector's own guarantees into a test. It starts
+its own collector on a spare port and then breaks things on purpose: a runner
+that goes silent mid-job, attempts running out, an artifact rotted on disk, a
+`SIGKILL` mid-flight, a cancelled job across a restart.
+
+It is a script rather than a workload because the honest version kills the
+collector, and a workload that kills the collector it was dispatched by is a
+workload that can kill the one running the house.
+
+One thing it found is worth recording: **the artifact store does not re-hash on
+read, and that is deliberate.** Verifying on read means hashing an 850 MB model
+on every download, and the number that would protect is one every consumer
+already computes. The guarantee lives in `fetchArtifact` on both the executor
+and the machine agent — fetch, hash while reading, refuse on mismatch — which
+also covers corruption in transit, as a server-side check never could. The
+chaos suite asserts both halves: that the store hands the rotted bytes over,
+and that a consumer refuses them.
+
 ## `upgrade-test` and `size-report`: the app from two angles a suite misses
 
 ### `upgrade-test`
