@@ -89,6 +89,15 @@ const PATHS = {
       <circle cx="8" cy="9" r="2.25" />
     </>
   ),
+  // An answer, marked. The evals target says "scored against a known answer";
+  // this says "scored against a rubric", which is the distinction llm-eval
+  // exists to make.
+  judged: (
+    <>
+      <path d="M2.25 3.5a1.25 1.25 0 0 1 1.25-1.25h9a1.25 1.25 0 0 1 1.25 1.25v6a1.25 1.25 0 0 1-1.25 1.25H7.5l-3.25 3v-3H3.5A1.25 1.25 0 0 1 2.25 9.5z" />
+      <path d="M5.75 6.5L7.25 8l3-3.25" />
+    </>
+  ),
   desktop: (
     <>
       <rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1" />
@@ -409,6 +418,7 @@ const WORKLOAD_ICON: Record<string, IconName> = {
   "push-latency": "bell",
   "camera-eval": "camera",
   "desktop-ui-test": "desktop",
+  "llm-eval": "judged",
 };
 
 /** The workload's name with its icon, for job tables. */

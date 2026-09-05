@@ -107,6 +107,14 @@ export type Metrics = {
    */
   synthetic_digest?: string;
   synthetic_rounds?: number;
+
+  /** llm-eval. See the collector's result schema for what each one excludes. */
+  score_pct?: number;
+  scored_items?: number;
+  judged_items?: number;
+  judge_score_pct?: number;
+  judge_model?: string;
+  refusal_pct?: number;
   load_ms?: number;
   prefill_tok_s?: number;
   decode_tok_s?: number;

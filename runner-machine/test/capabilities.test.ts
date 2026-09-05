@@ -16,25 +16,25 @@ import { which } from "../src/probe.js";
 const bare = { llamaBench: false, mlx: false, gradle: false, xcodebuild: false, node: false };
 
 test("benchmark and self-check are unconditional; the pairings are not", () => {
-  assert.deepEqual(capabilitiesFrom(bare), ["benchmark", "self-check"]);
+  assert.deepEqual(capabilitiesFrom(bare), ["benchmark", "self-check", "llm-eval"]);
   assert.deepEqual(capabilitiesFrom({ ...bare, llamaBench: true }), [
-    "benchmark", "benchmark:llama.cpp", "self-check",
+    "benchmark", "benchmark:llama.cpp", "self-check", "llm-eval",
   ]);
-  assert.deepEqual(capabilitiesFrom({ ...bare, mlx: true }), ["benchmark", "benchmark:mlx", "self-check"]);
+  assert.deepEqual(capabilitiesFrom({ ...bare, mlx: true }), ["benchmark", "benchmark:mlx", "self-check", "llm-eval"]);
   assert.deepEqual(capabilitiesFrom({ ...bare, llamaBench: true, mlx: true }), [
-    "benchmark", "benchmark:llama.cpp", "benchmark:mlx", "self-check",
+    "benchmark", "benchmark:llama.cpp", "benchmark:mlx", "self-check", "llm-eval",
   ]);
 });
 
 test("a build kind is declared only when its binary resolves", () => {
   assert.deepEqual(capabilitiesFrom({ ...bare, gradle: true }), [
-    "benchmark", "build", "build:gradle", "self-check",
+    "benchmark", "build", "build:gradle", "self-check", "llm-eval",
   ]);
   assert.deepEqual(capabilitiesFrom({ ...bare, xcodebuild: true }), [
-    "benchmark", "build", "build:xcode", "self-check",
+    "benchmark", "build", "build:xcode", "self-check", "llm-eval",
   ]);
   assert.deepEqual(capabilitiesFrom({ ...bare, node: true }), [
-    "benchmark", "build", "build:npm", "self-check",
+    "benchmark", "build", "build:npm", "self-check", "llm-eval",
   ]);
 });
 
@@ -50,7 +50,7 @@ test("bare `build` rides along with any kind, and only with a kind", () => {
   }
   const all = capabilitiesFrom({ ...bare, gradle: true, xcodebuild: true, node: true });
   assert.equal(all.filter((c) => c === "build").length, 1, "build is declared once, not once per kind");
-  assert.deepEqual(all, ["benchmark", "build", "build:gradle", "build:xcode", "build:npm", "self-check"]);
+  assert.deepEqual(all, ["benchmark", "build", "build:gradle", "build:xcode", "build:npm", "self-check", "llm-eval"]);
 });
 
 test("an empty PATH declares no build kind at all", async () => {
@@ -111,6 +111,6 @@ test("probeCapabilities degrades to the synthetic-only list on a bare machine", 
   // fleet member, because both remaining workloads need nothing installed.
   assert.deepEqual(
     await probeCapabilities({ PATH: "", FLEET_PYTHON: "/nonexistent/python3" }),
-    ["benchmark", "self-check"],
+    ["benchmark", "self-check", "llm-eval"],
   );
 });

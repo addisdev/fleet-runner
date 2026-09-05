@@ -20,6 +20,7 @@ import { runModelConvert } from "./workloads/modelconvert.js";
 import { runDatasetPrep } from "./workloads/datasetprep.js";
 import { runServe } from "./workloads/serve.js";
 import { runShell } from "./workloads/shell.js";
+import { runLlmEval } from "./workloads/llmeval.js";
 import { SCHEMA, type Descriptor, type JobSpec } from "./protocol.js";
 import * as JobCancellation from "./cancellation.js";
 
@@ -225,6 +226,10 @@ async function dispatch(job: JobSpec, client: CollectorClient): Promise<void> {
   }
   if (job.workload === "shell") {
     await runShell(job, client, deviceId, device);
+    return;
+  }
+  if (job.workload === "llm-eval") {
+    await runLlmEval(job, client, deviceId, device);
     return;
   }
   await client.postResult({

@@ -94,6 +94,7 @@ so it never touches a real fleet's history.
 | `vantage` | device, machine | DNS, connect, TLS and TTFB to your own sites from wherever each agent is, so "the site is slow" and "my wifi is slow" stop being the same answer |
 | `locale-shots` | host | A screenshot flow under every locale, including RTL, bundled as a store-ready contact sheet |
 | `app-soak` / `a11y-audit` | host | Memory, jank and crashes over hours; and the accessibility tree diffed against a baseline at the largest dynamic type |
+| `llm-eval` | machine | Scores what a device generated against an eval set — exact, regex, JSON-shape and model-judged rules — so a quantisation is measured for whether it is still RIGHT, not only how fast it is wrong |
 | `self-check` | host, machine | The fleet inspects its own hosts: disk, tool versions, clock drift, agents actually loaded |
 | `archive` / `digest` | host | Pull store reviews and Search Console data; then have the shelf summarize its own reviews using its own models |
 

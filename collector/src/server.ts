@@ -168,6 +168,9 @@ const WORKLOADS = new Set([
   "build", "speech-eval", "embed-eval", "vantage", "locale-shots", "app-soak", "a11y-audit",
   // Wave 3: pipelines that feed the evals, and the workloads that need hardware.
   "model-convert", "dataset-prep", "serve", "shell", "push-latency", "camera-eval", "desktop-ui-test",
+  // Wave 6: the fleet finally measures whether an answer is any good, not only
+  // how fast it arrived.
+  "llm-eval",
 ]);
 
 function touchDevice(deviceId: string) {

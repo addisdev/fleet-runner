@@ -550,6 +550,86 @@ with nothing to explain why.
 The point is that a new runner can add a workload the collector has never heard
 of without a release here.
 
+## `llm-eval`: is the answer any good, not just fast
+
+The fleet has measured LLM tok/s since it existed and never measured whether
+the answers survived quantisation. Vision has `top1_pct`, speech has `wer_pct`,
+embeddings have `recall_at_k`; generation had a rate and nothing else. A Q4
+model that is fast and wrong is not shippable.
+
+The chain is two jobs. A device generates; a machine scores.
+
+```json
+{ "schema": 1, "job_id": "gen-1", "workload": "batch", "executor": "device",
+  "targets": { "pool": "ml-capable" },
+  "params": { "input_sha256": "<eval set>" } }
+```
+```json
+{ "schema": 1, "job_id": "score-1", "workload": "llm-eval", "executor": "device",
+  "depends_on": ["gen-1"],
+  "params": { "eval_set_sha256": "<eval set>",
+              "completions_sha256": "${jobs.gen-1.artifact}",
+              "judge_endpoint": "${jobs.serve-judge.endpoint}",
+              "judge_model": "qwen2.5-7b" } }
+```
+
+**Scoring happens on the machine, never on the device**, for three reasons. A
+judge model is bigger than the model under test by design — a 0.5B model
+grading its own output tells you what a 0.5B model thinks. A phone that both
+generates and scores makes a bug in its scorer indistinguishable from a bug in
+its model. And one scorer for the whole fleet means a tablet's 71% and a
+phone's 68% differ because the models differ.
+
+### The eval set
+
+An array of items, each carrying how to score it. Five rules:
+
+| `score.kind` | Passes when |
+|---|---|
+| `exact` | the completion equals `expect`, after case and outer whitespace |
+| `contains` | every string in `expect` appears |
+| `regex` | `pattern` matches the raw completion |
+| `json` | the completion parses as JSON, with `require_keys` if given |
+| `judge` | a judge model replies PASS |
+
+Normalisation is case and surrounding whitespace and nothing else — not
+punctuation, not articles. Every additional normalisation makes a score look
+better while making it mean less, and this number exists to be compared against
+the same set on other hardware and other quantisations, where a generous scorer
+hides exactly the degradation being looked for.
+
+`json` handles what models actually emit: a fenced ```json block, or an object
+surrounded by prose. It does **not** repair invalid JSON. A model that emits a
+trailing comma has failed the item, and a scorer that fixes it is measuring the
+fixer.
+
+### The numbers, and what each one excludes
+
+- **`score_pct`** — the deterministically scorable items only. Reproducible by
+  anyone holding the eval set.
+- **`judge_score_pct`** — the judged items only. Depends on which model was
+  serving that day.
+- These are **never averaged together.** One blended figure would quietly be
+  neither, and nobody could reproduce it.
+- **`refusal_pct`** — completions that open like a refusal. A **floor**, not a
+  measurement: it matches a short list of openings and will miss a creative
+  refusal. Counted apart from correctness because the two have different fixes —
+  a quantised model that has started refusing benign prompts is a quantisation
+  problem, one that answers confidently and wrongly is a capability problem.
+
+Two refusals worth knowing:
+
+- A set with judged items and **no `judge_endpoint` fails the job.** Scoring
+  the deterministic subset and reporting that as the score would publish a
+  different measurement under the same name.
+- Completions uploaded as a **bare array of strings are refused.** Position is
+  not identity: an eval set edited between generating and scoring would grade
+  every answer against the wrong prompt, and every number would look normal.
+
+A per-item report — every completion, its rule, its verdict — is uploaded as an
+artifact, because a score with no way to see which items failed is a number
+nobody can act on.
+
 ## What an agent says it is
 
 Three fields in the registration descriptor, all of them declared by the agent
