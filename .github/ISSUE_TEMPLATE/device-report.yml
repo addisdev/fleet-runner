@@ -1,0 +1,76 @@
+name: Device report
+description: What your hardware measured, refused, or broke on. The most useful thing you can send.
+title: "[device] "
+labels: ["device-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The whole point of this project is comparable numbers across hardware
+        nobody has a lab full of. Every phone that is not on this shelf is data
+        this repository does not have — including the ones that refused to work.
+
+        A report where something failed is as useful as one where it worked.
+
+  - type: input
+    id: device
+    attributes:
+      label: Device
+      description: Model and SoC, as the runner reports them if you have it.
+      placeholder: "SM-X930 (Dimensity 9400) / iPhone 16 simulator / ThinkPad X1, i7-1260P"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS and RAM
+      placeholder: "android-15, 12288 MB"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runner
+    attributes:
+      label: Which runner
+      options:
+        - runner-android
+        - runner-ios
+        - runner-machine
+        - host executor
+    validations:
+      required: true
+
+  - type: input
+    id: backend
+    attributes:
+      label: Workload and backend
+      placeholder: "benchmark / synthetic, or vision-eval / litert"
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec
+    attributes:
+      label: The job spec
+      description: The JSON you enqueued. Redact hostnames and hashes if you like.
+      render: json
+
+  - type: textarea
+    id: result
+    attributes:
+      label: The result row
+      description: >
+        From `GET /api/results?job=<id>`, or the error if it failed. The
+        `metrics` object is the part that matters.
+      render: json
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything surprising
+      description: >
+        Numbers that look wrong, a capability that was declared but bounced, a
+        device left in a state the journals did not record. Especially if a
+        second device disagreed with this one — that is how the all-zero logits
+        tensor was caught.
