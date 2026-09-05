@@ -1,18 +1,15 @@
 name: collector
 
-# Path-filtered: a change to a phone runner should not spin up a Node matrix.
+# Called by ci.yml, which owns the change detection and the `ci-ok` check
+# that branch protection requires. Nothing else triggers this file.
 #
-# The trap this creates is worth knowing about before you add a required check
-# in branch protection. A filtered workflow does not run on a PR that touches
-# nothing it watches, and GitHub reports a required check that never ran as
-# pending forever, so an iOS-only PR would block on the collector's suite. Keep
-# these advisory, or add a merge-gate job that always runs.
+# This suite is still only run when something under collector/ changed -- a
+# change to a phone runner has no business spinning up a Node matrix. What
+# moved to ci.yml is the consequence: a path-filtered workflow can never
+# itself be a required check, because GitHub reports a check that never ran
+# as pending forever. The gate there always runs and reports for all four.
 on:
-  push:
-    branches: [main, develop]
-    paths: ["collector/**", ".github/workflows/collector.yml"]
-  pull_request:
-    paths: ["collector/**", ".github/workflows/collector.yml"]
+  workflow_call:
 
 defaults:
   run:

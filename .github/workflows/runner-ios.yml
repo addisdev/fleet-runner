@@ -1,11 +1,9 @@
 name: runner-ios
 
+# Called by ci.yml, which owns the change detection and the `ci-ok` check
+# that branch protection requires. Nothing else triggers this file.
 on:
-  push:
-    branches: [main, develop]
-    paths: ["runner-ios/**", ".github/workflows/runner-ios.yml"]
-  pull_request:
-    paths: ["runner-ios/**", ".github/workflows/runner-ios.yml"]
+  workflow_call:
 
 defaults:
   run:
