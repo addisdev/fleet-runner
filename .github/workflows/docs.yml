@@ -13,9 +13,9 @@ name: docs
 on:
   push:
     branches: [main]
-    paths: ["docs/**", "mkdocs.yml", ".github/workflows/docs.yml", "collector/examples/**"]
+    paths: ["docs/**", "mkdocs.yml", "requirements-docs.txt", ".github/workflows/docs.yml", "collector/examples/**"]
   pull_request:
-    paths: ["docs/**", "mkdocs.yml", ".github/workflows/docs.yml", "collector/examples/**"]
+    paths: ["docs/**", "mkdocs.yml", "requirements-docs.txt", ".github/workflows/docs.yml", "collector/examples/**"]
   workflow_dispatch:
 
 permissions:
@@ -35,8 +35,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+          # setup-python's pip cache needs a dependency file to key on, and
+          # fails outright without one rather than skipping the cache.
+          cache-dependency-path: requirements-docs.txt
 
-      - run: pip install mkdocs-material==9.6.22
+      - run: pip install -r requirements-docs.txt
 
       # The cookbook includes collector/examples/jobs/*.json verbatim via the
       # snippets extension, so a missing or renamed example fails the build
