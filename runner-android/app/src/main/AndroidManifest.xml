@@ -18,8 +18,9 @@
 
     <application
         android:label="Fleet Runner"
-        android:icon="@drawable/ic_launcher"
-        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.FleetRunner"
         android:usesCleartextTraffic="true">
         <!-- Cleartext is deliberate: the collector speaks plain HTTP and is only
              reachable inside the Tailscale mesh / adb reverse. -->
