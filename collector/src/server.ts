@@ -26,7 +26,7 @@ import {
 import { evaluate, expireSnoozes, notify, reconcile } from "./alerts.js";
 import { requireToken } from "./api/guard.js";
 import { invalidateOverview, publish, registerApi } from "./api/index.js";
-import { capabilityMatches, deviceCapabilities, effectivePools } from "./api/shared.js";
+import { AGE, capabilityMatches, deviceCapabilities, effectivePools, isExpired } from "./api/shared.js";
 // Dependency chains live beside the cancel path, which also has to settle
 // waiters; imported here rather than duplicated. mutations.ts imports nothing
 // from this file, so there is no cycle.
@@ -146,6 +146,13 @@ type JobSpec = {
 // external API's data (Search Console, App Store / Play reviews) into the
 // artifact store, and digest turns the week's archived reviews into a
 // summary by farming batch jobs to the shelf's on-device models.
+/**
+ * The longest an ephemeral agent may ask to be remembered for. A day: past
+ * that, "ephemeral" is not what the word means, and a permanent device is
+ * spelled by omitting the field.
+ */
+const MAX_DEVICE_TTL_S = 86_400;
+
 const WORKLOADS = new Set([
   "benchmark", "batch", "pipeline", "install", "ui-test", "drain", "soak",
   "web-test", "web-shots", "web-audit", "web-unfurl", "archive", "digest",
@@ -171,16 +178,26 @@ function touchDevice(deviceId: string) {
  *  will actually do. */
 export function matchingDevices(pool?: string, match?: string, workload?: string, backend?: string | null) {
   return (
-    db.prepare("SELECT device_id, pools, pools_override, descriptor, capabilities FROM devices").all() as {
+    db.prepare(
+      `SELECT device_id, pools, pools_override, descriptor, capabilities, ttl_s,
+              ${AGE("last_seen")} AS age_s
+       FROM devices`,
+    ).all() as {
       device_id: string;
       pools: string;
       pools_override: string | null;
       descriptor: string;
       capabilities: string | null;
+      ttl_s: number | null;
+      age_s: number | null;
     }[]
   ).filter((d) => {
     const pools = effectivePools(d);
     const capabilities = deviceCapabilities(d);
+    // An expired ephemeral agent is gone, not idle. Fanning out to it would
+    // mint a child job pinned to a browser tab that was closed an hour ago,
+    // which then sits queued forever with nothing to explain why.
+    if (isExpired(d, d.age_s)) return false;
     if (pool && !pools.includes(pool)) return false;
     // Checked before the expression, so a match expression can narrow the set
     // but never widen an agent past what its own code can run.
@@ -208,8 +225,10 @@ export function matchingDevices(pool?: string, match?: string, workload?: string
 function workloadServiceableBy(workload: string, backend?: string | null): boolean {
   if (WORKLOADS.has(workload)) return true;
   return (
-    db.prepare("SELECT capabilities FROM devices").all() as { capabilities: string | null }[]
-  ).some((d) => {
+    db.prepare(
+      `SELECT capabilities, ttl_s, ${AGE("last_seen")} AS age_s FROM devices`,
+    ).all() as { capabilities: string | null; ttl_s: number | null; age_s: number | null }[]
+  ).filter((d) => !isExpired(d, d.age_s)).some((d) => {
     const declared = deviceCapabilities(d);
     // A legacy agent's null means "no opinion", which cannot be read as a claim
     // to run a workload that did not exist when it registered.
@@ -500,8 +519,15 @@ function sweepLeases() {
 app.post("/devices/register", async (req, reply) => {
   const b = req.body as {
     device_id?: string; descriptor?: object; pools?: string[]; capabilities?: string[];
+    ttl_s?: number;
   };
   if (!b?.device_id) return reply.code(400).send({ error: "device_id required" });
+  // An agent that knows it is temporary says so. See the ttl_s column in db.ts:
+  // absent means a permanent shelf device, which is the default and the only
+  // behaviour that existed before.
+  if (b.ttl_s !== undefined &&
+      (!Number.isInteger(b.ttl_s) || b.ttl_s < 1 || b.ttl_s > MAX_DEVICE_TTL_S))
+    return reply.code(400).send({ error: `ttl_s must be an integer between 1 and ${MAX_DEVICE_TTL_S}` });
   if (b.capabilities !== undefined &&
       (!Array.isArray(b.capabilities) || b.capabilities.some((c) => typeof c !== "string")))
     return reply.code(400).send({ error: "capabilities must be an array of strings" });
@@ -517,14 +543,20 @@ app.post("/devices/register", async (req, reply) => {
     if (ip.includes(":")) return ip.split(":").slice(0, 4).join(":") + "::/64";
     return null;
   })();
+  // ttl_s follows the same rule as capabilities: an agent that does not send it
+  // keeps whatever it declared last. A runner rolled back to a build that
+  // predates the field must not silently become permanent, or a CI runner's
+  // ghost outlives the run it was made for.
+  const ttlS = b.ttl_s === undefined ? null : b.ttl_s;
   db.prepare(
-    `INSERT INTO devices (device_id, descriptor, pools, capabilities, last_net, last_seen)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `INSERT INTO devices (device_id, descriptor, pools, capabilities, last_net, ttl_s, last_seen)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(device_id) DO UPDATE SET
        descriptor = excluded.descriptor, pools = excluded.pools, last_seen = excluded.last_seen,
        capabilities = COALESCE(excluded.capabilities, devices.capabilities),
-       last_net = COALESCE(excluded.last_net, devices.last_net)`,
-  ).run(b.device_id, JSON.stringify(b.descriptor ?? {}), JSON.stringify(b.pools ?? []), capabilities, net);
+       last_net = COALESCE(excluded.last_net, devices.last_net),
+       ttl_s = COALESCE(excluded.ttl_s, devices.ttl_s)`,
+  ).run(b.device_id, JSON.stringify(b.descriptor ?? {}), JSON.stringify(b.pools ?? []), capabilities, net, ttlS);
   announce({
     type: "device", device_id: b.device_id, event: "register",
     pools: b.pools ?? [], capabilities: b.capabilities ?? null,

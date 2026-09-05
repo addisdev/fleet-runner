@@ -1,7 +1,7 @@
 // GET /api/devices, /api/devices/:id, /api/devices/:id/beacons
 import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
-import { AGE, beaconFields, deviceCapabilities, deviceStatus, effectivePools, iso, isSimulator, paging, parse } from "./shared.js";
+import { AGE, beaconFields, deviceCapabilities, deviceKind, devicePlatform, deviceStatus, effectivePools, iso, isExpired, isSimulator, paging, parse } from "./shared.js";
 
 type DeviceRow = {
   device_id: string;
@@ -9,6 +9,7 @@ type DeviceRow = {
   pools: string;
   pools_override: string | null;
   capabilities: string | null;
+  ttl_s: number | null;
   last_net: string | null;
   name: string | null;
   notes: string | null;
@@ -17,7 +18,7 @@ type DeviceRow = {
   age_s: number | null;
 };
 
-const DEVICE_SELECT = `SELECT device_id, descriptor, pools, pools_override, capabilities, last_net, name, notes,
+const DEVICE_SELECT = `SELECT device_id, descriptor, pools, pools_override, capabilities, ttl_s, last_net, name, notes,
                               last_seen, last_beacon, ${AGE("last_seen")} AS age_s
                        FROM devices`;
 
@@ -38,7 +39,13 @@ function shapeDevice(d: DeviceRow) {
     // "all" for that case rather than showing it as able to run nothing.
     capabilities: deviceCapabilities(d),
     last_net: d.last_net,
-    platform: /ios|iphone|ipad/i.test(String(descriptor.os ?? "")) ? "ios" : "android",
+    // An agent that declared itself temporary, and whether its window closed.
+    ttl_s: d.ttl_s,
+    expired: isExpired(d, d.age_s),
+    // Declared by the agent; the old os-regex is the fallback for agents that
+    // predate the field. See devicePlatform.
+    platform: devicePlatform(descriptor),
+    kind: deviceKind(descriptor),
     simulator: isSimulator(descriptor, d.device_id),
     status: deviceStatus(d.age_s),
     age_s: d.age_s,
@@ -81,12 +88,20 @@ export function registerDevices(app: FastifyInstance) {
       };
     });
 
+    // Expired ephemeral agents are dropped before anything else. A closed
+    // browser tab and a finished CI runner are not offline devices somebody
+    // should go and look for; leaving them in is how a shelf fills with ghosts
+    // until the real hardware is hard to find. `?expired=true` shows them,
+    // because "where did that CI runner go" is a question worth being able to
+    // answer -- the row is kept, only hidden.
+    if (q.expired !== "true") devices = devices.filter((d) => !d.expired);
     if (q.status) {
       const want = new Set(q.status.split(","));
       devices = devices.filter((d) => want.has(d.status));
     }
     if (q.pool) devices = devices.filter((d) => d.pools.includes(q.pool!));
     if (q.platform) devices = devices.filter((d) => d.platform === q.platform);
+    if (q.kind) devices = devices.filter((d) => d.kind === q.kind);
     if (q.simulator === "false") devices = devices.filter((d) => !d.simulator);
     if (q.q) {
       const needle = q.q.toLowerCase();
@@ -100,7 +115,14 @@ export function registerDevices(app: FastifyInstance) {
     // Facet over effective pools, so a pool that exists only as an override is
     // still offered in the filter.
     const pools = [...new Set(rows.flatMap((d) => effectivePools(d)))].sort();
-    return { total: devices.length, pools, devices };
+    // Platforms are faceted for the same reason pools are, and it is now the
+    // only honest way to build that filter: the set is open, so a hard-coded
+    // ["android","ios"] would hide every device the fleet learned to run on
+    // after the dashboard was written. Facets come from ALL rows rather than
+    // the filtered ones, so choosing a platform never empties its own menu.
+    const platforms = [...new Set(rows.map((d) => devicePlatform(parse<Record<string, unknown>>(d.descriptor, {}))))].sort();
+    const kinds = [...new Set(rows.map((d) => deviceKind(parse<Record<string, unknown>>(d.descriptor, {}))).filter((k): k is string => k !== null))].sort();
+    return { total: devices.length, pools, platforms, kinds, devices };
   });
 
   app.get("/api/devices/:id", async (req, reply) => {

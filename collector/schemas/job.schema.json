@@ -27,7 +27,12 @@
       "required": ["name", "format", "sha256"],
       "properties": {
         "name": { "type": "string" },
-        "format": { "enum": ["gguf", "mlmodelc", "tflite"] },
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The on-disk shape of the model artifact. No longer a closed enum, for the same reason `workload` stopped being one: a runner that can load a format is the only thing that makes it real, and closing the set meant a new runtime could not be named in a job until the collector shipped a release. The three the phone runners ship with are listed first; the rest are formats a runner in this fleet loads today.",
+          "examples": ["gguf", "mlmodelc", "tflite", "onnx", "ort", "pte", "mlx", "safetensors"]
+        },
         "quant": { "type": "string" },
         "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
       }
@@ -40,10 +45,24 @@
         "name": { "type": "string" },
         "build": { "type": "string" },
         "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "platform": { "enum": ["android", "ios"], "default": "android" }
+        "platform": {
+          "type": "string",
+          "default": "android",
+          "description": "Which platform's build this artifact is, which decides how it gets installed: an APK over adb, a zipped .app over simctl or devicectl. Open like the rest, so a target added later is nameable here; the host executor refuses a platform it has no installer for by name, rather than guessing at one.",
+          "examples": ["android", "ios", "tvos", "watchos", "visionos", "macos"]
+        }
       }
     },
-    "backend": { "enum": ["llama.cpp", "coreml", "litert", "whisper.cpp"] },
+    "backend": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Which implementation should run this workload. Open, and enforced by capabilities rather than by a list here: an agent declaring `benchmark:onnx` is what makes that pairing runnable, and the collector refuses a backend no registered agent declares with a 422 naming it. Closing the set would have meant every new runtime -- ONNX Runtime, MLX, ExecuTorch, WebGPU -- needed a collector release before a job could so much as mention it.\n\nIt is also how a workload picks among several toolchains for one job. `build` uses it for the build kind: a machine declares `build:xcode`, and naming that backend routes the job to the Mac rather than to whichever machine polled first. Build jobs that carry the kind only in `params.kind` keep working unchanged -- see the machine runner's capabilities.ts for why bare `build` stays declared alongside.",
+      "examples": [
+        "llama.cpp", "coreml", "litert", "whisper.cpp",
+        "onnx", "ort-web", "mlx", "executorch", "webgpu", "webllm",
+        "gradle", "xcode", "npm"
+      ]
+    },
     "suite": {
       "type": "object",
       "description": "ui-test, web-test and web-shots workloads. For playwright, `flows` is a spec directory under web-specs/ and params.browser picks the config project(s): one name, an array run in sequence, or \"all\" for every project in playwright.config.ts. web-shots reads `flows`/shots.json — the manifest of pages to capture and the profiles to capture them under (params.browser overrides the manifest's profiles).",

@@ -17,10 +17,14 @@ import { runArchive } from "./web/archive/index.js";
 import { runDigest } from "./web/digest.js";
 import { countXcodebuildTests, xcodebuildDiagnostics } from "./xcparse.js";
 import {
-  fleetOwned, physicalIos, simulatorName, isAndroidEmulatorSerial, iosNotReadyReason,
-  adbFailureIsWorthReporting, SIM_PREFIX,
+  fleetOwned, physicalApple, simulatorName, isAndroidEmulatorSerial, appleNotReadyReason,
+  SIM_PREFIX,
   type IosDeviceInfo,
 } from "./targets.js";
+import {
+  DRIVERS, adbDriver, simctlDriver, dedupe, devicectlDevices, listAllTargets,
+} from "./drivers/index.js";
+import { targetsFrom } from "./drivers/devicectl.js";
 import { evalMatch } from "./match.js";
 import { keychainPassword, redact, KEYCHAIN_SERVICE } from "./secrets.js";
 import { parseAmStart, amStartProblem } from "./am-start.js";
@@ -53,7 +57,14 @@ export type Job = {
   // ML workloads name the model artifact; digest forwards it into the batch
   // jobs it enqueues.
   model?: Record<string, unknown>;
-  app?: { name: string; build: string; sha256: string; platform?: "android" | "ios" };
+  // Open, matching the job schema: the installer is chosen by the target's
+  // driver, so a platform this executor can reach is a platform it can install
+  // onto without a type here being widened first.
+  // Open, matching the job schema. Which installer runs is decided by the
+  // target's driver rather than by a branch on this value, so a platform this
+  // executor can reach is one it can install onto without a type here being
+  // widened first.
+  app?: { name: string; build: string; sha256: string; platform?: string };
   suite?: {
     kind: string; flows?: string; app_id?: string; asserts?: string[];
     // An app repo running its OWN XCUITest suite rather than the generic
@@ -127,107 +138,22 @@ async function releaseLocks(jobId: string) {
  * iOS-only host registered NOTHING, silently, including the iPhone cabled to
  * it. bootedSimulators and devicectlDevices have always tolerated their
  * tooling being absent; this was the one that did not, and it went unnoticed
- * because every host so far happened to have adb.
- */
-let adbComplaint = "";
-
-async function adbDevices(): Promise<string[]> {
-  let stdout: string;
-  try {
-    ({ stdout } = await exec(ADB, ["devices"]));
-    adbComplaint = "";
-  } catch (e) {
-    const err = e as { code?: string; stderr?: string; message?: string };
-    // ENOENT is the iOS-only host this function exists for: no adb, no Android
-    // devices, nothing to say. Anything else means adb IS here and is failing
-    // -- a version-mismatched daemon, a dead server -- and returning [] for
-    // that silently empties the whole Android shelf. Every cabled phone reads
-    // offline, and jobs fail with "no android targets matched this job", which
-    // sends you looking at match expressions instead of at adb.
-    if (adbFailureIsWorthReporting(err.code)) {
-      const why = (err.stderr ?? err.message ?? "unknown").trim().split("\n")[0].slice(0, 160);
-      // Once per distinct complaint: this runs every 60s and a permanently
-      // broken adb would otherwise fill the log.
-      if (why !== adbComplaint) {
-        adbComplaint = why;
-        log(`adb is present but failing, so no Android devices are visible: ${why}`);
-      }
-    }
-    return [];
-  }
-  return stdout
-    .split("\n")
-    .slice(1)
-    .filter((l) => l.trim().endsWith("device"))
-    .map((l) => l.split("\t")[0]);
-}
-
-async function bootedSimulators(): Promise<string[]> {
-  try {
-    const { stdout } = await exec("xcrun", ["simctl", "list", "devices", "booted", "-j"]);
-    const parsed = JSON.parse(stdout) as {
-      devices: Record<string, { udid: string; state: string }[]>;
-    };
-    return Object.values(parsed.devices).flat()
-      .filter((d) => d.state === "Booted")
-      .map((d) => d.udid);
-  } catch {
-    return []; // no Xcode tooling on this host
-  }
-}
-
 /**
- * What devicectl knows, keyed by identifier.
+ * Everything this host can drive.
  *
- * Read once and shared, because devicectl is slow and every caller wants the
- * same answer. The important field is `transport`, and it is not the obvious
- * one: devicectl lists SIMULATORS as devices too, with no `isSimulated` flag
- * to tell them apart -- this Mac reports 25 "devices", of which one is real.
- * A simulator is always `sameMachine`; hardware arrives over `wired` or
- * `localNetwork`. Filtering on tunnelState alone let a simulator through as a
- * physical device, which is how one ended up in the fleet.
+ * The three enumerators that used to be inlined here are now drivers under
+ * src/drivers/, and this is a fold over that registry -- so a platform the
+ * fleet learns to reach is a new file rather than three more lines in the
+ * middle of this one. The simulator-versus-devicectl dedupe that used to live
+ * in these lines lives there too, with the ordering rule that decides it.
+ *
+ * `ios` still lets a caller that has already paid for a devicectl listing
+ * avoid paying again -- reportAttached does, because it wants the unfiltered
+ * list for its "why is this phone being ignored" diagnostics.
  */
-async function devicectlDevices(): Promise<IosDeviceInfo[]> {
-  try {
-    const out = path.join(mkdtempSync(path.join(os.tmpdir(), "fleet-dc-")), "devices.json");
-    await exec("xcrun", ["devicectl", "list", "devices", "--json-output", out], { timeout: 30_000 });
-    const parsed = JSON.parse(readFileSync(out, "utf8")) as {
-      result?: {
-        devices?: {
-          identifier: string;
-          connectionProperties?: { tunnelState?: string; transportType?: string; pairingState?: string };
-          hardwareProperties?: { marketingName?: string; productType?: string; platform?: string };
-          deviceProperties?: { name?: string; osVersionNumber?: string };
-        }[];
-      };
-    };
-    return (parsed.result?.devices ?? []).map((d) => ({
-      identifier: d.identifier,
-      name: d.deviceProperties?.name,
-      marketingName: d.hardwareProperties?.marketingName,
-      productType: d.hardwareProperties?.productType,
-      osVersion: d.deviceProperties?.osVersionNumber,
-      transport: d.connectionProperties?.transportType,
-      tunnelState: d.connectionProperties?.tunnelState,
-      pairingState: d.connectionProperties?.pairingState,
-      platform: d.hardwareProperties?.platform,
-    }));
-  } catch {
-    return []; // no Xcode tooling on this host
-  }
-}
-
-/** `ios` lets a caller that has already listed devicectl avoid paying for it twice. */
 async function listTargets(ios?: IosDeviceInfo[]): Promise<Target[]> {
-  const android = (await adbDevices()).map((id): Target => ({ id, platform: "android", kind: "device" }));
-  const sims = (await bootedSimulators()).map((id): Target => ({ id, platform: "ios", kind: "simulator" }));
-  const phones = physicalIos(ios ?? (await devicectlDevices())).map((d): Target => ({
-    id: d.identifier, platform: "ios", kind: "device",
-  }));
-  // A booted simulator is reported by BOTH simctl and devicectl, so dedupe and
-  // let the simctl answer win: it is the one that knows it is a simulator.
-  const seen = new Set(sims.map((t) => t.id));
-  return [...android, ...sims, ...phones.filter((t) => !seen.has(t.id))];
+  if (ios === undefined) return listAllTargets();
+  return dedupe([await adbDriver.list(), await simctlDriver.list(), targetsFrom(ios)]);
 }
 
 function parseJunit(xml: string): { passed: number; failed: number } {
@@ -2755,7 +2681,7 @@ async function reportAttached() {
     // silent -- and say the RIGHT thing, because "unlock it" is useless advice
     // for a phone that is simply not paired with this Mac.
     for (const d of ios) {
-      const reason = iosNotReadyReason(d);
+      const reason = appleNotReadyReason(d);
       if (!reason) continue;
       const key = `${d.identifier}:${d.pairingState}:${d.tunnelState}`;
       if (announcedIos.has(key)) continue;
@@ -2930,6 +2856,10 @@ async function main() {
       ? `workloads loaded from src/workloads: ${[...LOADED.keys()].sort().join(", ")}`
       : "no workload directories found; every job falls back to the built-in handlers",
   );
+  // Which drivers exist, said once at startup. The question this answers is
+  // "why can this host not see my phone", and the useful half of the answer is
+  // knowing whether the executor even has a way to look.
+  log(`drivers: ${DRIVERS.map((d) => d.name).join(", ")}`);
   await restoreDevicesOnStartup();
   // The dashboard calls a device online for ONLINE_S seconds after it was last
   // seen. Refreshing on a timer rather than per poll keeps presence steady

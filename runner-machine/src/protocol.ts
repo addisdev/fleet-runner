@@ -55,7 +55,19 @@ export type Descriptor = {
   os: string | null;
   app_ver: string;
 
-  kind: "laptop" | "desktop" | null;
+  /**
+   * Which OS family this agent runs. Declared rather than left for the
+   * collector to infer: its fallback rule reads an `os` string and answers
+   * "ios" or "android", so a MacBook registered as an Android phone until this
+   * field existed.
+   */
+  platform: "macos" | "linux" | "windows" | string;
+  /**
+   * The shape. `sbc` is a single-board computer — a Pi or a Jetson, which is a
+   * desktop by chassis and nothing like one in any way that matters to a
+   * benchmark. `ci` is an ephemeral runner registering for one job.
+   */
+  kind: "laptop" | "desktop" | "sbc" | "ci" | "container" | null;
   arch: string | null;
   gpu: string | null;
   vram_mb: number | null;
@@ -88,6 +100,13 @@ export type BeaconSample = {
  * plant-ID eval's accuracy ended up living in `decode_tok_s`.
  */
 export type Metrics = {
+  /**
+   * benchmark(synthetic): proof that this agent's synthetic backend is the
+   * fleet's synthetic backend. Both are needed -- a digest with no round count
+   * cannot be compared with anything.
+   */
+  synthetic_digest?: string;
+  synthetic_rounds?: number;
   load_ms?: number;
   prefill_tok_s?: number;
   decode_tok_s?: number;

@@ -55,6 +55,8 @@
     "reviews_count",
     "rtf",
     "shots",
+    "synthetic_digest",
+    "synthetic_rounds",
     "thermal",
     "thermal_state",
     "tls_ms",

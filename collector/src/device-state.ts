@@ -49,8 +49,16 @@ const ADB = process.env.ADB_BIN ?? "adb";
 const STATE_DIR = process.env.FLEET_STATE_DIR ?? path.join(os.homedir(), ".fleet");
 const JOURNAL = path.join(STATE_DIR, "device-state.json");
 
-/** The subset of a Target this module needs; structurally the executor's. */
-export type StateTarget = { id: string; platform: "android" | "ios"; kind?: "device" | "simulator" };
+/**
+ * The subset of a Target this module needs; structurally the executor's.
+ *
+ * Open `platform`, like the executor's own. The rule this module enforces is
+ * "adb can write settings, and a simulator can be told things, and physical
+ * Apple hardware can be told nothing" — which is about the tooling, not about
+ * which of two platforms a device is, and so it generalises unchanged to
+ * tvOS, watchOS and visionOS.
+ */
+export type StateTarget = { id: string; platform: string; kind?: "device" | "simulator" };
 
 /** Which group of settings an entry belongs to, so two jobs can journal independently. */
 export type Domain = "locale" | "display";
@@ -167,7 +175,7 @@ export function parseSimctlUiValue(out: string): string | null {
 
 export type StateEntry = {
   domain: Domain;
-  platform: "android" | "ios";
+  platform: string;
   kind?: "device" | "simulator";
   applied_at: string;
   /** What each setting was BEFORE we touched it. null means it was unset. */
@@ -227,8 +235,8 @@ export function unmanageableReason(t: StateTarget): string | null {
   if (t.platform === "android") return null;
   if (t.kind === "simulator") return null;
   return (
-    `${t.id} is a physical iPhone: nothing in devicectl sets its language, text size, appearance or ` +
-    "bold-text preference, and no supported tool writes to another device's preference domain. " +
+    `${t.id} is physical ${t.platform} hardware: nothing in devicectl sets its language, text size, ` +
+    "appearance or bold-text preference, and no supported tool writes to another device's preference domain. " +
     "The reachable path is per-launch -- an XCUITest setting launchArguments (-AppleLanguages, " +
     "-UIPreferredContentSizeCategoryName) on XCUIApplication -- which lives in the iOS runner's test " +
     "bundle, not in this executor"

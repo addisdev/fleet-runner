@@ -37,11 +37,35 @@ import type { Job } from "../executor.js";
 // src/web/* has always imported Job the same way.
 export type { Job };
 
-/** One thing this executor can drive. Mirrors executor.ts's own Target. */
+/**
+ * One thing this executor can drive.
+ *
+ * `platform` says WHAT it is; `driver` says WHICH TOOL reaches it. They are
+ * separate because they do not line up: one adb drives a phone, a TV stick, a
+ * headset and a watch, all of which report `android`, while `ios`, `tvos`,
+ * `watchos` and `visionos` are four platforms that one simctl drives and a
+ * second tool, devicectl, drives when they are real hardware.
+ *
+ * Branch on `driver` when the next line is a shell-out, and on `platform` when
+ * the answer is about the device. Handlers written before `driver` existed
+ * branch on `platform === "android"`, and stay correct: every adb-driven
+ * platform is still called android. What they cannot do is tell an Apple TV
+ * from an iPhone, which is why the ones that need to have moved over.
+ *
+ * `platform` is a string rather than a union for the same reason the job
+ * schema opened its enums: a target the fleet learns to drive should not need
+ * this file edited before it can be named.
+ */
 export type Target = {
   id: string;
-  platform: "android" | "ios";
+  platform: string;
   kind?: "device" | "simulator";
+  /**
+   * The tool that reaches this target. Optional only so that a test or an
+   * older caller can still build a Target by hand; everything discovery
+   * produces sets it.
+   */
+  driver?: string;
 };
 
 /** What a suite needs to sign in. `password` is resolved on the host, never carried in a spec. */

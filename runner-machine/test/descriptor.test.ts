@@ -9,7 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describe, APP_VER, mbFromSizeString, wmicValue } from "../src/descriptor.js";
+import { describe, APP_VER, mbFromSizeString, wmicValue, platformName, processKind } from "../src/descriptor.js";
 import { parsePmsetBatt, speedLimitToThermal, celsiusToThermal, loadOneMinute, idleSeconds, beacon } from "../src/telemetry.js";
 import { firstMatch, finite, run, out, readText, orNull } from "../src/probe.js";
 import { defaultDeviceId } from "../src/agent.js";
@@ -19,7 +19,7 @@ const FOREIGN: NodeJS.Platform[] = ["linux", "win32", "darwin", "aix"];
 for (const platform of FOREIGN) {
   test(`describe("${platform}") never throws and always carries the match fields`, async () => {
     const d = await describe(platform);
-    for (const key of ["model", "soc", "ram_mb", "os", "app_ver", "kind", "arch", "gpu", "vram_mb", "cpu_cores"]) {
+    for (const key of ["model", "soc", "ram_mb", "os", "app_ver", "platform", "kind", "arch", "gpu", "vram_mb", "cpu_cores"]) {
       assert.ok(key in d, `descriptor is missing ${key}`);
     }
     assert.equal(d.app_ver, APP_VER);
@@ -149,4 +149,50 @@ test("the device id is stable, sanitized, and hostname-derived", () => {
   assert.equal(defaultDeviceId(""), "machine-unknown");
   // Same input, same id: the registry key survives a restart.
   assert.equal(defaultDeviceId("rl6p9g7wyt.local"), defaultDeviceId("rl6p9g7wyt.local"));
+});
+
+// --- what this machine calls itself ----------------------------------------
+//
+// The collector's fallback rule, for an agent that declares no platform, reads
+// the `os` string and answers "ios" or "android". A laptop registered as an
+// Android phone for exactly as long as this field did not exist, so the value
+// is not cosmetic: it is what stops a MacBook appearing on a shelf of handsets.
+
+test("the kernel name is not the platform name", () => {
+  assert.equal(platformName("darwin"), "macos");
+  assert.equal(platformName("win32"), "windows");
+  assert.equal(platformName("linux"), "linux");
+});
+
+test("an unfamiliar platform passes through rather than becoming a guess", () => {
+  // A FreeBSD box registering as "freebsd" is more useful than one registering
+  // as "linux", and far more useful than one registering as a phone.
+  assert.equal(platformName("freebsd" as NodeJS.Platform), "freebsd");
+  assert.equal(platformName("openbsd" as NodeJS.Platform), "openbsd");
+});
+
+test("every platform declares one, including the foreign ones", async () => {
+  for (const platform of FOREIGN) {
+    const d = await describe(platform);
+    assert.equal(typeof d.platform, "string");
+    assert.notEqual(d.platform, "", `${platform} declared an empty platform`);
+  }
+});
+
+test("CI is recognised before container, because it is the more useful answer", () => {
+  // A GitHub runner is both. "This will be gone in four minutes" is what a
+  // person reading the shelf needs to know.
+  assert.equal(processKind({ CI: "true" }), "ci");
+  assert.equal(processKind({ CI: "1" }), "ci");
+  assert.equal(processKind({ FLEET_KIND: "ci" }), "ci");
+  assert.equal(processKind({ FLEET_KIND: "container" }), "container");
+});
+
+test("an ordinary machine is neither", () => {
+  // Empty env, and on this machine /.dockerenv does not exist. A developer's
+  // laptop must not be labelled ephemeral.
+  assert.equal(processKind({}), null);
+  // CI unset, or set to something that is not a truthy CI marker.
+  assert.equal(processKind({ CI: "false" }), null);
+  assert.equal(processKind({ CI: "" }), null);
 });

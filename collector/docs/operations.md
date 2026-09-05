@@ -550,6 +550,137 @@ with nothing to explain why.
 The point is that a new runner can add a workload the collector has never heard
 of without a release here.
 
+## What an agent says it is
+
+Three fields in the registration descriptor, all of them declared by the agent
+and none of them inferred by the collector.
+
+```json
+{ "device_id": "living-room-tv",
+  "descriptor": { "model": "AFTKA", "os": "android-9", "app_ver": "0.1.0",
+                  "platform": "android", "kind": "tv" },
+  "capabilities": ["benchmark"] }
+```
+
+**`platform`** is which OS family the agent runs. It is an open string, and the
+vocabulary in use is `android`, `ios`, `tvos`, `watchos`, `visionos`, `macos`,
+`linux`, `windows`, `web`. An agent that sends nothing gets the old rule — iOS
+if `os` looks like iOS, Android otherwise — which is kept exactly so that
+upgrading the collector does not relabel a shelf of agents that predate the
+field. That rule is also why the field had to exist: it does not report a
+platform, it reports a guess, and every machine runner registered as an Android
+phone until it could say otherwise.
+
+**`kind`** is the form factor: `phone`, `tablet`, `laptop`, `desktop`, `tv`,
+`watch`, `headset`, `sbc`, `browser`, `ci`, `container`. Null when the agent
+does not say, never guessed — a phone and a TV stick running the same Android
+build are indistinguishable from a descriptor, and inventing an answer puts a
+television in a table of handsets. The Android runner reads it from
+`UiModeManager` and the VR and watch feature flags; the iOS runner resolves it
+at compile time, because a tvOS binary and an iOS binary are different products
+from one source.
+
+**`ttl_s`** says the agent is EPHEMERAL: remember it for this many seconds of
+silence, then stop listing it and stop offering it work. Absent means a shelf
+device, which is the default and the only behaviour that existed before — a
+phone that is off is still a phone, and seeing that it has been dark for three
+days is the answer somebody wanted. A value is for the agents whose absence is
+the end of them rather than a fault: a browser tab that was closed, a CI runner
+whose job finished, a container that exited.
+
+The window slides against `last_seen`, which every poll and every beacon
+already refreshes, so an agent that is still working never expires out from
+under its own job. The row is kept when it expires, not deleted: the results it
+posted stay attributable, `GET /api/devices/:id` still resolves it, and
+`GET /api/devices?expired=true` lists it. What expiry changes is that the queue
+stops offering it work and it leaves the shelf.
+
+## Backends and formats are open too
+
+`backend` and `model.format` were closed enums and are now open strings, for
+the same reason `workload` stopped being one: the thing that makes a runtime
+real is a runner that can load it, and closing the set meant a new runtime
+could not be named in a job until the collector shipped a release.
+
+Enforcement moved to capabilities, where it already was for workloads. An agent
+declaring `benchmark:onnx` is what makes that pairing runnable; a backend no
+registered agent declares is refused at enqueue with a 422 naming it.
+
+`backend` is also how a workload picks among several toolchains for one job.
+A `build` job may name `backend: "gradle"` and be routed to a machine declaring
+`build:gradle`; build jobs that carry the kind only in `params.kind` keep
+working exactly as before.
+
+## Drivers: how the executor reaches a device
+
+Discovery is a registry of drivers under `src/drivers/`, one file each, folded
+together by `listAllTargets()`. Adding a way to reach devices is adding a module
+and a line, rather than editing a function in the middle of the executor.
+
+| Driver | Reaches |
+|---|---|
+| `adb` | Android phones, tablets, TV sticks, headsets and watches — one driver, every Android shape |
+| `simctl` | booted Apple simulators: iOS, tvOS, watchOS, visionOS |
+| `devicectl` | cabled or paired Apple hardware: iPhone, iPad, Apple TV, Watch, Vision Pro |
+
+Every target carries both `platform` (what it is) and `driver` (what reaches
+it), because the two do not line up: one adb drives four platforms' worth of
+shapes that all call themselves `android`, while four Apple platforms are
+driven by two different tools depending on whether they are real.
+
+Two rules a driver obeys. **`list()` never throws** — a host with no Xcode has
+no simctl and that is ordinary, so it returns `[]`; the exception is a tool that
+is present and failing, which the adb driver still reports rather than silently
+emptying the Android shelf. And **a driver names the platform it found and does
+not invent one**. Both Apple tools have always reported the real platform in
+their listings; nothing was reading it, so every booted simulator was labelled
+`ios` and an Apple TV cabled to the executor host was filtered out one line into
+discovery by a `platform !== "iOS"` test. Reading what was already there is the
+whole of what made tvOS, watchOS and visionOS schedulable.
+
+## Conformance: what makes an agent a fleet runner
+
+```bash
+npm run conformance -- --device machine-mymac
+npm run conformance -- --device pixel-4a --url http://fleet-host.local:8788
+```
+
+The runners share a protocol and no code, which is the right call and means
+every new platform is another hand-written implementation of a contract that
+lives in prose. Prose does not fail a build. `scripts/conformance.ts` drives a
+running agent through eight clauses and says whether it is one.
+
+Conformant does not mean "implements every workload" — a watch that cannot run
+llama.cpp is a perfectly good fleet member, and a clause its capabilities put
+out of scope is skipped rather than failed. It means the agent is honest:
+
+1. **register** — it says enough about itself to be scheduled.
+2. **benchmark** — it runs what it declared and closes the job.
+3. **metrics** — every metric name it posts is one the schema declares. This is
+   the `recall_at1` bug as a check: Swift's `convertToSnakeCase` does not split
+   on a digit, so that metric encoded one underscore short of its declared name
+   and silently never arrived. Nothing threw; the number was simply absent.
+4. **identity** — the synthetic backend's block digest matches the
+   specification, recomputed independently by the suite. The fleet's whole
+   cross-platform tok/s column rests on that backend being identical
+   everywhere, and until now each runner only checked itself against itself.
+5. **capabilities** — it never claims a workload it did not declare.
+6. **cancel** — a cancelled job stops within one beacon interval. Latency, not
+   immediacy: a workload learns it was cancelled by beaconing and being told
+   `lease_renewed: false`, so the honest question is whether it stops soon or
+   runs to completion regardless.
+7. **lease** — a long job's lease deadline advances while it works.
+8. **constraints** — an unmeetable precondition is refused with a reason rather
+   than ignored or met with silence.
+
+A FAIL is a bug in the agent. A WARN is a soft contract nothing is yet refused
+for breaking, and each one says what would make it a FAIL.
+
+**Attesting the digest is optional and only the machine runner does it today.**
+An agent reports `metrics.synthetic_digest` and `metrics.synthetic_rounds`; one
+that does not is unattested rather than refused. The two phone runners compute
+the same block and do not yet report it.
+
 ## Network shaping
 
 Any host job may carry `params.network`: `offline`, `offline-after-<n>s`, `3g`

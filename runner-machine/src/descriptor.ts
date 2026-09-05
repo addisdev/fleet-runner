@@ -12,6 +12,7 @@
  * not an agent that will not start.
  */
 import os from "node:os";
+import { existsSync } from "node:fs";
 import { out, readText, orNull, firstMatch, finite, run } from "./probe.js";
 import type { Descriptor } from "./protocol.js";
 
@@ -26,6 +27,7 @@ export async function describe(platform: NodeJS.Platform = process.platform): Pr
     ram_mb: finite(os.totalmem() / MB) === null ? null : Math.round(os.totalmem() / MB),
     os: null,
     app_ver: APP_VER,
+    platform: platformName(platform),
     kind: null,
     arch: os.arch(),
     gpu: null,
@@ -37,7 +39,53 @@ export async function describe(platform: NodeJS.Platform = process.platform): Pr
     : platform === "linux" ? await linux()
     : platform === "win32" ? await windows()
     : {};
-  return { ...base, ...specific };
+  const merged = { ...base, ...specific };
+  // A container or a CI runner overrides whatever the chassis probes decided.
+  // Those probes answer a question about hardware, and inside a container the
+  // hardware belongs to somebody else: a GitHub runner reporting "desktop"
+  // would sit on the shelf beside machines that are still there tomorrow.
+  const process_kind = processKind();
+  if (process_kind !== null) merged.kind = process_kind;
+  return merged;
+}
+
+/**
+ * The OS family, as one word.
+ *
+ * Node's `process.platform` already knows, so this is a rename rather than a
+ * probe: `darwin` is the kernel and `macos` is what a person filtering the
+ * shelf types. Anything not in the three is passed through rather than mapped
+ * to a guess — a FreeBSD box registering as "freebsd" is more useful than one
+ * registering as "linux".
+ */
+export function platformName(platform: NodeJS.Platform): string {
+  if (platform === "darwin") return "macos";
+  if (platform === "win32") return "windows";
+  return platform;
+}
+
+/**
+ * Whether this process is inside a container, and whether it is a CI runner.
+ *
+ * Both change what the machine IS rather than what it has. A container has no
+ * chassis and no battery, so the laptop/desktop probes below answer null and
+ * the row would say nothing at all; and a CI runner is ephemeral by
+ * construction, which is the fact that decides whether a person should expect
+ * to see it again.
+ *
+ * CI is asked first: a GitHub runner is also a container, and "this will be
+ * gone in four minutes" is the more useful of the two answers.
+ */
+export function processKind(env: NodeJS.ProcessEnv = process.env): "ci" | "container" | null {
+  // GITHUB_ACTIONS, GITLAB_CI, CIRCLECI and friends all set CI=true; the
+  // generic variable is what every provider agrees on.
+  if (env.CI === "true" || env.CI === "1") return "ci";
+  if (env.FLEET_KIND === "ci") return "ci";
+  if (env.FLEET_KIND === "container") return "container";
+  // /.dockerenv is Docker's own marker; the cgroup path catches Podman and
+  // Kubernetes. Neither throws here — both are read through orNull upstream.
+  if (existsSync("/.dockerenv")) return "container";
+  return null;
 }
 
 // --- macOS ------------------------------------------------------------------
