@@ -36,6 +36,7 @@ import {
 } from "./api/mutations.js";
 import { registerDashStatic } from "./dash-static.js";
 import { startPowerSampler } from "./power.js";
+import { endMirror } from "./api/mirror.js";
 
 mkdirSync(ARTIFACT_DIR, { recursive: true });
 
@@ -63,6 +64,9 @@ const LONG_LEASE_TTL_S = 4 * 60 * 60;
 // workloads chew through a corpus on a phone.
 const LONG_LEASE_WORKLOADS = new Set([
   "drain", "soak", "thermal", "build", "app-soak", "speech-eval", "embed-eval",
+  // A conversion quantises a multi-GB checkpoint; a dataset is downloaded and
+  // resized; a served model is up for as long as someone is using it.
+  "model-convert", "dataset-prep", "serve", "push-latency",
 ]);
 const MAX_LEASE_TTL_S = 24 * 60 * 60;
 // Agents beacon every 60 s. Two missed beacons and a state claim is no longer
@@ -76,6 +80,11 @@ const app = Fastify({ logger: { level: process.env.FLEET_LOG ?? "info" } });
 // Artifact uploads arrive as raw bytes and are streamed to disk while the
 // hash is computed — a multi-GB GGUF never lives in collector memory.
 app.addContentTypeParser("application/octet-stream", (_req, payload, done) => done(null, payload));
+// Mirror frames, unlike artifacts, are small, capped, and consumed immediately
+// rather than streamed to disk — so they are buffered here. Kept to its own
+// content type precisely so the artifact path above keeps streaming: a
+// multi-GB GGUF must never be buffered into collector memory.
+app.addContentTypeParser("image/jpeg", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
 
 type JobSpec = {
   schema: number;
@@ -149,6 +158,8 @@ const WORKLOADS = new Set([
   // them; the rest are host work. All are listed because the collector renders
   // their results, and a workload the dashboard draws is one it knows about.
   "build", "speech-eval", "embed-eval", "vantage", "locale-shots", "app-soak", "a11y-audit",
+  // Wave 3: pipelines that feed the evals, and the workloads that need hardware.
+  "model-convert", "dataset-prep", "serve", "shell", "push-latency", "camera-eval", "desktop-ui-test",
 ]);
 
 function touchDevice(deviceId: string) {
@@ -902,6 +913,9 @@ app.post("/results", async (req, reply) => {
 
     const status = b.ok === false ? "failed" : "done";
     const settled = closeJobTx(b.job_id, status);
+    // A finished job has nothing left to show. Outside the transaction, because
+    // closing viewer sockets must not be able to roll back a device's result.
+    endMirror(b.job_id);
     announce({ type: "job", job_id: b.job_id, status, device_id: b.device_id });
     // Announced after the transaction commits: a broken browser pipe must not
     // roll back a device's result.

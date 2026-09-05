@@ -1,0 +1,15 @@
+{
+  "name": "install",
+  "capability": "devices",
+  "executor": "host",
+  "description": "Install a build on every attached device and verify it launches.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {},
+    "description": "install takes no params. What it installs comes from `app` (name, build, sha256, platform) and where it lands comes from `targets`."
+  },
+  "example": {
+    "app": { "name": "", "build": "", "sha256": "" }
+  }
+}

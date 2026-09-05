@@ -40,10 +40,12 @@ import {
   parseXcuiDebugDescription, type A11yGeometry, type A11yNode,
 } from "./a11y-tree.js";
 import { countBySeverity, uploadReport, type Finding } from "./web/shared.js";
+import { ADB, batteryPct, hasApp, launchApp, processAlive } from "./workloads/device.js";
+import { discoverWorkloads, loadRun, type LoadedWorkload } from "./workloads/registry.js";
+import type { Target, WorkloadCtx } from "./workloads/types.js";
 
 const FLOWS_DIR = process.env.FLEET_FLOWS_DIR ?? path.resolve("flows");
 const MAESTRO = process.env.MAESTRO_BIN ?? path.join(os.homedir(), ".maestro/bin/maestro");
-const ADB = process.env.ADB_BIN ?? "adb";
 
 export type Job = {
   job_id: string;
@@ -91,7 +93,10 @@ const WEB_SPECS_DIR = process.env.FLEET_WEB_SPECS_DIR ?? path.resolve("web-specs
 const IOS_PROJECT = process.env.FLEET_IOS_PROJECT ??
   path.resolve("../runner-ios/FleetRunner.xcodeproj");
 
-type Target = { id: string; platform: "android" | "ios"; kind?: "device" | "simulator" };
+// One definition, in workloads/types.ts, so a handler that has moved out and a
+// handler that has not are talking about the same thing. Re-exported because
+// src/web/* and the workload directories import their types from here.
+export type { Target };
 
 // Exclusive jobs hold the collector's device locks while they run, so a
 // device-executor agent never gets handed work mid-UI-test.
@@ -223,69 +228,6 @@ async function listTargets(ios?: IosDeviceInfo[]): Promise<Target[]> {
   // let the simctl answer win: it is the one that knows it is a simulator.
   const seen = new Set(sims.map((t) => t.id));
   return [...android, ...sims, ...phones.filter((t) => !seen.has(t.id))];
-}
-
-async function hasApp(target: Target, appId: string): Promise<boolean> {
-  try {
-    if (target.platform === "android") {
-      await exec(ADB, ["-s", target.id, "shell", "pm", "path", appId], { timeout: 15_000 });
-    } else if (target.kind === "device") {
-      const out = path.join(mkdtempSync(path.join(os.tmpdir(), "fleet-dc-")), "apps.json");
-      await exec("xcrun", ["devicectl", "device", "info", "apps", "--device", target.id, "--json-output", out], { timeout: 30_000 });
-      const parsed = JSON.parse(readFileSync(out, "utf8")) as { result?: { apps?: { bundleIdentifier: string }[] } };
-      return (parsed.result?.apps ?? []).some((a) => a.bundleIdentifier === appId);
-    } else {
-      await exec("xcrun", ["simctl", "get_app_container", target.id, appId], { timeout: 15_000 });
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function runInstall(job: Job) {
-  const app = job.app;
-  if (!app) throw new Error("install job needs an app ref");
-  const platform = app.platform ?? "android";
-  const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
-
-  const dir = mkdtempSync(path.join(os.tmpdir(), "fleet-"));
-  let installable: string;
-  if (platform === "android") {
-    installable = path.join(dir, `${app.name}.apk`);
-    await fetchArtifact(app.sha256, installable);
-  } else {
-    // iOS artifacts are zips of the .app bundle (a directory can't be a raw artifact).
-    const zip = path.join(dir, `${app.name}.zip`);
-    await fetchArtifact(app.sha256, zip);
-    await exec("ditto", ["-x", "-k", zip, dir], { timeout: 120_000 });
-    const appDir = readdirSync(dir).find((f) => f.endsWith(".app"));
-    if (!appDir) throw new Error("no .app bundle inside iOS artifact zip");
-    installable = path.join(dir, appDir);
-  }
-
-  let allOk = true;
-  for (const target of targets) {
-    let ok = true;
-    let error: string | undefined;
-    try {
-      if (platform === "android") {
-        await exec(ADB, ["-s", target.id, "install", "-r", installable], { timeout: 120_000 });
-      } else if (target.kind === "device") {
-        await exec("xcrun", ["devicectl", "device", "install", "app", "--device", target.id, installable], { timeout: 300_000 });
-      } else {
-        await exec("xcrun", ["simctl", "install", target.id, installable], { timeout: 120_000 });
-      }
-    } catch (e) {
-      ok = false;
-      allOk = false;
-      error = (e as Error).message.slice(0, 300);
-    }
-    await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok, error });
-    log(`install ${app.name}@${app.build} on ${target.id} (${platform}): ${ok ? "ok" : "FAILED"}`);
-  }
-  await postResult({ job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk });
 }
 
 function parseJunit(xml: string): { passed: number; failed: number } {
@@ -737,73 +679,6 @@ async function runUiTest(job: Job) {
     if (granted) await releaseLocks(job.job_id);
   }
   await postResult({ job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk });
-}
-
-/**
- * `args` are process launch arguments, and they exist for locale-shots: on iOS
- * they land in the app's NSUserDefaults, which is how `-AppleLanguages (ar)`
- * reaches an app without touching the device's own language at all. Android has
- * no equivalent -- `am start` extras are not read as preferences -- so the
- * Android path ignores them rather than pretending otherwise.
- */
-async function launchApp(target: Target, appId: string, args: string[] = []) {
-  if (target.platform === "ios" && target.kind === "device") {
-    await exec("xcrun", ["devicectl", "device", "process", "launch", "--device", target.id, appId, ...args], { timeout: 60_000 });
-    return;
-  }
-  if (target.platform === "android") {
-    // Resolve the real launcher activity; monkey is a fallback because some
-    // images (ATD) resolve but throttle monkey events.
-    try {
-      const { stdout } = await exec(
-        ADB, ["-s", target.id, "shell", "cmd", "package", "resolve-activity", "--brief", appId],
-        { timeout: 15_000 },
-      );
-      const component = stdout.trim().split("\n").pop()?.trim();
-      if (!component || !component.includes("/")) throw new Error(`unresolvable: ${stdout}`);
-      await exec(ADB, ["-s", target.id, "shell", "am", "start", "-n", component], { timeout: 30_000 });
-    } catch {
-      await exec(ADB, ["-s", target.id, "shell", "monkey", "-p", appId, "-c",
-        "android.intent.category.LAUNCHER", "1"], { timeout: 30_000 });
-    }
-  } else {
-    await exec("xcrun", ["simctl", "launch", target.id, appId, ...args], { timeout: 60_000 });
-  }
-}
-
-async function processAlive(target: Target, appId: string): Promise<boolean> {
-  try {
-    if (target.platform === "android") {
-      const { stdout } = await exec(ADB, ["-s", target.id, "shell", "pidof", appId], { timeout: 15_000 });
-      return stdout.trim().length > 0;
-    }
-    const { stdout } = await exec("xcrun", ["simctl", "spawn", target.id, "launchctl", "list"], { timeout: 15_000 });
-    return stdout.includes(appId);
-  } catch {
-    return false;
-  }
-}
-
-async function batteryPct(target: Target): Promise<number | null> {
-  try {
-    if (target.platform === "android") {
-      const { stdout } = await exec(ADB, ["-s", target.id, "shell", "dumpsys", "battery"], { timeout: 15_000 });
-      const m = /level:\s*(\d+)/.exec(stdout);
-      return m ? Number(m[1]) : null;
-    }
-    if (target.kind === "device") {
-      // devicectl exposes battery via device info; the fleet runner's beacon
-      // is the primary source on real iPhones — this is the host-side cross-check.
-      const out = path.join(mkdtempSync(path.join(os.tmpdir(), "fleet-dc-")), "info.json");
-      await exec("xcrun", ["devicectl", "device", "info", "details", "--device", target.id, "--json-output", out], { timeout: 30_000 });
-      const txt = readFileSync(out, "utf8");
-      const m = /"batteryLevel"\s*:\s*([0-9.]+)/.exec(txt);
-      return m ? Math.round(Number(m[1]) * (Number(m[1]) <= 1 ? 100 : 1)) : null;
-    }
-    return null; // simulators have no battery
-  } catch {
-    return null;
-  }
 }
 
 // Location replay: feed the device a recorded route so a drain run walks the
@@ -2967,8 +2842,94 @@ async function restoreDevicesOnStartup() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The workload loader
+// ---------------------------------------------------------------------------
+
+/**
+ * The one ctx, built once from the real collector client.
+ *
+ * This object is the entire reason a moved handler is testable: it is the only
+ * route a workload has to the collector, the artifact store, the device list
+ * and the Keychain, so a test can hand the same handler a different one and
+ * watch what it posts. Nothing here is new behaviour — every field is the
+ * function the handlers were already calling as a module-level import.
+ */
+const CTX: WorkloadCtx = {
+  host: NAME,
+  log,
+  postResult,
+  postBeacon,
+  fetchArtifact,
+  uploadArtifact,
+  // Wrapped rather than passed by reference: listTargets takes an optional
+  // pre-fetched devicectl list, which only reportAttached has a reason to
+  // supply. A workload asking "what is attached" should not have to know that.
+  listTargets: () => listTargets(),
+  selectTargets,
+  leaseBudgetS,
+  secrets: { credentialsFor: resolveCredentials, redact },
+};
+
+/**
+ * The workload directories, scanned once at startup.
+ *
+ * At startup rather than per job so that a stranger who mistypes a manifest
+ * hears about it when they restart the executor, instead of at 3am when the
+ * nightly that needed it fails. `log` is passed in so the complaints appear in
+ * this executor's log with everything else.
+ */
+const LOADED = discoverWorkloads(log);
+
+/**
+ * Send a job to whoever handles it.
+ *
+ * A lookup on the loaded directories first, then the if/else below for the
+ * handlers that still live in this file. The fallback is not a transitional
+ * embarrassment to be tidied away quickly — it is what lets a handler move on
+ * its own, verified on its own, while the other eleven keep running exactly as
+ * they did. When the chain is empty the chain goes; until then, a workload is
+ * dispatched by whichever of the two knows it, and a name in neither gets the
+ * same "not supported by this executor" row it always did.
+ */
+async function dispatch(job: Job, loaded: Map<string, LoadedWorkload>): Promise<void> {
+  const w = loaded.get(job.workload);
+  if (w) {
+    const run = await loadRun(w);
+    await run(job, CTX);
+    return;
+  }
+
+  if (job.workload === "ui-test") await runUiTest(job);
+  // Same implementation, and deliberately so: `soak` with no params.flow is
+  // exactly the old behaviour, so the existing nightlies keep meaning what
+  // they meant.
+  else if (job.workload === "soak" || job.workload === "app-soak") await runAppSoak(job);
+  else if (job.workload === "locale-shots") await runLocaleShots(job);
+  else if (job.workload === "a11y-audit") await runA11yAudit(job);
+  else if (job.workload === "drain") await runDrain(job);
+  else if (job.workload === "cold-start") await runColdStart(job);
+  else if (job.workload === "web-test") await runWebTest(job);
+  else if (job.workload === "web-shots") await runWebShots(job);
+  else if (job.workload === "web-audit") await runWebAudit(job);
+  else if (job.workload === "web-unfurl") await runWebUnfurl(job);
+  else if (job.workload === "archive") await runArchive(job);
+  else if (job.workload === "digest") await runDigest(job);
+  else {
+    await postResult({
+      job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,
+      error: `workload '${job.workload}' not supported by this executor yet`,
+    });
+  }
+}
+
 async function main() {
   log(`polling ${BASE} (flows: ${FLOWS_DIR})`);
+  log(
+    LOADED.size > 0
+      ? `workloads loaded from src/workloads: ${[...LOADED.keys()].sort().join(", ")}`
+      : "no workload directories found; every job falls back to the built-in handlers",
+  );
   await restoreDevicesOnStartup();
   // The dashboard calls a device online for ONLINE_S seconds after it was last
   // seen. Refreshing on a timer rather than per poll keeps presence steady
@@ -2990,28 +2951,7 @@ async function main() {
 
     log(`claimed ${job.job_id} (${job.workload})`);
     try {
-      if (job.workload === "install") await runInstall(job);
-      else if (job.workload === "ui-test") await runUiTest(job);
-      // Same implementation, and deliberately so: `soak` with no params.flow is
-      // exactly the old behaviour, so the existing nightlies keep meaning what
-      // they meant.
-      else if (job.workload === "soak" || job.workload === "app-soak") await runAppSoak(job);
-      else if (job.workload === "locale-shots") await runLocaleShots(job);
-      else if (job.workload === "a11y-audit") await runA11yAudit(job);
-      else if (job.workload === "drain") await runDrain(job);
-      else if (job.workload === "cold-start") await runColdStart(job);
-      else if (job.workload === "web-test") await runWebTest(job);
-      else if (job.workload === "web-shots") await runWebShots(job);
-      else if (job.workload === "web-audit") await runWebAudit(job);
-      else if (job.workload === "web-unfurl") await runWebUnfurl(job);
-      else if (job.workload === "archive") await runArchive(job);
-      else if (job.workload === "digest") await runDigest(job);
-      else {
-        await postResult({
-          job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,
-          error: `workload '${job.workload}' not supported by this executor yet`,
-        });
-      }
+      await dispatch(job, LOADED);
     } catch (e) {
       await postResult({
         job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,

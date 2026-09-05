@@ -1,3 +1,4 @@
+import { useEffect, useState } from "preact/hooks";
 import { useApi, type JobDetail as Detail, type ResultRow } from "../api.js";
 import { Workload } from "../icons.js";
 import { mutate, useMutation } from "../mutate.js";
@@ -218,6 +219,8 @@ export function JobDetail({ id }: { id: string }) {
               <JobActions job={j} onDone={state.reload} />
             </Panel>
 
+            <Mirror jobId={j.job_id} live={j.status === "claimed"} />
+
             <Panel title="Target">
               <div class="scroll">
                 <table>
@@ -351,5 +354,50 @@ export function JobDetail({ id }: { id: string }) {
         )}
       </Loaded>
     </>
+  );
+}
+
+/**
+ * The device screen while a host job drives it.
+ *
+ * Polls only for whether a stream exists; the picture itself is an <img> on an
+ * MJPEG endpoint, so the browser does the streaming and this component holds no
+ * frames. Rendered only while something is actually producing, because an <img>
+ * that never paints looks exactly like a device with a black screen.
+ */
+function Mirror({ jobId, live }: { jobId: string; live: boolean }) {
+  const [streaming, setStreaming] = useState(false);
+  useEffect(() => {
+    if (!live) {
+      setStreaming(false);
+      return;
+    }
+    let alive = true;
+    const check = async () => {
+      try {
+        const r = await fetch(`/api/jobs/${encodeURIComponent(jobId)}/mirror/status`);
+        const b = (await r.json()) as { streaming?: boolean };
+        if (alive) setStreaming(!!b.streaming);
+      } catch {
+        if (alive) setStreaming(false);
+      }
+    };
+    void check();
+    const t = setInterval(() => void check(), 5_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [jobId, live]);
+
+  if (!streaming) return null;
+  return (
+    <Panel title="Live" aside={<span class="faint">device screen, not recorded</span>}>
+      <img
+        src={`/api/jobs/${encodeURIComponent(jobId)}/mirror`}
+        alt="the device screen while this job runs"
+        style="max-width:100%;border-radius:4px;display:block"
+      />
+    </Panel>
   );
 }
