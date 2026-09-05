@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: https://github.com/addisdev/fleet-runner/security/advisories/new
+    about: >
+      Privately, via GitHub's advisory form. Read SECURITY.md first — the
+      collector has no authentication by design, and that on its own is not a
+      finding.
+  - name: Question, or show your shelf
+    url: https://github.com/addisdev/fleet-runner/discussions
+    about: What hardware you are running this on, and anything that is not a bug.

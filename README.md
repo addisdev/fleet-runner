@@ -157,7 +157,22 @@ model and dataset: **[the eval](collector/evals/greenfolio-plant-id.md)**.
 [The architecture and build plan](https://addisdev.github.io/fleet-runner/history/plan.html)
 written before any of this existed, kept as-is. Every phase in it was built.
 
+## Contributing
+
+The most useful thing you can send is **a device report** — what your hardware
+measured, what it refused, and what broke. The point of the project is
+comparable numbers across hardware nobody has a lab full of, and every phone
+that is not on this shelf is data this repository does not have.
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has how to run each component's suite and
+the handful of things this project learned the hard way. Behaviour is covered by
+the [Contributor Covenant](CODE_OF_CONDUCT.md).
+
+**There is no authentication, by design** — the collector is built for a home
+LAN or a tailnet. [`SECURITY.md`](SECURITY.md) says what that does and does not
+cover before you report it.
+
 ## License
 
-MIT — see [LICENSE](LICENSE). Each repository carries its own third-party
+MIT — see [LICENSE](LICENSE). Each component carries its own third-party
 notices for what it links.
