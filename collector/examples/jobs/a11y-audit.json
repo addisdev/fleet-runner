@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "job_id": "a11y-nightly",
+  "workload": "a11y-audit",
+  "executor": "host",
+  "app": { "name": "your-app-android", "build": "nightly", "sha256": "latest" },
+  "params": { "steps": "your-app/a11y.yaml", "variants": ["default", "largest"], "min_target_pt": 44, "font_scale": 2.0 },
+  "targets": { "exclusive": true }
+}

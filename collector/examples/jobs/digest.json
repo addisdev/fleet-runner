@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job_id": "digest-weekly",
+  "workload": "digest",
+  "executor": "host",
+  "model": { "name": "qwen2.5-3b-instruct", "format": "gguf", "quant": "Q4_K_M", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  "params": { "app": "com.example.yourapp", "days": 7 },
+  "targets": { "match": "ram_mb >= 4000" },
+  "lease": { "ttl_s": 7200 }
+}
