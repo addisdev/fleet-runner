@@ -92,6 +92,23 @@ const PATHS = {
   // An answer, marked. The evals target says "scored against a known answer";
   // this says "scored against a rubric", which is the distinction llm-eval
   // exists to make.
+  // A balance. Size is the one measurement people argue about in the abstract
+  // and never look at, so it gets the instrument rather than a file icon.
+  // An arrow rising over a stored stack: the version goes up, the data stays.
+  upgrade: (
+    <>
+      <path d="M2.75 11.5v1.75h10.5V11.5" />
+      <path d="M8 12.25V2.5M4.75 5.75L8 2.5l3.25 3.25" />
+      <path d="M2.75 8.75h2.5M10.75 8.75h2.5" />
+    </>
+  ),
+  scale: (
+    <>
+      <path d="M8 2.25v11M4.5 13.25h7" />
+      <path d="M2 5.5h12M8 3.75l-6 1.5M8 3.75l6 1.5" />
+      <path d="M1.25 9.25a2.75 2.75 0 0 0 5.5 0L4 5.5zM9.25 10a2.75 2.75 0 0 0 5.5 0L12 6.25z" />
+    </>
+  ),
   judged: (
     <>
       <path d="M2.25 3.5a1.25 1.25 0 0 1 1.25-1.25h9a1.25 1.25 0 0 1 1.25 1.25v6a1.25 1.25 0 0 1-1.25 1.25H7.5l-3.25 3v-3H3.5A1.25 1.25 0 0 1 2.25 9.5z" />
@@ -419,6 +436,8 @@ const WORKLOAD_ICON: Record<string, IconName> = {
   "camera-eval": "camera",
   "desktop-ui-test": "desktop",
   "llm-eval": "judged",
+  "size-report": "scale",
+  "upgrade-test": "upgrade",
 };
 
 /** The workload's name with its icon, for job tables. */

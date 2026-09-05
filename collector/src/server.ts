@@ -171,6 +171,8 @@ const WORKLOADS = new Set([
   // Wave 6: the fleet finally measures whether an answer is any good, not only
   // how fast it arrived.
   "llm-eval",
+  // Wave 7: the app under test, from angles a pass/fail suite does not cover.
+  "size-report", "upgrade-test",
 ]);
 
 function touchDevice(deviceId: string) {

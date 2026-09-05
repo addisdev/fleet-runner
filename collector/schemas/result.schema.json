@@ -76,6 +76,22 @@
       "clock_offset_ms": { "type": "number", "description": "self-check: offset against NTP. A skewed executor clock makes every duration in the results table wrong in a way nothing else would reveal" },
       "checks_failed": { "type": "number", "description": "self-check: how many host checks failed, so the alert rule needs no parsing" },
 
+      "download_bytes": {
+        "type": "number",
+        "description": "size-report: the sum of the archive's COMPRESSED entries, which is roughly what a user waits for. Distinct from artifact_bytes (the archive on disk) and installed_bytes (everything unpacked); they differ by a lot, because native libraries compress well and resources do not, and quoting one when somebody meant another is the usual way a size report misleads."
+      },
+      "installed_bytes": {
+        "type": "number",
+        "description": "size-report: everything unpacked -- roughly what the build occupies on the device."
+      },
+      "file_count": {
+        "type": "number",
+        "description": "size-report: files in the archive, excluding directory records."
+      },
+      "largest_entry_bytes": {
+        "type": "number",
+        "description": "size-report: the single biggest file, uncompressed. A build that grew because of one asset and one that grew everywhere need different responses, and this is the cheapest way to tell them apart from a trend line."
+      },
       "build_s": { "type": "number", "description": "build: wall-clock seconds for the build itself, excluding checkout and upload" },
       "artifact_bytes": { "type": "number", "description": "build: size of the produced app or package" },
 
@@ -157,6 +173,19 @@
         "reviews_count": { "type": "integer", "description": "archive(asc/play) and digest: reviews pulled / digested" },
         "avg_rating": { "type": "number", "description": "archive(asc/play) and digest: mean star rating over those reviews" },
         "clusters": { "type": "integer", "description": "digest: topic clusters in the assembled digest" }
+      }
+    },
+    "upgrade": {
+      "type": "object",
+      "description": "upgrade-test: which step of the upgrade this row is about, and between which two builds.\n\nThe stage is the whole value of the row. A failure at install-old or seed is the OLD build's problem and says nothing about the upgrade; at upgrade it is packaging (a signature mismatch, a downgraded versionCode); at launch it is a migration that crashes on start; at verify it upgraded, launched, and the data is wrong. 'upgrade-test failed' without the stage sends somebody to read the wrong logs.",
+      "properties": {
+        "stage": { "enum": ["install-old", "seed", "upgrade", "launch", "verify", "done"] },
+        "from_sha256": { "type": "string" },
+        "to_sha256": { "type": "string" },
+        "kept_data": {
+          "type": "boolean",
+          "description": "False means the old build was uninstalled first, which makes the run measure nothing and exists only as a deliberate contrast when a migration is suspected."
+        }
       }
     },
     "artifacts": {

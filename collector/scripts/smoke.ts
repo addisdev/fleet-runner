@@ -15,6 +15,7 @@ import { runPowerChecks } from "../src/power.test.js";
 import { runEvalChecks } from "../src/api/evals.test.js";
 import { runDeviceParserChecks } from "../src/device-parsers.test.js";
 import { runDriverChecks, runDescriptorChecks } from "../src/drivers/drivers.test.js";
+import { runZipChecks } from "../src/zip-dir.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
@@ -2489,6 +2490,15 @@ runDeviceParserChecks(check);
 // throws, to prove one broken driver cannot empty the shelf.
 await runDriverChecks(check);
 runDescriptorChecks(check);
+
+// --- reading a build's size ---
+//
+// An APK is a zip and an iOS artifact is a zip of a .app, so size-report is a
+// zip reader. The three numbers it produces -- archive, download, installed --
+// differ by a lot and quoting one when somebody meant another is the usual way
+// a size report misleads, so the arithmetic is pinned against archives built
+// here, and against the real APK when the Android runner has been built.
+runZipChecks(check);
 
 // --- the synthetic backend's reference digest ---
 //

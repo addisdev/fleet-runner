@@ -45,11 +45,12 @@ import {
 } from "./a11y-tree.js";
 import { countBySeverity, uploadReport, type Finding } from "./web/shared.js";
 import { ADB, batteryPct, hasApp, launchApp, processAlive } from "./workloads/device.js";
+// Moved out so a workload directory can run a flow without importing the
+// executor, which would start a second poll loop. Same move device.ts made.
+import { FLOWS_DIR, MAESTRO, resolveFlow, runFlow } from "./workloads/flows.js";
 import { discoverWorkloads, loadRun, type LoadedWorkload } from "./workloads/registry.js";
 import type { Target, WorkloadCtx } from "./workloads/types.js";
 
-const FLOWS_DIR = process.env.FLEET_FLOWS_DIR ?? path.resolve("flows");
-const MAESTRO = process.env.MAESTRO_BIN ?? path.join(os.homedir(), ".maestro/bin/maestro");
 
 export type Job = {
   job_id: string;
@@ -824,45 +825,6 @@ async function relaunchApp(t: Target, appId: string, args: string[] = []): Promi
     await sleep(500);
   }
   await launchApp(t, appId, args);
-}
-
-/** A flow path under FLOWS_DIR, refusing escapes the way the web specs do. */
-function resolveFlow(name: string): string {
-  const root = path.resolve(FLOWS_DIR);
-  const flow = path.resolve(root, name);
-  if (flow !== root && !flow.startsWith(root + path.sep)) throw new Error(`the flow ${name} escapes the flows dir`);
-  if (!existsSync(flow)) throw new Error(`flow not found: ${flow}`);
-  return flow;
-}
-
-/**
- * Run one Maestro flow against one device, with `cwd` set to where its
- * screenshots should land.
- *
- * The cwd is the whole mechanism: `takeScreenshot: home` inside a flow writes
- * `home.png` relative to the working directory, so pointing the working
- * directory at this locale's folder is what files a flow's shots under the
- * right locale without the flow knowing anything about locales.
- *
- * Returns the failure text, or null. A failing flow is not thrown, because
- * every caller wants to record it against one cell of a matrix and carry on
- * with the rest.
- */
-async function runFlow(
-  t: Target, flow: string, cwd: string, env: Record<string, string>, timeoutMs: number,
-): Promise<string | null> {
-  mkdirSync(cwd, { recursive: true });
-  try {
-    await exec(
-      MAESTRO,
-      ["--device", t.id, "test", ...Object.entries(env).flatMap(([k, v]) => ["-e", `${k}=${v}`]), flow],
-      { timeout: timeoutMs, cwd, maxBuffer: 32 * 1024 * 1024 },
-    );
-    return null;
-  } catch (e) {
-    const err = e as { stdout?: string; message?: string };
-    return `${err.stdout ?? ""}${err.message ?? ""}`.trim().slice(-400) || "maestro failed";
-  }
 }
 
 /** Every PNG in a directory, by name, in a stable order. */
