@@ -26,11 +26,13 @@ independently of the version below.
 
 ### Added
 
-- **`runner-ios/launch-smoke.sh`, run by CI.** It installs the built app on the
-  oldest simulator runtime available and asserts the process survives, because
-  the iOS job had only ever proved that the app compiles. It picks the oldest
-  runtime deliberately: back-deployment is what breaks, and the newest runtime
-  is the one that hides it.
+- **Two iOS checks, run by CI, because the job had only ever proved the app
+  compiles.** `check-backdeploy.sh` fails if the app links a Swift overlay that
+  the SDK says has moved, which is the exact shape of the bug above and takes
+  seconds. `launch-smoke.sh` installs on the oldest runtime available and
+  asserts the process survives. The static one carries the weight: a CI runner
+  ships only the newest iOS runtime, and that is precisely where a
+  back-deployment bug does not reproduce.
 
 ## [0.3.0] — 2026-09-05
 

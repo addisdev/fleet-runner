@@ -10,6 +10,12 @@
 # Run against the OLDEST runtime the machine has, because back-deployment is
 # the thing that breaks and the newest runtime is the one that hides it.
 #
+# Which is also this script's limit, and worth knowing: a GitHub macOS runner
+# ships only the newest iOS runtime, so on CI "oldest available" is the newest
+# there is, and the bug above would NOT reproduce here. `check-backdeploy.sh`
+# is what catches that class anywhere; this catches a process that dies at
+# launch for any reason, on whatever runtime is to hand.
+#
 #   ./launch-smoke.sh [path/to/FleetRunner.app]
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
