@@ -12,6 +12,26 @@ independently of the version below.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The iOS runner could not launch on any simulator runtime newer than 18.4.**
+  `import WebKit` plus one call to `callAsyncJavaScript` made the linker
+  hard-require `/usr/lib/swift/libswiftWebKit.dylib`, because for a deployment
+  target below 18.4 the SDK's `$ld$previous$` rules place about thirty
+  Swift-only WebKit APIs in that library. The overlay was folded into
+  `WebKit.framework` at 18.4 and the standalone dylib stopped shipping, so dyld
+  refused to start the process. The one call is now expressed with
+  `evaluateJavaScript`, which is the plain Objective-C API and back-deploys, and
+  the dependency disappears entirely.
+
+### Added
+
+- **`runner-ios/launch-smoke.sh`, run by CI.** It installs the built app on the
+  oldest simulator runtime available and asserts the process survives, because
+  the iOS job had only ever proved that the app compiles. It picks the oldest
+  runtime deliberately: back-deployment is what breaks, and the newest runtime
+  is the one that hides it.
+
 ## [0.3.0] — 2026-09-05
 
 Documentation, and the things a public project needs that this one did not have.

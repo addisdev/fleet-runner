@@ -33,3 +33,15 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
+
+      # Building it and running it are two different claims, and until this
+      # step existed only the first one was ever checked. That gap shipped a
+      # real bug: `import WebKit` hard-linked a Swift overlay that newer
+      # runtimes no longer carry, and the app died in dyld before main() while
+      # every push stayed green.
+      #
+      # The script picks the OLDEST runtime the machine has, because
+      # back-deployment is what breaks and the newest runtime is the one that
+      # hides it. It prints dyld's own words on failure.
+      - name: Launch it
+        run: ./launch-smoke.sh
