@@ -55,6 +55,64 @@ function findEocd(buf: Buffer): number | null {
   return null;
 }
 
+/** The 32-bit fields' saturation value: "the real number is in the extra field". */
+const U32_MAX = 0xffffffff;
+
+/**
+ * An entry's true sizes, reading the Zip64 extra field when the 32-bit fields
+ * have saturated.
+ *
+ * The extra field is a sequence of `(id, length, data)` blocks; the Zip64
+ * extended-information block is id `0x0001`. Its payload carries only the
+ * fields that actually overflowed, in a fixed order — uncompressed size,
+ * compressed size, local-header offset, disk number — so which 8 bytes mean
+ * what depends on which of the 32-bit fields read `0xffffffff`. Reading them
+ * positionally without that check is the usual way this is got wrong.
+ *
+ * Exported for the tests: an archive with an entry over 4 GiB is not something
+ * a test suite can reasonably build, so the block is asserted against a
+ * hand-constructed extra field instead.
+ */
+export function zip64Sizes(
+  extra: Buffer,
+  uncompressed32: number,
+  compressed32: number,
+): { uncompressed: number; compressed: number } {
+  const needUncompressed = uncompressed32 === U32_MAX;
+  const needCompressed = compressed32 === U32_MAX;
+  if (!needUncompressed && !needCompressed) {
+    return { uncompressed: uncompressed32, compressed: compressed32 };
+  }
+
+  let out = { uncompressed: uncompressed32, compressed: compressed32 };
+  let i = 0;
+  while (i + 4 <= extra.length) {
+    const id = extra.readUInt16LE(i);
+    const len = extra.readUInt16LE(i + 2);
+    const body = i + 4;
+    if (body + len > extra.length) break; // truncated: stop rather than read past
+    if (id === 0x0001) {
+      let at = body;
+      // Same order the spec fixes, and only for the fields that overflowed.
+      if (needUncompressed && at + 8 <= body + len) {
+        out = { ...out, uncompressed: Number(extra.readBigUInt64LE(at)) };
+        at += 8;
+      }
+      if (needCompressed && at + 8 <= body + len) {
+        out = { ...out, compressed: Number(extra.readBigUInt64LE(at)) };
+      }
+      return out;
+    }
+    i = body + len;
+  }
+  // Saturated fields with no Zip64 block is a malformed archive. Returning the
+  // saturated values would report 4.29 GB as though it were measured, so the
+  // caller is told instead.
+  throw new Error(
+    "entry declares a Zip64 size but carries no Zip64 extra field; the archive is malformed",
+  );
+}
+
 /**
  * Every entry in the archive.
  *
@@ -89,13 +147,20 @@ export function readZipEntries(buf: Buffer): ZipEntry[] {
     if (p + 46 > buf.length || buf.readUInt32LE(p) !== CEN_SIG) {
       throw new Error(`zip central directory ended after ${i} of ${entryCount} entries`);
     }
-    const compressed = buf.readUInt32LE(p + 20);
-    const uncompressed = buf.readUInt32LE(p + 24);
     const nameLen = buf.readUInt16LE(p + 28);
     const extraLen = buf.readUInt16LE(p + 30);
     const commentLen = buf.readUInt16LE(p + 32);
     const name = buf.toString("utf8", p + 46, p + 46 + nameLen);
-    entries.push({ name, compressed, uncompressed });
+    // The 32-bit size fields SATURATE at 0xffffffff for an entry over 4 GiB,
+    // and the real values live in the entry's Zip64 extra field. Reading only
+    // these would report a 6 GB payload as 4.29 GB — a plausible-looking number
+    // on a trend line, which is the worst way for a size report to be wrong.
+    const sizes = zip64Sizes(
+      buf.subarray(p + 46 + nameLen, p + 46 + nameLen + extraLen),
+      buf.readUInt32LE(p + 24),
+      buf.readUInt32LE(p + 20),
+    );
+    entries.push({ name, compressed: sizes.compressed, uncompressed: sizes.uncompressed });
     p += 46 + nameLen + extraLen + commentLen;
   }
   return entries;

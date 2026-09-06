@@ -2463,6 +2463,16 @@ runDeviceParserChecks(check);
   check("an expired agent's row survives", detail.status === 200 && detail.body?.expired === true,
     JSON.stringify({ status: detail.status, expired: detail.body?.expired }));
 
+  // The overview must agree with the shelf. Hiding an expired agent from the
+  // device list while still counting it on the front page just moves the ghost
+  // problem to the screen most people read first: fifty CI runs would add fifty
+  // offline devices nobody can click on.
+  const ov = await json("GET", "/api/overview");
+  const totalCounted = ov.body?.devices?.total ?? -1;
+  const listed = ((await json("GET", "/api/devices")).body?.devices ?? []).length;
+  check("the overview counts the same devices the shelf lists",
+    totalCounted === listed, `overview ${totalCounted} vs devices ${listed}`);
+
   // And it can no longer vouch for a workload. This is the one that matters:
   // POST /jobs accepts a workload because some agent declares it, and a ghost
   // declaring `benchmark` would keep the door open forever.

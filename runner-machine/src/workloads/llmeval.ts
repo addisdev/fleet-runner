@@ -50,7 +50,9 @@ import os from "node:os";
 import path from "node:path";
 import type { CollectorClient } from "../collector.js";
 import type { Descriptor, JobSpec, Metrics } from "../protocol.js";
-import { SCHEMA, compact, intParam, stringParam } from "../protocol.js";
+import { SCHEMA, compact, stringParam } from "../protocol.js";
+import { BEACON_MS } from "../beaconing.js";
+import { beacon } from "../telemetry.js";
 import {
   parseEvalSet, parseVerdict, scoreItem, summarise,
   type EvalItem, type Judgement,
@@ -217,7 +219,31 @@ export async function runLlmEval(
           "under the same name.",
         );
       }
+      // Beacon on a clock while judging.
+      //
+      // Each judged item is one HTTP call with a two-minute ceiling, so a set
+      // with a dozen of them against a slow local model outruns the default
+      // ten-minute lease -- and a lapsed lease is requeued, so a second attempt
+      // starts while the first is still calling the judge. Both then post a
+      // final row for the same job, the judge is billed twice, and an attempt
+      // is spent on a job that was never failing.
+      //
+      // This is also the only way a running llm-eval hears that it was
+      // cancelled. Every other long machine workload does this already: build
+      // and serve post explicit beacons, model-convert and dataset-prep use
+      // the Beaconer.
+      let lastBeaconAt = Date.now();
       for (const item of needJudging) {
+        if (Date.now() - lastBeaconAt >= BEACON_MS) {
+          lastBeaconAt = Date.now();
+          const renewed = await client.postBeacon({
+            schema: SCHEMA, kind: "beacon", job_id: job.job_id, device_id: deviceId,
+            beacon: await beacon(),
+          });
+          // Only an explicit false cancels; a beacon that fails to post throws
+          // to the catch below rather than quietly stopping the job.
+          if (!renewed) JobCancellation.cancel(job.job_id);
+        }
         if (JobCancellation.isCancelled(job.job_id)) {
           await client.postResult({
             schema: SCHEMA, kind: "result", job_id: job.job_id, device_id: deviceId,

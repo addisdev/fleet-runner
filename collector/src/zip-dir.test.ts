@@ -17,7 +17,7 @@ import { mkdtempSync, writeFileSync, existsSync, mkdirSync, statSync } from "nod
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readZipFile, readZipEntries, summariseZip, groupOf } from "./zip-dir.js";
+import { readZipFile, readZipEntries, summariseZip, groupOf, zip64Sizes } from "./zip-dir.js";
 
 type Check = (name: string, cond: boolean, detail?: string) => void;
 
@@ -50,6 +50,61 @@ export function runZipChecks(check: Check) {
         return /not a zip/.test((e as Error).message);
       }
     })(), "an unreadable archive must not summarise as a build that got smaller");
+
+  // --- entries over 4 GiB ----------------------------------------------------
+  //
+  // The 32-bit size fields saturate at 0xffffffff and the real values move into
+  // the entry's Zip64 extra field. An archive with a 6 GB entry is not
+  // something a test suite can reasonably build, so the block is asserted
+  // directly: reporting a 6 GB payload as 4.29 GB would look entirely plausible
+  // on a trend line, which is the worst way for a size report to be wrong.
+  {
+    const SIX_GB = 6_000_000_000;
+    const FIVE_GB = 5_000_000_000;
+    const U32 = 0xffffffff;
+
+    // Only the uncompressed size overflowed.
+    const oneField = Buffer.alloc(12);
+    oneField.writeUInt16LE(0x0001, 0);
+    oneField.writeUInt16LE(8, 2);
+    oneField.writeBigUInt64LE(BigInt(SIX_GB), 4);
+    const one = zip64Sizes(oneField, U32, 123);
+    check("a saturated uncompressed size is read from the Zip64 block",
+      one.uncompressed === SIX_GB, String(one.uncompressed));
+    check("and a size that did not overflow is left alone", one.compressed === 123, String(one.compressed));
+
+    // Both overflowed: order is uncompressed then compressed.
+    const bothField = Buffer.alloc(20);
+    bothField.writeUInt16LE(0x0001, 0);
+    bothField.writeUInt16LE(16, 2);
+    bothField.writeBigUInt64LE(BigInt(SIX_GB), 4);
+    bothField.writeBigUInt64LE(BigInt(FIVE_GB), 12);
+    const both = zip64Sizes(bothField, U32, U32);
+    check("both saturated sizes are read in the spec's order",
+      both.uncompressed === SIX_GB && both.compressed === FIVE_GB, JSON.stringify(both));
+
+    // A Zip64 block sitting behind another extra block must still be found.
+    const withPrefix = Buffer.concat([
+      (() => { const b = Buffer.alloc(8); b.writeUInt16LE(0x5455, 0); b.writeUInt16LE(4, 2); return b; })(),
+      oneField,
+    ]);
+    check("a Zip64 block after another extra block is still found",
+      zip64Sizes(withPrefix, U32, 7).uncompressed === SIX_GB);
+
+    // Nothing saturated: the extra field is not even looked at.
+    check("an ordinary entry does not consult the extra field",
+      zip64Sizes(Buffer.alloc(0), 100, 40).uncompressed === 100);
+
+    // Saturated with no Zip64 block is malformed, and must not report 4.29 GB
+    // as though it had been measured.
+    let threw = false;
+    try {
+      zip64Sizes(Buffer.alloc(0), U32, U32);
+    } catch {
+      threw = true;
+    }
+    check("a saturated size with no Zip64 block is refused, not reported as 4.29 GB", threw);
+  }
 
   if (!haveZip()) {
     check("zip archives (SKIPPED — no `zip` on PATH)", true);

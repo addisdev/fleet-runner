@@ -8,6 +8,7 @@ import { networkInterfaces } from "node:os";
 import { PORT } from "../config.js";
 import { db } from "../db.js";
 import { AGE, iso } from "./shared.js";
+import { isTailnetAddress } from "../tailnet.js";
 
 /**
  * Addresses a device on the same network could reach this collector on.
@@ -24,8 +25,11 @@ function reachableBases(): { url: string; address: string; iface: string; kind: 
       if (a.family !== "IPv4" || a.internal) continue;
       // Tailscale hands out 100.64.0.0/10; those work from anywhere on the
       // tailnet, which is the difference between "on the shelf" and "at work".
-      const [o1, o2] = a.address.split(".").map(Number);
-      const tailscale = o1 === 100 && o2 >= 64 && o2 <= 127;
+      //
+      // Shared with the registration allowlist rather than inlined again: two
+      // definitions of "is this a tailnet address" are two places for the same
+      // bug, and the one in tailnet.ts is the one with tests behind it.
+      const tailscale = isTailnetAddress(a.address);
       out.push({
         url: `http://${a.address}:${PORT}`,
         address: a.address,

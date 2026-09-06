@@ -7,7 +7,7 @@
  * minute by whoever's laptop stopped working; a gate that wrongly admits is
  * noticed never.
  */
-import { admit, isTailnetAddress, isLoopback, normaliseIp, parseWhois, peerAllowed } from "./tailnet.js";
+import { admit, isTailnetAddress, isTailscaleV6, isLoopback, normaliseIp, parseWhois, peerAllowed } from "./tailnet.js";
 
 type Check = (name: string, cond: boolean, detail?: string) => void;
 
@@ -34,6 +34,27 @@ export function runTailnetChecks(check: Check) {
   check("100.128.x.x is above the range", !isTailnetAddress("100.128.0.1"));
   check("a LAN address is not the tailnet", !isTailnetAddress("192.168.50.27"));
   check("nonsense is not an address", !isTailnetAddress("100.64.0"), "a short address must not parse");
+
+  // --- and the other family ---------------------------------------------
+  //
+  // Tailscale gives every node an address in fd7a:115c:a1e0::/48 as well as a
+  // 100.x one, and which one a peer arrives on is decided by its resolver, not
+  // by the collector. A check that knew only about IPv4 would admit an
+  // unlisted node that simply connected over v6, while looking like it was
+  // working — which is the only direction this must never fail in.
+  check("a Tailscale IPv6 address is the tailnet", isTailnetAddress("fd7a:115c:a1e0::1"));
+  check("a full-length Tailscale IPv6 address is the tailnet",
+    isTailnetAddress("fd7a:115c:a1e0:ab12:cd34:ef56:7890:1234"));
+  check("case does not matter", isTailscaleV6("FD7A:115C:A1E0::1"));
+  check("a zone suffix is not part of the address", isTailscaleV6("fd7a:115c:a1e0::1%en0"));
+  check("another ULA is not the tailnet", !isTailnetAddress("fd00:1234:5678::1"));
+  // The prefix is three groups; sharing characters with the third is not
+  // sharing the network.
+  check("a longer third group is a different network", !isTailscaleV6("fd7a:115c:a1e0f::1"));
+  // `::` here elides a zero third group, so this is fd7a:115c:0:...:a1e0:1.
+  check("an elision in the middle of the prefix is not the prefix", !isTailscaleV6("fd7a:115c::a1e0:1"));
+  check("ordinary IPv6 is not the tailnet", !isTailnetAddress("2001:db8::1"));
+  check("loopback v6 is not the tailnet", !isTailnetAddress("::1"));
 
   check("loopback in both families", isLoopback("127.0.0.1") && isLoopback("::1") && isLoopback("127.1.2.3"));
   check("Node's IPv4-mapped prefix is stripped", normaliseIp("::ffff:100.101.102.103") === "100.101.102.103");
@@ -81,6 +102,13 @@ export function runTailnetChecks(check: Check) {
   const unresolved = admit("100.101.102.103", LIST, null);
   check("a tailnet address that cannot be identified is REFUSED", !unresolved.admit, unresolved.why);
   check("and the refusal says what to check", /tailscale CLI/.test(unresolved.why), unresolved.why);
+
+  // The whole point of the v6 work: the same decision over the other family.
+  const v6 = "fd7a:115c:a1e0::1";
+  check("an unlisted node over IPv6 is refused, not waved through",
+    !admit(v6, LIST, stranger).admit, admit(v6, LIST, stranger).why);
+  check("an IPv6 peer that cannot be identified is refused", !admit(v6, LIST, null).admit);
+  check("a listed node over IPv6 is admitted", admit(v6, LIST, known).admit);
 
   // The other half of the design: this fences the tailnet, not the house.
   check("a LAN peer is still admitted under the existing posture",

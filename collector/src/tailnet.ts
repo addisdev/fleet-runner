@@ -44,16 +44,51 @@
 import { execFile } from "node:child_process";
 
 /**
- * Tailscale's address range: 100.64.0.0/10, the CGNAT block.
+ * Is this one of Tailscale's own addresses?
  *
- * Matched on the numeric prefix rather than by string, because 100.6.x.x and
- * 100.640.x.x are both outside it and both start with "100.6".
+ * BOTH families, and the IPv6 half is not optional. Tailscale gives every node
+ * a 100.64.0.0/10 address *and* an address in fd7a:115c:a1e0::/48, and which
+ * one a peer arrives on is decided by its resolver and its route, not by
+ * anything the collector controls. A check that knew only about IPv4 would let
+ * an unlisted node in simply by connecting over v6 — the allowlist would look
+ * like it was working and would not be. That is the one direction this must
+ * never fail in.
+ *
+ * IPv4 is matched on the numeric prefix rather than by string, because
+ * 100.6.x.x and 100.63.x.x both start with "100.6" and neither is in the range.
  */
 export function isTailnetAddress(ip: string): boolean {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
-  if (!m) return false;
-  const [a, b] = [Number(m[1]), Number(m[2])];
-  return a === 100 && b >= 64 && b <= 127;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return a === 100 && b >= 64 && b <= 127;
+  }
+  return isTailscaleV6(ip);
+}
+
+/**
+ * fd7a:115c:a1e0::/48 — Tailscale's ULA prefix.
+ *
+ * Compared group by group after expanding `::`, rather than by string prefix:
+ * `fd7a:115c:a1e0f::1` shares five characters of its third group with the
+ * prefix and is a different network, and an address written `FD7A:115C:A1E0::1`
+ * is the same one. A zone suffix (`%en0`) is stripped first, because a
+ * link-local form can carry one and it is not part of the address.
+ */
+export function isTailscaleV6(ip: string): boolean {
+  const bare = ip.split("%")[0].toLowerCase();
+  if (!bare.includes(":")) return false;
+  const halves = bare.split("::");
+  if (halves.length > 2) return false;
+  const head = halves[0] ? halves[0].split(":") : [];
+  // Only the first three groups matter, and `::` can only stand for groups
+  // AFTER whatever precedes it — so if the head is shorter than three groups,
+  // the elision covers one of them and the address cannot start with the
+  // prefix (an elision is never a single zero group, and every prefix group
+  // here is non-zero).
+  if (head.length < 3) return false;
+  const want = ["fd7a", "115c", "a1e0"];
+  return want.every((w, i) => head[i].replace(/^0+/, "") === w.replace(/^0+/, ""));
 }
 
 /** Loopback, in both families, and the IPv4-mapped form Node hands over. */
