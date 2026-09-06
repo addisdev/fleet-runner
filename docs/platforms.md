@@ -12,7 +12,7 @@ that says which ones somebody has watched register is worth something.
 | Android phone, tablet | `runner-android` | `adb install`, or sideload | **yes** — the original shelf |
 | iPhone, iPad | `runner-ios` | Xcode, TestFlight internal | **yes** |
 | iOS simulator | `runner-ios` | `simctl install` | **yes** |
-| macOS, Linux, Windows | `runner-machine` | `npm start`, or a LaunchAgent / systemd unit | **macOS yes**; Linux and Windows run their test suite in CI, and neither has registered against a real collector |
+| macOS, Linux, Windows | `runner-machine` | `npm start`, or a LaunchAgent / systemd unit | **macOS yes.** Linux and Windows run their suite in CI on x64 and arm64, and neither has registered against a real collector — see [what each one reports](#what-a-cloud-runner-actually-reports) |
 | Android emulator | `runner-android` | `adb install` to the emulator | **yes** |
 
 ## What Wave 5 added
@@ -25,7 +25,7 @@ that says which ones somebody has watched register is worth something.
 | **Wear OS** | `runner-android` | `adb install` over Wi-Fi debugging | **no** — the watch feature flag is read and declared; never run on one |
 | **Apple TV (tvOS)** | `runner-ios`, `FleetRunnerTV` target | `devicectl` or `simctl` | **builds** — `xcodebuild -scheme FleetRunnerTV` succeeds. No Apple TV has run it |
 | **Vision Pro (visionOS)** | `runner-ios`, `FleetRunnerVision` target | `devicectl` or `simctl` | **no** — the target is written and has never been compiled; the visionOS platform is not installed on the machine it was written on |
-| **Raspberry Pi, Jetson, Steam Deck** | `runner-machine` | `install-agent.sh`, or the Docker image | **no** — arm64 Linux runs the suite in CI, which is evidence the descriptor probes work, not that a board has registered |
+| **Raspberry Pi, Jetson, Steam Deck** | `runner-machine` | `install-agent.sh`, or the Docker image | **no** — but arm64 Linux in CI reports a nearly complete descriptor, so a board should register cleanly. No board has |
 | **Anything with Docker** | `runner-machine` | `docker run` | **no** — the Dockerfile has never been built; Docker was not available on the machine that wrote it |
 
 ## Android: one APK, every shape
@@ -119,6 +119,48 @@ the collector's 25-second long poll, because a job handed to a tab that went
 hidden in that window would be measured through the throttle. It registers with
 a TTL, so a tab that is *closed* leaves the shelf instead of sitting there
 forever as an offline device nobody can find.
+
+## What a cloud runner actually reports
+
+The machine agent's CI matrix prints the descriptor each platform would send
+rather than asserting on it, because a cloud runner is allowed to be mostly
+nulls and pinning a field would fail the day a hosted image changes. What it
+printed on its first run is worth writing down, because the two Linux and
+Windows answers are nothing like each other.
+
+**arm64 Linux** — near enough complete:
+
+```json
+{ "model": "Virtual Machine", "soc": null, "ram_mb": 15947,
+  "os": "linux-ubuntu-24.04", "platform": "linux", "kind": "ci",
+  "arch": "arm64", "cpu_cores": 4 }
+```
+
+Only `soc` is missing: `/proc/cpuinfo` on arm64 has no `model name` line, which
+is the field the probe reads. A Raspberry Pi should register cleanly, and would
+also fill `model` from the device tree.
+
+**Windows** — almost nothing:
+
+```json
+{ "model": null, "soc": null, "ram_mb": null, "os": null,
+  "platform": "windows", "kind": "ci", "arch": "x64",
+  "gpu": null, "vram_mb": null, "cpu_cores": 4 }
+```
+
+Every field there comes from `wmic`, and **`wmic` is a removed feature on
+current Windows**, not merely deprecated. Only the fields Node answers by
+itself survive.
+
+The agent still registers and still runs work — the probes degrade to nulls
+exactly as designed, and nothing crashes. But `os` being null means a
+`targets.match` expression can never select a Windows machine by its OS, and
+`ram_mb` being null means it cannot be selected by memory either. Until the
+Windows probes move to `Get-CimInstance`, a Windows agent is addressable only
+by `device_id`, `platform` and `arch`.
+
+That is the finding the platform matrix was added to produce, and it is the
+reason it prints the descriptor rather than asserting on it.
 
 ## Adding one
 
