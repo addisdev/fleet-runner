@@ -65,7 +65,71 @@ export type IosDeviceInfo = {
 };
 
 /**
- * Real, reachable iPhones and iPads -- not simulators, whatever devicectl calls them.
+ * devicectl's platform name, as the fleet spells it -- or null for something
+ * that is not an Apple device at all.
+ *
+ * devicectl says "iOS", "tvOS", "watchOS", "xrOS"; the fleet says "ios",
+ * "tvos", "watchos", "visionos". The odd one is xrOS, which is what the
+ * toolchain still calls visionOS internally: matching on the marketing name
+ * would silently drop every headset.
+ *
+ * This exists because `physicalIos` used to test `platform !== "iOS"` and
+ * return false for everything else. That one line is why an Apple TV plugged
+ * into the executor host was invisible to the fleet -- not missing support,
+ * just a filter that had no reason to be that narrow.
+ *
+ * A platform this does not know returns null and the device is ignored, which
+ * is deliberate: a Mac appears in `devicectl list devices` too, and the host
+ * running the executor is not one of its own targets.
+ */
+export function applePlatform(devicectlPlatform: string | undefined): string | null {
+  switch (devicectlPlatform) {
+    case "iOS": return "ios";
+    case "tvOS": return "tvos";
+    case "watchOS": return "watchos";
+    case "xrOS": case "visionOS": return "visionos";
+    default: return null;
+  }
+}
+
+/**
+ * The platform behind a CoreSimulator runtime identifier.
+ *
+ * simctl groups booted devices under keys like
+ * `com.apple.CoreSimulator.SimRuntime.tvOS-18-2`. The suffix carries the
+ * platform and the version, and the executor threw both away and called every
+ * booted simulator "ios" -- which is why a booted Apple TV simulator and a
+ * booted iPhone were the same thing to the fleet.
+ *
+ * Unknown runtimes return null rather than a guess, so a runtime Apple adds
+ * later is skipped visibly instead of being filed under iOS.
+ */
+export function simulatorPlatform(runtimeKey: string): string | null {
+  const m = /SimRuntime\.([A-Za-z]+)-/.exec(runtimeKey);
+  if (!m) return null;
+  switch (m[1]) {
+    case "iOS": return "ios";
+    case "tvOS": return "tvos";
+    case "watchOS": return "watchos";
+    case "xrOS": case "visionOS": return "visionos";
+    default: return null;
+  }
+}
+
+/**
+ * Real, reachable Apple hardware -- not simulators, whatever devicectl calls them.
+ *
+ * This was `physicalIos` and it returned iPhones and iPads only, because its
+ * first line was `platform !== "iOS"`. That was never a support boundary, only
+ * the platforms that happened to be on the shelf: an Apple TV cabled to this
+ * Mac was filtered out one line into discovery and never appeared anywhere.
+ * Widening it is what makes a tvOS or watchOS device schedulable at all.
+ *
+ * What it does NOT do is make every workload applicable to every Apple device.
+ * A handler that wants iPhones asks for `platform === "ios"` and gets them; the
+ * watch that now appears is a `watchos` target and is selected only by a job
+ * that asked for one. The old behaviour survives as the narrower query it
+ * always should have been.
  *
  * Two fields, and neither is the obvious one.
  *
@@ -82,9 +146,9 @@ export type IosDeviceInfo = {
  * network is only reachable while it is actually on the network, and there
  * tunnelState is the best signal available.
  */
-export function physicalIos(all: IosDeviceInfo[]): IosDeviceInfo[] {
+export function physicalApple(all: IosDeviceInfo[]): IosDeviceInfo[] {
   return all.filter((d) => {
-    if (d.platform !== "iOS") return false;
+    if (applePlatform(d.platform) === null) return false;
     if (d.transport === undefined || d.transport === "sameMachine") return false;
     if (d.pairingState !== undefined && d.pairingState !== "paired") return false;
     // Plugged in is plugged in.
@@ -94,7 +158,7 @@ export function physicalIos(all: IosDeviceInfo[]): IosDeviceInfo[] {
 }
 
 /**
- * Why the fleet is ignoring an attached-looking iOS device, and what to do.
+ * Why the fleet is ignoring an attached-looking Apple device, and what to do.
  *
  * The first version of this said "is paired but not reachable -- unlock it,
  * trust this Mac" for every case. That was actively misleading when the device
@@ -105,10 +169,10 @@ export function physicalIos(all: IosDeviceInfo[]): IosDeviceInfo[] {
  *
  * Returns null when the device is fine and needs no explanation.
  */
-export function iosNotReadyReason(d: IosDeviceInfo): string | null {
-  if (d.platform !== "iOS") return null;
+export function appleNotReadyReason(d: IosDeviceInfo): string | null {
+  if (applePlatform(d.platform) === null) return null;
   if (d.transport === undefined || d.transport === "sameMachine") return null;
-  if (physicalIos([d]).length > 0) return null; // it is in
+  if (physicalApple([d]).length > 0) return null; // it is in
 
   const name = d.marketingName ?? d.name ?? d.identifier;
   if (d.pairingState !== undefined && d.pairingState !== "paired") {

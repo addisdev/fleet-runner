@@ -176,7 +176,8 @@ final class FleetAgent: ObservableObject {
     /// pair of things that agree only until someone edits one of them — and the
     /// failure is silent in the worst direction: the collector routes us work we
     /// bounce straight back as "not supported by this runner yet".
-    private static let routes: [Route] = [
+    private static let routes: [Route] = {
+        var routes: [Route] = [
         Route(capability: "benchmark", workload: "benchmark") { agent, job, client, deviceId, _ in
             await agent.runBenchmark(job: job, client: client, deviceId: deviceId)
         },
@@ -204,10 +205,27 @@ final class FleetAgent: ObservableObject {
         // hand us those and get them bounced straight back. `webkit` is the
         // backend because a WKWebView is what captures — see WebShots.profile
         // for why that word is not "safari".
-        Route(capability: "web-shots:webkit", workload: "web-shots", backend: "webkit") { _, job, client, deviceId, cache in
-            await Workloads.runWebShots(job: job, client: client, deviceId: deviceId, artifacts: cache)
-        },
-    ]
+        ]
+
+        // Appended rather than written inline because a `#if` cannot appear
+        // inside an array literal in Swift, and this entry is genuinely
+        // platform-dependent: tvOS has no WebKit at all.
+        //
+        // Compiled out rather than left to fail at run time, which means an
+        // Apple TV never DECLARES web-shots — and since `dispatchedWorkloads`
+        // is derived from this list, the capability and the code stay one act
+        // on every platform. A television advertising a screenshot workload it
+        // cannot run would take those jobs off the queue from the phones that
+        // can, and bounce them back as "not supported by this runner yet".
+        #if canImport(WebKit)
+        routes.append(
+            Route(capability: "web-shots:webkit", workload: "web-shots", backend: "webkit") { _, job, client, deviceId, cache in
+                await Workloads.runWebShots(job: job, client: client, deviceId: deviceId, artifacts: cache)
+            })
+        #endif
+
+        return routes
+    }()
 
     /// What this device declares at registration, so the collector's routing
     /// only offers it work it can run. Derived from `routes` rather than

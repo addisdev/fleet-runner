@@ -114,7 +114,20 @@ export type Device = {
   last_net: string | null;
   pools_reported: string[];
   pools_override: string[] | null;
-  platform: "ios" | "android";
+  /**
+   * What the agent says it runs. An open string, not a union: the fleet gained
+   * a laptop, a TV, a watch and a browser tab after this type was written, and
+   * a union here would have had to be edited before any of them could show up
+   * correctly. Agents that predate the field are still reported as ios/android
+   * by the collector's fallback.
+   */
+  platform: string;
+  /** Form factor, when the agent declared one: phone, tablet, laptop, tv, watch, sbc, browser… */
+  kind: string | null;
+  /** Seconds of silence an ephemeral agent survives; null for a shelf device. */
+  ttl_s: number | null;
+  /** True once an ephemeral agent's window closed. Such devices are hidden unless asked for. */
+  expired: boolean;
   simulator: boolean;
   status: DeviceStatus;
   age_s: number | null;
@@ -211,7 +224,14 @@ export type Overview = {
   health: Health;
 };
 
-export type DeviceList = { total: number; pools: string[]; devices: Device[] };
+export type DeviceList = {
+  total: number;
+  /** Facets over every device, not the filtered set, so a filter never empties its own menu. */
+  pools: string[];
+  platforms: string[];
+  kinds: string[];
+  devices: Device[];
+};
 
 export type DeviceDetail = Device & {
   counts: { results: number; beacons: number };

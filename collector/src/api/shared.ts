@@ -59,6 +59,27 @@ export function capabilityMatches(
   return !!backend && declared.includes(`${workload}:${backend}`);
 }
 
+/**
+ * Has this ephemeral agent's window closed?
+ *
+ * False for everything on the shelf: a NULL ttl_s is a permanent device, and a
+ * permanent device that is merely offline must never disappear -- being able
+ * to see that a phone has been dark for three days IS the answer somebody
+ * wanted.
+ *
+ * True only for an agent that asked to be forgotten and then went quiet for
+ * longer than it said. The row is kept either way; what expiry changes is that
+ * the queue stops offering it work and the shelf stops listing it, so the
+ * results it already posted stay queryable and attributable forever.
+ */
+export function isExpired(row: { ttl_s?: number | null }, ageS: number | null): boolean {
+  const ttl = row.ttl_s;
+  if (typeof ttl !== "number" || !Number.isFinite(ttl) || ttl <= 0) return false;
+  // A device with no last_seen at all cannot be shown to be within its window.
+  if (ageS === null) return true;
+  return ageS > ttl;
+}
+
 // Devices beacon every 60 s. One missed beacon is normal (the runner may be
 // mid-inference); five missed beacons means something is wrong; a quarter hour
 // of silence means the device is off the shelf, asleep, or dead.
@@ -111,6 +132,50 @@ export function beaconFields(sample: Record<string, unknown> | null) {
     process_alive: typeof b.process_alive === "boolean" ? b.process_alive : null,
     job_id: typeof sample.job_id === "string" ? sample.job_id : null,
   };
+}
+
+/**
+ * Which platform a device runs, and what kind of thing it is.
+ *
+ * Both are DECLARED by the agent in its descriptor. Neither is a closed set:
+ * the fleet gained a laptop before it gained the vocabulary to say so, and
+ * every platform added since — a TV stick, a watch, a browser tab, a
+ * single-board computer — would otherwise have needed an edit here before it
+ * could register honestly.
+ *
+ * The fallback is the reason this is a function rather than a field read. The
+ * shelf's Android and iOS agents predate `platform`, and the old rule was a
+ * regex over `descriptor.os`: iOS if it looked like iOS, Android otherwise.
+ * That rule is kept EXACTLY, for agents that send nothing — same "no key means
+ * no opinion" contract capabilities already has, so a collector upgrade does
+ * not relabel a running shelf. What changes is that an agent which does say is
+ * believed, including when it says something neither of those two words
+ * covers.
+ *
+ * The `else android` half of the old rule is also why this could not simply be
+ * widened in place: it does not report a platform, it reports a guess, and a
+ * machine runner registering as "android" was that guess being wrong out loud.
+ */
+export function devicePlatform(descriptor: Record<string, unknown>): string {
+  const declared = descriptor.platform;
+  if (typeof declared === "string" && declared.trim() !== "") return declared.trim().toLowerCase();
+  return /ios|iphone|ipad/i.test(String(descriptor.os ?? "")) ? "ios" : "android";
+}
+
+/**
+ * The form factor, or null when the agent did not say.
+ *
+ * Null rather than a guess: a phone and a TV stick running the same Android
+ * build are indistinguishable from the descriptor, and inventing an answer
+ * would put a television in a table of handsets. The machine runner has
+ * reported laptop/desktop since it existed; everything else is new vocabulary
+ * (phone, tablet, watch, tv, headset, sbc, browser, ci, container) and no
+ * value here is enforced — the queue routes on capabilities and match
+ * expressions, and this is what a person reads.
+ */
+export function deviceKind(descriptor: Record<string, unknown>): string | null {
+  const declared = descriptor.kind;
+  return typeof declared === "string" && declared.trim() !== "" ? declared.trim().toLowerCase() : null;
 }
 
 /** Simulators are not hardware. Every view that compares devices has to be able

@@ -11,11 +11,38 @@ defaults:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # The agent claims to run on macOS, Linux and Windows, on x64 and on arm64.
+    # Until this matrix existed, that claim was tested on exactly one of the six
+    # combinations — and the descriptor is seven shell-outs to tools that differ
+    # on every one of them.
+    #
+    # The Windows entry is the one expected to find things. `wmic` is a removed
+    # feature on current Windows 11, not merely deprecated, so the descriptor's
+    # Windows path may answer nothing at all; that is a real result about a real
+    # platform rather than a broken test, and the probes are contracted to
+    # return nulls rather than throw when a tool is missing.
+    #
+    # ubuntu-24.04-arm stands in for the single-board computers: a Raspberry Pi
+    # and a Jetson are arm64 Linux, and this is the cheapest possible proof that
+    # one will register before anybody plugs one in. Both arm and Windows
+    # runners are free for public repositories.
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         node: ["22", "24"]
+        include:
+          # One Node version off the main axis for each additional platform:
+          # the matrix is about the OS probes, and doubling every OS by Node
+          # version buys coverage of the same JavaScript twice.
+          - os: ubuntu-24.04-arm
+            node: "24"
+          - os: macos-latest
+            node: "24"
+          - os: windows-latest
+            node: "24"
 
     steps:
       - uses: actions/checkout@v4
@@ -33,3 +60,13 @@ jobs:
       # there by declaring `benchmark` and nothing else. If a probe ever starts
       # guessing instead of answering, this is where it shows up.
       - run: npm test
+
+      # What the agent would actually tell a collector about this machine.
+      #
+      # Not an assertion — the descriptor is allowed to be mostly nulls on a
+      # cloud runner, and pinning any field would fail the day a hosted image
+      # changes. It is printed so that the answer on Windows and on arm64 is
+      # visible in a log rather than inferred from a passing test, which is the
+      # difference between "the suite is green" and "we know what it reports".
+      - name: What this machine reports
+        run: npx tsx -e "import('./src/descriptor.js').then(async m => console.log(JSON.stringify(await m.describe(), null, 2)))"

@@ -20,13 +20,38 @@
  * never LLM numbers.
  */
 import { createHash } from "node:crypto";
-import type { Backend, IterResult } from "./types.js";
+import type { Attestation, Backend, IterResult } from "./types.js";
 import type { JobSpec } from "../protocol.js";
 import { intParam } from "../protocol.js";
 
 /** Hash rounds per simulated token, over a 4 KiB block. */
 export const ROUNDS_PER_TOKEN = 1000;
 export const BLOCK_SIZE = 4096;
+
+/**
+ * How many rounds the attestation covers. One token's worth, which is a few
+ * milliseconds and cheap enough to compute on every benchmark.
+ *
+ * Fixed, and on a FRESH block, on purpose. Attesting over the job's own rounds
+ * would make the answer depend on prompt_tokens, gen_tokens and how many
+ * iterations had already mutated the block -- so two honest runners given
+ * different specs would produce different digests and the check would prove
+ * nothing. A constant is the only shape that is comparable across runners.
+ */
+export const ATTEST_ROUNDS = ROUNDS_PER_TOKEN;
+
+/**
+ * The digest of a fresh block after `rounds` folds.
+ *
+ * This is the number scripts/conformance.ts recomputes from the written
+ * specification, independently of this file. The two agreeing is what the
+ * fleet's cross-platform tok/s column rests on.
+ */
+export function attestDigest(rounds: number = ATTEST_ROUNDS): string {
+  const block = initBlock();
+  foldBlock(block, rounds);
+  return createHash("sha256").update(block).digest("hex");
+}
 
 /** block[i] = (i * 31) & 0xff — Kotlin's `(it * 31).toByte()`, Swift's `UInt8(truncatingIfNeeded:)`. */
 export function initBlock(): Buffer {
@@ -102,5 +127,9 @@ export class SyntheticBackend implements Backend {
 
   unload(): void {
     this.block = null;
+  }
+
+  attest(): Attestation {
+    return { digest: attestDigest(), rounds: ATTEST_ROUNDS };
   }
 }

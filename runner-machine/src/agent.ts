@@ -20,6 +20,7 @@ import { runModelConvert } from "./workloads/modelconvert.js";
 import { runDatasetPrep } from "./workloads/datasetprep.js";
 import { runServe } from "./workloads/serve.js";
 import { runShell } from "./workloads/shell.js";
+import { runLlmEval } from "./workloads/llmeval.js";
 import { SCHEMA, type Descriptor, type JobSpec } from "./protocol.js";
 import * as JobCancellation from "./cancellation.js";
 
@@ -147,9 +148,36 @@ async function beaconLoop(client: CollectorClient): Promise<void> {
 let descriptor: Descriptor | null = null;
 let capabilities: string[] = ["benchmark"];
 
+/**
+ * How long this agent asks to be remembered for, or undefined.
+ *
+ * Undefined is a permanent shelf machine: a laptop that is asleep is still a
+ * laptop and should stay in the registry reading offline. A value says the
+ * opposite -- that this process is temporary and its absence is the end of it
+ * rather than a fault.
+ *
+ * Read from the environment rather than inferred from `kind: "ci"`, because
+ * those are different questions: a CI runner is certainly ephemeral, but so is
+ * a container somebody started by hand, and a self-hosted runner that lives on
+ * a real box is not. The thing that knows is whoever launched the process.
+ */
+export function ttlFromEnv(env: NodeJS.ProcessEnv = process.env): number | undefined {
+  const raw = env.FLEET_DEVICE_TTL_S;
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const n = Number(raw);
+  // A malformed value registers as permanent rather than as some default: an
+  // agent that silently picked its own TTL would expire out from under a job
+  // for a reason nobody wrote down.
+  if (!Number.isInteger(n) || n < 1) {
+    log(`FLEET_DEVICE_TTL_S=${JSON.stringify(raw)} is not a positive integer; registering as a permanent device`);
+    return undefined;
+  }
+  return n;
+}
+
 async function register(client: CollectorClient): Promise<void> {
   descriptor = await describe();
-  await client.register({ device_id: deviceId, descriptor, pools, capabilities });
+  await client.register({ device_id: deviceId, descriptor, pools, capabilities, ttl_s: ttlFromEnv() });
 }
 
 async function agentLoop(client: CollectorClient): Promise<void> {
@@ -225,6 +253,10 @@ async function dispatch(job: JobSpec, client: CollectorClient): Promise<void> {
   }
   if (job.workload === "shell") {
     await runShell(job, client, deviceId, device);
+    return;
+  }
+  if (job.workload === "llm-eval") {
+    await runLlmEval(job, client, deviceId, device);
     return;
   }
   await client.postResult({

@@ -492,7 +492,8 @@ final class WebShotCapture: NSObject, WKNavigationDelegate {
     /// library that no longer ships in newer runtimes, because the overlay was
     /// folded into WebKit.framework at 18.4. Using one of them made the app
     /// fail to *launch*, in dyld, before any of this ran, on every runtime
-    /// newer than the move. `launch-smoke.sh` exists to catch that returning.
+    /// newer than the move. `check-backdeploy.sh`, which CI runs, exists to
+    /// catch that returning.
     ///
     /// `evaluateJavaScript` is the plain Objective-C API and is available on
     /// every runtime this app supports.

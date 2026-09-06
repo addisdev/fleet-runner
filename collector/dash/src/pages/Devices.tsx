@@ -2,7 +2,7 @@
 import { useState } from "preact/hooks";
 import { useApi, type Device, type DeviceList } from "../api.js";
 import { ArtNoDevices } from "../art.js";
-import { DeviceGlyph, Icon } from "../icons.js";
+import { DeviceGlyph, Icon, type GlyphKind } from "../icons.js";
 import { mutate } from "../mutate.js";
 import { refreshNames } from "../names.js";
 import { useQuery } from "../router.js";
@@ -119,11 +119,36 @@ function BatteryMeter({ pct, charging }: { pct: number | null; charging: boolean
 /**
  * Which silhouette a device gets.
  *
- * Read from the reported OS, not from the API's `platform` field: platform is
- * an ios/android split where anything not iOS is called android, so a MacBook
- * running the machine runner would be drawn as a phone.
+ * Three sources, in falling order of how much the device knows about itself.
+ * `kind` is the agent saying what shape it is, and is believed outright.
+ * `platform` answers for agents that name a platform with only one plausible
+ * body — tvOS is a television, watchOS is a watch — but not for the ones where
+ * it does not: `android` covers a phone, a tablet, a TV stick and a headset,
+ * so a device declaring only that falls through to the last rule.
+ *
+ * That last rule is the original one, kept for agents predating both fields.
+ * It used to be the ONLY rule, under a comment explaining that `platform`
+ * could not be used because it was an ios/android split that would draw a
+ * MacBook as a phone. That is no longer true, which is why the field is now
+ * read first rather than worked around.
  */
-function glyphKind(device: Device): "phone" | "laptop" {
+function glyphKind(device: Device): GlyphKind {
+  switch (device.kind) {
+    case "phone": case "tablet": return "phone";
+    case "laptop": case "desktop": case "ci": case "container": return "laptop";
+    case "tv": return "tv";
+    case "watch": return "watch";
+    case "headset": return "headset";
+    case "sbc": case "mcu": case "board": return "board";
+    case "browser": return "browser";
+  }
+  switch (device.platform) {
+    case "web": return "browser";
+    case "tvos": return "tv";
+    case "watchos": return "watch";
+    case "visionos": return "headset";
+    case "macos": case "linux": case "windows": return "laptop";
+  }
   const os = String(device.descriptor.os ?? "").toLowerCase();
   return /^(macos|darwin|linux|windows|win32)/.test(os) ? "laptop" : "phone";
 }
@@ -305,6 +330,7 @@ export function Devices() {
   const status = q.get("status") ?? "";
   const pool = q.get("pool") ?? "";
   const platform = q.get("platform") ?? "";
+  const kind = q.get("kind") ?? "";
   const search = q.get("q") ?? "";
   const hideSims = q.get("simulator") === "false";
   // The shelf leads because the fleet is objects on a rack and that is the
@@ -317,6 +343,7 @@ export function Devices() {
     ["status", status],
     ["pool", pool],
     ["platform", platform],
+    ["kind", kind],
     ["q", search],
     ["simulator", hideSims ? "false" : ""],
   ] as const)
@@ -327,7 +354,7 @@ export function Devices() {
     ["device", "beacon", "job", "lock"],
     30_000,
   );
-  const active = !!(status || pool || platform || search || hideSims);
+  const active = !!(status || pool || platform || kind || search || hideSims);
 
   return (
     <>
@@ -343,11 +370,17 @@ export function Devices() {
             <Panel>
               <Filters
                 active={active}
-                onClear={() => setQuery({ status: null, pool: null, platform: null, q: null, simulator: null })}
+                onClear={() => setQuery({ status: null, pool: null, platform: null, kind: null, q: null, simulator: null })}
               >
                 <Select label="status" value={status} options={["online", "stale", "offline"]} onChange={(v) => setQuery({ status: v })} />
                 <Select label="pool" value={pool} options={d.pools} onChange={(v) => setQuery({ pool: v })} />
-                <Select label="platform" value={platform} options={["android", "ios"]} onChange={(v) => setQuery({ platform: v })} />
+                {/* Faceted from the response, never hard-coded: the platform set is
+                    open, so a literal list here would hide every device the fleet
+                    learned to run on after this file was written. */}
+                <Select label="platform" value={platform} options={d.platforms} onChange={(v) => setQuery({ platform: v })} />
+                {d.kinds.length > 1 && (
+                  <Select label="kind" value={kind} options={d.kinds} onChange={(v) => setQuery({ kind: v })} />
+                )}
                 <Search label="find" value={search} placeholder="id, model, SoC" onChange={(v) => setQuery({ q: v })} />
                 <label class="field checkbox">
                   <input type="checkbox" checked={hideSims} onChange={(e) => setQuery({ simulator: (e.target as HTMLInputElement).checked ? "false" : null })} />

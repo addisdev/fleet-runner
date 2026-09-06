@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 
 import { countXcodebuildTests, xcodebuildDiagnostics } from "../src/xcparse.js";
 import {
-  fleetOwned, physicalIos, simulatorName, isAndroidEmulatorSerial, iosNotReadyReason,
+  fleetOwned, physicalApple, simulatorName, isAndroidEmulatorSerial, appleNotReadyReason, applePlatform,
   adbFailureIsWorthReporting,
 } from "../src/targets.js";
 import { evalMatch } from "../src/match.js";
@@ -14,6 +14,10 @@ import { parseNetworkProfile } from "../src/network-shape.js";
 import { runPowerChecks } from "../src/power.test.js";
 import { runEvalChecks } from "../src/api/evals.test.js";
 import { runDeviceParserChecks } from "../src/device-parsers.test.js";
+import { runDriverChecks, runDescriptorChecks } from "../src/drivers/drivers.test.js";
+import { runZipChecks } from "../src/zip-dir.test.js";
+import { runTailnetChecks } from "../src/tailnet.test.js";
+import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
 const BASE = process.env.FLEET_URL ?? "http://127.0.0.1:8788";
@@ -1571,11 +1575,18 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
       // On the network and answering.
       { identifier: "NETOK001", platform: "iOS", transport: "localNetwork", tunnelState: "connected",
         pairingState: "paired", marketingName: "iPad Air", osVersion: "18.4" },
-      // A paired Apple Watch is not a UI-test target.
+      // A paired Apple Watch. It used to be filtered out one line into
+      // discovery, along with every Apple TV and Vision Pro, because the
+      // filter tested `platform !== "iOS"`. It is a fleet device now -- as a
+      // watchos target, which is a different thing from an iOS one.
       { identifier: "WATCH001", platform: "watchOS", transport: "localNetwork", tunnelState: "connected",
         pairingState: "paired", marketingName: "Apple Watch Series 11" },
+      // A Mac. Never a target: the executor host appears in its own devicectl
+      // listing, and the fleet does not drive itself from outside.
+      { identifier: "THISMAC1", platform: "macOS", transport: "wired", tunnelState: "connected",
+        pairingState: "paired", marketingName: "MacBook Pro" },
     ];
-    const phys = physicalIos(DEVICECTL);
+    const phys = physicalApple(DEVICECTL);
     const ids = phys.map((d) => d.identifier);
     check("a simulator reported by devicectl is not physical hardware",
       !ids.includes("AB0637DA"), JSON.stringify(ids));
@@ -1586,8 +1597,18 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
     check("a network device that is off the network is not offered",
       !ids.includes("OFFLINE1"), "a job would fail on an unreachable device");
     check("a network device that is on the network is offered", ids.includes("NETOK001"), JSON.stringify(ids));
-    check("a watch is not an iOS target", !ids.includes("WATCH001"));
-        check("exactly the reachable hardware is returned", phys.length === 2, JSON.stringify(ids));
+    // The rule changed here, deliberately. A watch was excluded because
+    // discovery only ever looked for iOS; it is now discovered, and what keeps
+    // it out of an iPhone's job is the platform on the target rather than its
+    // absence from the fleet.
+    check("a watch is discovered, as Apple hardware", ids.includes("WATCH001"), JSON.stringify(ids));
+    check("a watch is not an iOS target", applePlatform("watchOS") === "watchos");
+    check("the host Mac is never one of its own targets", !ids.includes("THISMAC1"), JSON.stringify(ids));
+        // Three, not two. The watch is the third, and the count is stated here
+    // rather than left implicit because this assertion is what would catch a
+    // future filter change silently re-narrowing discovery. The Mac is the
+    // one entry in the fixture that must never be counted.
+    check("exactly the reachable hardware is returned", phys.length === 3, JSON.stringify(ids));
 
     // What the executor SAYS about a device it is ignoring. The first version
     // said "is paired but not reachable -- unlock it, trust this Mac" for
@@ -1598,7 +1619,7 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
       identifier: "09A99EFE", platform: "iOS", transport: "wired",
       tunnelState: "disconnected", pairingState: "unpaired", name: "MiPhone 12 Pro",
     };
-    const reason = iosNotReadyReason(unpaired) ?? "";
+    const reason = appleNotReadyReason(unpaired) ?? "";
     check("an unpaired phone is told to pair, not to unlock",
       reason.includes("not paired") && reason.includes("Trust"), reason);
     check("the unpaired message does not blame the lock screen",
@@ -1606,7 +1627,7 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
 
     // Paired but off the network is a different problem with different advice.
     const offNetwork = { ...unpaired, identifier: "OFFNET", transport: "localNetwork", pairingState: "paired" };
-    const r2 = iosNotReadyReason(offNetwork) ?? "";
+    const r2 = appleNotReadyReason(offNetwork) ?? "";
     check("a paired but unreachable phone is described as such",
       r2.includes("not reachable") && !r2.includes("not paired"), r2);
 
@@ -1634,8 +1655,8 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
     check("that phone is online and targetable", seenIt?.status === "online", JSON.stringify(seenIt?.status));
 
     check("a healthy wired phone produces no message",
-      iosNotReadyReason({ ...unpaired, pairingState: "paired" }) === null,
-      String(iosNotReadyReason({ ...unpaired, pairingState: "paired" })));
+      appleNotReadyReason({ ...unpaired, pairingState: "paired" }) === null,
+      String(appleNotReadyReason({ ...unpaired, pairingState: "paired" })));
   }
 }
 
@@ -2390,6 +2411,135 @@ runEvalChecks(check);
 // instead of data, an empty crash buffer versus an unreachable device) only
 // ever appear on real hardware.
 runDeviceParserChecks(check);
+
+// --- ephemeral agents ---
+//
+// A browser tab that was closed and a CI runner whose job finished are not
+// offline devices somebody should go looking for. They said how long to
+// remember them; past that they leave the shelf, and their result rows stay.
+{
+  const EPH = `smoke-ephemeral-${run}`;
+  const PERM = `smoke-permanent-${run}`;
+  const bad = await json("POST", "/devices/register", {
+    device_id: EPH, descriptor: { model: "Tab", os: "web" }, pools: [], ttl_s: 0,
+  });
+  check("a ttl of zero is refused", bad.status === 400, JSON.stringify(bad.body));
+  const tooLong = await json("POST", "/devices/register", {
+    device_id: EPH, descriptor: { model: "Tab", os: "web" }, pools: [], ttl_s: 999_999,
+  });
+  check("a ttl beyond a day is refused", tooLong.status === 400, JSON.stringify(tooLong.body));
+
+  // One second, so the window has certainly closed by the time it is checked.
+  await json("POST", "/devices/register", {
+    device_id: EPH,
+    descriptor: { model: "Chrome", os: "web", platform: "web", kind: "browser" },
+    pools: ["web"], capabilities: ["benchmark"], ttl_s: 1,
+  });
+  // A permanent device registered at the same moment, as the control: whatever
+  // hides the ephemeral one must not touch this.
+  await json("POST", "/devices/register", {
+    device_id: PERM, descriptor: { model: "Pixel", os: "android-14" }, pools: ["web"],
+  });
+
+  const fresh = await json("GET", "/api/devices");
+  const freshIds = (fresh.body?.devices ?? []).map((d: any) => d.device_id);
+  check("an ephemeral agent is listed while its window is open",
+    freshIds.includes(EPH), JSON.stringify(freshIds.slice(0, 8)));
+
+  await new Promise((r) => setTimeout(r, 2200));
+
+  const after = await json("GET", "/api/devices");
+  const afterIds = (after.body?.devices ?? []).map((d: any) => d.device_id);
+  check("an expired ephemeral agent leaves the shelf", !afterIds.includes(EPH), JSON.stringify(afterIds.slice(0, 8)));
+  check("a permanent device is untouched by expiry", afterIds.includes(PERM), JSON.stringify(afterIds.slice(0, 8)));
+
+  const shown = await json("GET", "/api/devices?expired=true");
+  const shownIds = (shown.body?.devices ?? []).map((d: any) => d.device_id);
+  check("an expired agent is still there when asked for", shownIds.includes(EPH), JSON.stringify(shownIds.slice(0, 8)));
+
+  // The row is kept, so the device it describes stays resolvable -- which is
+  // what keeps the results it posted attributable rather than orphaned.
+  const detail = await json("GET", `/api/devices/${EPH}`);
+  check("an expired agent's row survives", detail.status === 200 && detail.body?.expired === true,
+    JSON.stringify({ status: detail.status, expired: detail.body?.expired }));
+
+  // The overview must agree with the shelf. Hiding an expired agent from the
+  // device list while still counting it on the front page just moves the ghost
+  // problem to the screen most people read first: fifty CI runs would add fifty
+  // offline devices nobody can click on.
+  const ov = await json("GET", "/api/overview");
+  const totalCounted = ov.body?.devices?.total ?? -1;
+  const listed = ((await json("GET", "/api/devices")).body?.devices ?? []).length;
+  check("the overview counts the same devices the shelf lists",
+    totalCounted === listed, `overview ${totalCounted} vs devices ${listed}`);
+
+  // And it can no longer vouch for a workload. This is the one that matters:
+  // POST /jobs accepts a workload because some agent declares it, and a ghost
+  // declaring `benchmark` would keep the door open forever.
+  const GHOST = `ghost-workload-${run}`;
+  await json("POST", "/devices/register", {
+    device_id: `smoke-ghost-${run}`, descriptor: { model: "Gone", os: "web" },
+    pools: [], capabilities: [GHOST], ttl_s: 1,
+  });
+  await new Promise((r) => setTimeout(r, 2200));
+  const refused = await json("POST", "/jobs", {
+    schema: 1, job_id: `smoke-ghost-job-${run}`, workload: GHOST, executor: "device",
+  });
+  check("an expired agent cannot vouch for a workload", refused.status === 422, JSON.stringify(refused.body));
+}
+
+// --- discovery: what is attached, and what it is ---
+//
+// Every platform this fleet gained after the phones came in through these
+// functions, and each one is a place where a wrong answer is silent: a booted
+// Apple TV simulator labelled "ios" does not fail, it just lands in a table
+// beside iPhones. The recorded simctl and devicectl responses below are the
+// only way the tvOS, watchOS and visionOS paths are ever exercised, since no
+// machine here is guaranteed to have one booted.
+//
+// runDriverChecks returns a promise: its last assertion drives a driver that
+// throws, to prove one broken driver cannot empty the shelf.
+await runDriverChecks(check);
+runDescriptorChecks(check);
+
+// --- reading a build's size ---
+//
+// An APK is a zip and an iOS artifact is a zip of a .app, so size-report is a
+// zip reader. The three numbers it produces -- archive, download, installed --
+// differ by a lot and quoting one when somebody meant another is the usual way
+// a size report misleads, so the arithmetic is pinned against archives built
+// here, and against the real APK when the Android runner has been built.
+runZipChecks(check);
+
+// --- who is on the other end, when the other end is elsewhere ---
+//
+// Every case in here is a way the gate could fail OPEN. A boundary that
+// wrongly refuses is noticed within the minute by whoever's laptop stopped
+// working; one that wrongly admits is noticed never.
+runTailnetChecks(check);
+
+// --- the synthetic backend's reference digest ---
+//
+// The conformance suite recomputes the synthetic block from the written spec
+// so a runner can be checked against the specification rather than against a
+// shared library. That only works while the reference itself is right, and a
+// reference nobody checks is a reference that can drift into agreeing with a
+// bug. So it is pinned here, to a constant computed independently.
+//
+// If this fails, do NOT update the constant to match. Every benchmark row the
+// fleet has ever stored was produced by the arithmetic this digest describes;
+// a change here means the arithmetic changed, and the stored rows are no longer
+// comparable with the new ones.
+{
+  const D1000 = "d7e8b70dfb48593edebc84967a969e78429f9ac6da8d0c681a4b57a2fe078a84";
+  check("the synthetic reference digest is unchanged after 1000 rounds",
+    referenceDigest(1000) === D1000, referenceDigest(1000));
+  // Zero rounds is the untouched block, which is what a runner attesting
+  // before doing any work would produce -- a distinct value, so the check
+  // cannot pass by both sides being empty.
+  check("zero rounds is not the same digest as a thousand",
+    referenceDigest(0) !== D1000, "the fold is doing nothing");
+}
 
 // --- live mirror ---
 

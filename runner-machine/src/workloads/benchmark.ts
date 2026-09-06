@@ -11,6 +11,7 @@ import type { CollectorClient } from "../collector.js";
 import type { Descriptor, JobSpec, Metrics } from "../protocol.js";
 import { SCHEMA, intParam, compact } from "../protocol.js";
 import { beacon, memorySample } from "../telemetry.js";
+import { BEACON_MS } from "../beaconing.js";
 import * as JobCancellation from "../cancellation.js";
 
 export function backendFor(job: JobSpec, client: CollectorClient): Backend {
@@ -49,6 +50,9 @@ export async function runBenchmark(
     const iters: IterResult[] = [];
     const deadline = sustainedMinutes > 0 ? Date.now() + sustainedMinutes * 60_000 : 0;
     let i = 0;
+    // Seeded at the start of the run, not at zero: the agent's own beacon loop
+    // has just been round, and an immediate second one would be noise.
+    let lastBeaconAt = Date.now();
     while (sustainedMinutes > 0 ? Date.now() < deadline : i < measures) {
       // A cancelled job stops between iterations, never mid-iteration: the rows
       // already posted stay valid, this one just never starts.
@@ -82,17 +86,37 @@ export async function runBenchmark(
         }),
       });
 
-      if (sustainedMinutes > 0 && i % 5 === 0) {
-        // Sustained runs outlive the lease TTL, so renew explicitly rather than
-        // waiting for the background beacon's turn. This ack carries the same
-        // lease_renewed the beacon loop reads, and only an explicit false
-        // cancels: a beacon that fails to post throws to the catch below.
+      // Beacon on a CLOCK, not on an iteration count.
+      //
+      // This used to fire on `sustainedMinutes > 0 && i % 5 === 0`, and both
+      // halves of that were wrong in the same direction. Counting iterations
+      // means a fast backend beacons twelve times a minute and a slow one
+      // beacons once an hour, and gating on sustained mode means an ordinary
+      // benchmark never beacons inside the loop at all.
+      //
+      // The second half is what the conformance suite caught. This beacon is
+      // the ONLY way a running workload hears that it was cancelled — the
+      // collector answers a beacon carrying a job_id with `lease_renewed:
+      // false` once the claim is gone — so a plain twenty-iteration benchmark
+      // could not learn it had been cancelled until the agent's background
+      // beacon came round a minute later, by which time it had finished.
+      // Cancelling it did nothing observable, which is indistinguishable from
+      // cancellation being broken.
+      //
+      // It is also the lease renewal. A non-sustained run longer than its
+      // lease was being requeued underneath itself and run twice.
+      if (Date.now() - lastBeaconAt >= BEACON_MS) {
+        lastBeaconAt = Date.now();
+        // Only an explicit false cancels: a beacon that fails to post throws
+        // to the catch below rather than quietly stopping the job.
         const renewed = await client.postBeacon({
           schema: SCHEMA, kind: "beacon", job_id: job.job_id, device_id: deviceId, beacon: sample,
         });
         if (!renewed) JobCancellation.cancel(job.job_id);
       }
     }
+    // Taken before unload(), and on its own block, so it disturbs nothing.
+    const attestation = backend.attest?.() ?? null;
     backend.unload();
 
     const end = await beacon();
@@ -114,6 +138,12 @@ export async function runBenchmark(
         thermal: thermals.length ? thermals : undefined,
         battery_start_pct: batteryStart,
         battery_end_pct: end.battery_pct ?? undefined,
+        // Only the synthetic backend answers this; the rest return undefined
+        // and compact() drops the keys. It is on the final row rather than on
+        // every iteration because it is a fact about the build, not about a
+        // measurement.
+        synthetic_digest: attestation?.digest,
+        synthetic_rounds: attestation?.rounds,
       }),
     });
   } catch (e) {

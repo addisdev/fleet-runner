@@ -263,3 +263,53 @@ One row per (rule, subject) for as long as the condition holds, resolved when it
 stops. A device offline for six hours is one row with a rising `seen_count`, not
 360 notifications — and nothing is notified twice, ever. [The alerts
 page](deploy/alerts.md) lists the rules.
+
+## Drivers: how the executor reaches a device
+
+Discovery is a registry of drivers, one file each, folded together at startup.
+Adding a way to reach devices is adding a module and a line rather than editing
+a function in the middle of the executor.
+
+| Driver | Reaches |
+|---|---|
+| `adb` | Android phones, tablets, TV sticks, headsets and watches — one driver, every Android shape |
+| `simctl` | booted Apple simulators: iOS, tvOS, watchOS, visionOS |
+| `devicectl` | cabled or paired Apple hardware: iPhone, iPad, Apple TV, Watch, Vision Pro |
+
+Every target carries both `platform` (what it is) and `driver` (what reaches
+it), because the two do not line up: one adb drives four shapes that all call
+themselves `android`, while four Apple platforms are driven by two tools
+depending on whether they are real.
+
+Two rules a driver obeys. **`list()` never throws** — a host with no Xcode has
+no simctl and that is ordinary, so it returns nothing; the exception is a tool
+that is present and failing, which the adb driver reports rather than silently
+emptying the Android shelf. And **a driver names the platform it found and does
+not invent one**. Both Apple tools have always reported the real platform in
+their listings; nothing was reading it, so every booted simulator was labelled
+`ios` and an Apple TV cabled to the host was filtered out one line into
+discovery. Reading what was already there is the whole of what made tvOS,
+watchOS and visionOS schedulable.
+
+## The guarantees, and the test for them
+
+The pages here promise specific things about what happens when something goes
+wrong: a lapsed lease is requeued, an exhausted job fails rather than requeueing
+forever, a corrupted artifact is refused, a cancelled job stays cancelled, and
+nothing is lost when the collector dies mid-job.
+
+```bash
+npm run chaos
+```
+
+starts a throwaway collector on a spare port and breaks each of those on
+purpose. It is a script rather than a workload because the honest version kills
+the collector, and a workload that kills the collector it was dispatched by is
+a workload that can kill the one running the house.
+
+One thing it settled is worth stating here. **The artifact store does not
+re-hash on read, and that is deliberate.** Verifying on read means hashing an
+850 MB model on every download, and the number that would protect is one every
+consumer already computes. The guarantee lives in `fetchArtifact` on both the
+executor and the machine agent — fetch, hash while reading, refuse on mismatch
+— which also covers corruption in transit, as a server-side check never could.

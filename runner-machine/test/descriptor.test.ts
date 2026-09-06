@@ -9,17 +9,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describe, APP_VER, mbFromSizeString, wmicValue } from "../src/descriptor.js";
+import { describe, APP_VER, mbFromSizeString, wmicValue, platformName, processKind } from "../src/descriptor.js";
 import { parsePmsetBatt, speedLimitToThermal, celsiusToThermal, loadOneMinute, idleSeconds, beacon } from "../src/telemetry.js";
 import { firstMatch, finite, run, out, readText, orNull } from "../src/probe.js";
-import { defaultDeviceId } from "../src/agent.js";
+import { defaultDeviceId, ttlFromEnv } from "../src/agent.js";
 
 const FOREIGN: NodeJS.Platform[] = ["linux", "win32", "darwin", "aix"];
 
 for (const platform of FOREIGN) {
   test(`describe("${platform}") never throws and always carries the match fields`, async () => {
     const d = await describe(platform);
-    for (const key of ["model", "soc", "ram_mb", "os", "app_ver", "kind", "arch", "gpu", "vram_mb", "cpu_cores"]) {
+    for (const key of ["model", "soc", "ram_mb", "os", "app_ver", "platform", "kind", "arch", "gpu", "vram_mb", "cpu_cores"]) {
       assert.ok(key in d, `descriptor is missing ${key}`);
     }
     assert.equal(d.app_ver, APP_VER);
@@ -28,7 +28,17 @@ for (const platform of FOREIGN) {
     assert.ok(d.ram_mb === null || d.ram_mb > 0);
     // Everything else is either a real answer or an honest null, never junk.
     for (const v of [d.model, d.soc, d.os, d.gpu]) assert.ok(v === null || typeof v === "string");
-    assert.ok(d.kind === null || d.kind === "laptop" || d.kind === "desktop");
+    // `ci` and `container` are here because `describe` overrides the chassis
+    // probes when the process is in one — and a GitHub runner sets CI=true, so
+    // this very test reports `ci` when it runs in CI and `laptop` when it runs
+    // on somebody's machine. Pinning the three chassis answers was correct
+    // until the environment could override them, and CI is where that first
+    // showed: the assertion passed on every developer machine and failed on
+    // Linux, which is the whole reason the matrix exists.
+    assert.ok(
+      ["laptop", "desktop", "sbc", "ci", "container", null].includes(d.kind),
+      `unexpected kind ${JSON.stringify(d.kind)}`,
+    );
   });
 }
 
@@ -149,4 +159,75 @@ test("the device id is stable, sanitized, and hostname-derived", () => {
   assert.equal(defaultDeviceId(""), "machine-unknown");
   // Same input, same id: the registry key survives a restart.
   assert.equal(defaultDeviceId("rl6p9g7wyt.local"), defaultDeviceId("rl6p9g7wyt.local"));
+});
+
+// --- what this machine calls itself ----------------------------------------
+//
+// The collector's fallback rule, for an agent that declares no platform, reads
+// the `os` string and answers "ios" or "android". A laptop registered as an
+// Android phone for exactly as long as this field did not exist, so the value
+// is not cosmetic: it is what stops a MacBook appearing on a shelf of handsets.
+
+test("the kernel name is not the platform name", () => {
+  assert.equal(platformName("darwin"), "macos");
+  assert.equal(platformName("win32"), "windows");
+  assert.equal(platformName("linux"), "linux");
+});
+
+test("an unfamiliar platform passes through rather than becoming a guess", () => {
+  // A FreeBSD box registering as "freebsd" is more useful than one registering
+  // as "linux", and far more useful than one registering as a phone.
+  assert.equal(platformName("freebsd" as NodeJS.Platform), "freebsd");
+  assert.equal(platformName("openbsd" as NodeJS.Platform), "openbsd");
+});
+
+test("every platform declares one, including the foreign ones", async () => {
+  for (const platform of FOREIGN) {
+    const d = await describe(platform);
+    assert.equal(typeof d.platform, "string");
+    assert.notEqual(d.platform, "", `${platform} declared an empty platform`);
+  }
+});
+
+test("CI is recognised before container, because it is the more useful answer", () => {
+  // A GitHub runner is both. "This will be gone in four minutes" is what a
+  // person reading the shelf needs to know.
+  assert.equal(processKind({ CI: "true" }), "ci");
+  assert.equal(processKind({ CI: "1" }), "ci");
+  assert.equal(processKind({ FLEET_KIND: "ci" }), "ci");
+  assert.equal(processKind({ FLEET_KIND: "container" }), "container");
+});
+
+test("an ordinary machine is neither", () => {
+  // Empty env, and on this machine /.dockerenv does not exist. A developer's
+  // laptop must not be labelled ephemeral.
+  assert.equal(processKind({}), null);
+  // CI unset, or set to something that is not a truthy CI marker.
+  assert.equal(processKind({ CI: "false" }), null);
+  assert.equal(processKind({ CI: "" }), null);
+});
+
+// --- being temporary on purpose ---------------------------------------------
+//
+// A CI runner and a container are ephemeral; a laptop that is asleep is not.
+// Getting this backwards either fills the shelf with ghosts or expires a real
+// machine out from under its own job.
+
+test("no TTL set is a permanent device, which is the default", () => {
+  assert.equal(ttlFromEnv({}), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "   " }), undefined);
+});
+
+test("a positive integer is the window", () => {
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "300" }), 300);
+});
+
+test("a malformed TTL registers as permanent rather than as a guess", () => {
+  // An agent that silently picked its own TTL would expire out from under a
+  // job for a reason nobody wrote down.
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "soon" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "0" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "-5" }), undefined);
+  assert.equal(ttlFromEnv({ FLEET_DEVICE_TTL_S: "2.5" }), undefined);
 });

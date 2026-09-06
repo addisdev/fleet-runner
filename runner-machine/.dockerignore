@@ -1,0 +1,7 @@
+# The image installs its own dependencies from the lockfile; copying a host
+# node_modules in would ship whatever architecture the host happened to be,
+# which is the classic way an arm64 image ends up with x86 binaries in it.
+node_modules
+test
+deploy
+*.md

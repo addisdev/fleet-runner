@@ -76,6 +76,26 @@ data class DeviceDescriptor(
     @SerialName("ram_mb") val ramMb: Long,
     val os: String,
     @SerialName("app_ver") val appVer: String,
+    /**
+     * What this agent runs, and what shape the thing is.
+     *
+     * `platform` stays "android" on every one of them, including a television
+     * and a watch, because it names the SDK this APK is built against and the
+     * protocol surface that follows from it — one binary, sideloaded onto all
+     * of them, speaking one dialect. Apple's platforms genuinely differ (tvOS
+     * and watchOS are separate SDKs producing separate binaries) and the iOS
+     * runner says so; conflating "which SDK" with "which shape" here would
+     * make the two runners disagree about what the field means.
+     *
+     * `kind` is where the shelf's variety actually lives: the same APK on a
+     * phone, a tablet, a TV stick, a watch and a headset differs only in this
+     * field, and it is the difference somebody reading a benchmark table needs.
+     *
+     * Both are sent by every build. A collector that predates them ignores
+     * them, and a collector that has them stops having to guess from `os`.
+     */
+    val platform: String = "android",
+    val kind: String? = null,
 )
 
 @Serializable

@@ -7,27 +7,66 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		011DCF23761ACAD10B58101D /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
+		01ECA471E37DCA04A3D80F07 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E9D9AE076A10932032DC657B /* Assets.xcassets */; };
 		1094A2006ACBE463AD53F5C6 /* Percentile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67ED6D6D92FC1E39451CC4B1 /* Percentile.swift */; };
+		1152FF97F3D6C3FA1944114D /* ThermalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */; };
+		12AF39E9022E57A63DF01379 /* WebShotsManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DDA25661F8D19F7570C9BE /* WebShotsManifest.swift */; };
+		157F96C45F3712EECD4E9094 /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BB3BA830E838835C4AE2AD1 /* Protocol.swift */; };
+		184F14ABE0D11DFF2B245734 /* Workloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0BF52256E0CBF3AC96D589 /* Workloads.swift */; };
 		18549C47E64362A3999CBF54 /* LlamaCppBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */; };
 		188C71F066363470DCF89341 /* WebShotsWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DC249597590EC4A8FDA5ED /* WebShotsWorkload.swift */; };
+		18BEAB0960AD83AFE48DE20E /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086C0F942E2B16C41C3BE0B2 /* Theme.swift */; };
+		2006680D9E42C5A63D9723A9 /* Workloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0BF52256E0CBF3AC96D589 /* Workloads.swift */; };
+		216681192444918BA3D82ABC /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
 		29EE70D2DEBA1D834F56F353 /* SyntheticBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */; };
+		2B62B6343B698CB280B8EBF4 /* SyntheticBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */; };
 		2EA020A1111355C03CB7D665 /* CoreMLBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */; };
+		2F10C4F8ECD2AE9B67C7C5BE /* WebShotsManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DDA25661F8D19F7570C9BE /* WebShotsManifest.swift */; };
+		31172B60712D534BB14E5B71 /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
 		38E30C23455915A872514955 /* Workloads.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A0BF52256E0CBF3AC96D589 /* Workloads.swift */; };
+		53382150CA34110095537B4F /* VantageWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50ADC470CF907EE3A603AA44 /* VantageWorkload.swift */; };
+		55255EFF62E7A26A78C12DDA /* CoreMLBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */; };
+		5705C118B7FB26E2D574C389 /* FleetAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965A118D55FCDC99E6F0349A /* FleetAgent.swift */; };
+		5B5B16582550F8459B0DBEA0 /* LlamaCppBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */; };
 		6424FDD0EDCF7806C66447F0 /* FleetSmokeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */; };
+		69499517AFAA482EF90EAFFC /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
+		6DD2E36CDE8968C477CBC2DD /* VantageWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50ADC470CF907EE3A603AA44 /* VantageWorkload.swift */; };
+		7073190DFA81E8EB8F0E8180 /* EmbedEvalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BAD3B71194EA5B21648E1A4 /* EmbedEvalWorkload.swift */; };
 		8591C734F0CC29AECDA37140 /* BenchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */; };
 		8C5395E6E4FADC66F7314D0F /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35252602851DD4FC6838C5CC /* Telemetry.swift */; };
 		8CEFD6BE130409469707F559 /* WebShotsManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DDA25661F8D19F7570C9BE /* WebShotsManifest.swift */; };
+		8FF3EBF196B1E6DCD9472C27 /* Percentile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67ED6D6D92FC1E39451CC4B1 /* Percentile.swift */; };
+		932EA38D25A1062A6CC334E7 /* ThermalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */; };
+		956034D5EDFAA0ADED398894 /* EmbedEvalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BAD3B71194EA5B21648E1A4 /* EmbedEvalWorkload.swift */; };
+		A28A740A8E4351DED6AEFD8A /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
+		A2EF366D3DC96C8EE08AA1CE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E9D9AE076A10932032DC657B /* Assets.xcassets */; };
+		A8E0A57BF64F97D79735D838 /* LlamaCppBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */; };
 		A98911FE185A5563E58375CA /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BB3BA830E838835C4AE2AD1 /* Protocol.swift */; };
+		ADB66D23A8E3A9F1BDD319A3 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086C0F942E2B16C41C3BE0B2 /* Theme.swift */; };
 		B0BC3C9EA4C05413868B3AC0 /* ThermalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */; };
 		B5E9A656019E3738212E40E7 /* CollectorClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31632F0B6302F50DC2BD764E /* CollectorClient.swift */; };
+		BC16BD9AB0FF2AC9ADD2525D /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
+		BD953D3763A4C324B409521D /* CoreMLBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D322211CB368EAB10C9D22A9 /* CoreMLBackend.swift */; };
 		BE3A885BE8D85275268BEF77 /* FleetAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965A118D55FCDC99E6F0349A /* FleetAgent.swift */; };
 		C0D50E9B5C78CC2307571AAF /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086C0F942E2B16C41C3BE0B2 /* Theme.swift */; };
+		C1DA636DC6DC47A5DC1A434D /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35252602851DD4FC6838C5CC /* Telemetry.swift */; };
 		C8B0A7C9E5C27845AA9ED041 /* EmbedEvalWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BAD3B71194EA5B21648E1A4 /* EmbedEvalWorkload.swift */; };
+		D59986ADFA7E470C1D79ECC6 /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
 		D704AFBF0BF1559D31AE6C9B /* VantageWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50ADC470CF907EE3A603AA44 /* VantageWorkload.swift */; };
+		D9AE90487EB5A55E11575FB8 /* WebShotsWorkload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DC249597590EC4A8FDA5ED /* WebShotsWorkload.swift */; };
+		DADE75193F3E04DD00EE379F /* FleetAgent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 965A118D55FCDC99E6F0349A /* FleetAgent.swift */; };
+		DBD01FA3B968451D5170B34A /* SyntheticBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = D84C3EEBAE6C004B45C56596 /* SyntheticBackend.swift */; };
+		DC25FDB404C7979018685189 /* Percentile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67ED6D6D92FC1E39451CC4B1 /* Percentile.swift */; };
+		E887B5CAD7F637E59F8799A5 /* BenchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */; };
 		E8BB49B17F0F3FA770679941 /* MiniZip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 262BD6B87A5A8B607BE14F2B /* MiniZip.swift */; };
+		EE788924130D3520B9C9BC15 /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
+		F0C23AC8389B2D16C28E1225 /* Telemetry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35252602851DD4FC6838C5CC /* Telemetry.swift */; };
 		F26997129A574EF8076AA67F /* FleetRunnerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */; };
 		F2745828AC9D98D4548FBC33 /* ArtifactCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = FAB0ABC564FF0A636AF37059 /* ArtifactCache.swift */; };
+		F2D593F2AB5BCDC4C7330DB4 /* BenchSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */; };
 		F4EBB4A4C44824C4BE88B9EC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E9D9AE076A10932032DC657B /* Assets.xcassets */; };
+		F5348D96DDC08216C999FD2E /* Protocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BB3BA830E838835C4AE2AD1 /* Protocol.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +83,7 @@
 		086C0F942E2B16C41C3BE0B2 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		09213AE64323164BBF07F61A /* FleetSmokeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetSmokeUITests.swift; sourceTree = "<group>"; };
 		0BAD3B71194EA5B21648E1A4 /* EmbedEvalWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbedEvalWorkload.swift; sourceTree = "<group>"; };
+		2281D65A00EBFE3EF6A917C7 /* FleetRunnerVision.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FleetRunnerVision.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		262BD6B87A5A8B607BE14F2B /* MiniZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniZip.swift; sourceTree = "<group>"; };
 		31632F0B6302F50DC2BD764E /* CollectorClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectorClient.swift; sourceTree = "<group>"; };
 		35252602851DD4FC6838C5CC /* Telemetry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Telemetry.swift; sourceTree = "<group>"; };
@@ -55,6 +95,7 @@
 		87DDA25661F8D19F7570C9BE /* WebShotsManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebShotsManifest.swift; sourceTree = "<group>"; };
 		965A118D55FCDC99E6F0349A /* FleetAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetAgent.swift; sourceTree = "<group>"; };
 		A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetRunnerApp.swift; sourceTree = "<group>"; };
+		AB3F6F0918C2ADED9F41FA6D /* FleetRunnerTV.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FleetRunnerTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppBackend.swift; sourceTree = "<group>"; };
 		C3122AFE32636B1FE9348CA1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchSession.swift; sourceTree = "<group>"; };
@@ -100,7 +141,9 @@
 			isa = PBXGroup;
 			children = (
 				F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */,
+				AB3F6F0918C2ADED9F41FA6D /* FleetRunnerTV.app */,
 				D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */,
+				2281D65A00EBFE3EF6A917C7 /* FleetRunnerVision.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -125,6 +168,24 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2AEC69BC10D1DB35F5B7545E /* FleetRunnerVision */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4F964983B9E09AD6DC879769 /* Build configuration list for PBXNativeTarget "FleetRunnerVision" */;
+			buildPhases = (
+				CC3C5DC8E1C07884B67DEB80 /* Sources */,
+				67D99F1863CD87140BBFE8AC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FleetRunnerVision;
+			packageProductDependencies = (
+			);
+			productName = FleetRunnerVision;
+			productReference = 2281D65A00EBFE3EF6A917C7 /* FleetRunnerVision.app */;
+			productType = "com.apple.product-type.application";
+		};
 		4F7041A3776C49C9FDAFF8BD /* FleetRunner */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F3286BB877D4AA75311CE685 /* Build configuration list for PBXNativeTarget "FleetRunner" */;
@@ -141,6 +202,24 @@
 			);
 			productName = FleetRunner;
 			productReference = F4C3A0BD78A079DFBA23D246 /* FleetRunner.app */;
+			productType = "com.apple.product-type.application";
+		};
+		5365887C1D3BE1AD3A788936 /* FleetRunnerTV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 33B961BFAE37561BF054106D /* Build configuration list for PBXNativeTarget "FleetRunnerTV" */;
+			buildPhases = (
+				BB52382E0A049F30EB58893D /* Sources */,
+				F650A2D7F99249E6702DB357 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FleetRunnerTV;
+			packageProductDependencies = (
+			);
+			productName = FleetRunnerTV;
+			productReference = AB3F6F0918C2ADED9F41FA6D /* FleetRunnerTV.app */;
 			productType = "com.apple.product-type.application";
 		};
 		9E799996EE18A91A258E84CF /* FleetRunnerUITests */ = {
@@ -190,7 +269,9 @@
 			projectRoot = "";
 			targets = (
 				4F7041A3776C49C9FDAFF8BD /* FleetRunner */,
+				5365887C1D3BE1AD3A788936 /* FleetRunnerTV */,
 				9E799996EE18A91A258E84CF /* FleetRunnerUITests */,
+				2AEC69BC10D1DB35F5B7545E /* FleetRunnerVision */,
 			);
 		};
 /* End PBXProject section */
@@ -201,6 +282,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				F4EBB4A4C44824C4BE88B9EC /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		67D99F1863CD87140BBFE8AC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A2EF366D3DC96C8EE08AA1CE /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F650A2D7F99249E6702DB357 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				01ECA471E37DCA04A3D80F07 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -238,6 +335,57 @@
 				8CEFD6BE130409469707F559 /* WebShotsManifest.swift in Sources */,
 				188C71F066363470DCF89341 /* WebShotsWorkload.swift in Sources */,
 				38E30C23455915A872514955 /* Workloads.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BB52382E0A049F30EB58893D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				69499517AFAA482EF90EAFFC /* ArtifactCache.swift in Sources */,
+				F2D593F2AB5BCDC4C7330DB4 /* BenchSession.swift in Sources */,
+				011DCF23761ACAD10B58101D /* CollectorClient.swift in Sources */,
+				55255EFF62E7A26A78C12DDA /* CoreMLBackend.swift in Sources */,
+				956034D5EDFAA0ADED398894 /* EmbedEvalWorkload.swift in Sources */,
+				5705C118B7FB26E2D574C389 /* FleetAgent.swift in Sources */,
+				EE788924130D3520B9C9BC15 /* FleetRunnerApp.swift in Sources */,
+				A8E0A57BF64F97D79735D838 /* LlamaCppBackend.swift in Sources */,
+				D59986ADFA7E470C1D79ECC6 /* MiniZip.swift in Sources */,
+				8FF3EBF196B1E6DCD9472C27 /* Percentile.swift in Sources */,
+				F5348D96DDC08216C999FD2E /* Protocol.swift in Sources */,
+				2B62B6343B698CB280B8EBF4 /* SyntheticBackend.swift in Sources */,
+				F0C23AC8389B2D16C28E1225 /* Telemetry.swift in Sources */,
+				ADB66D23A8E3A9F1BDD319A3 /* Theme.swift in Sources */,
+				1152FF97F3D6C3FA1944114D /* ThermalWorkload.swift in Sources */,
+				6DD2E36CDE8968C477CBC2DD /* VantageWorkload.swift in Sources */,
+				12AF39E9022E57A63DF01379 /* WebShotsManifest.swift in Sources */,
+				184F14ABE0D11DFF2B245734 /* Workloads.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CC3C5DC8E1C07884B67DEB80 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BC16BD9AB0FF2AC9ADD2525D /* ArtifactCache.swift in Sources */,
+				E887B5CAD7F637E59F8799A5 /* BenchSession.swift in Sources */,
+				A28A740A8E4351DED6AEFD8A /* CollectorClient.swift in Sources */,
+				BD953D3763A4C324B409521D /* CoreMLBackend.swift in Sources */,
+				7073190DFA81E8EB8F0E8180 /* EmbedEvalWorkload.swift in Sources */,
+				DADE75193F3E04DD00EE379F /* FleetAgent.swift in Sources */,
+				31172B60712D534BB14E5B71 /* FleetRunnerApp.swift in Sources */,
+				5B5B16582550F8459B0DBEA0 /* LlamaCppBackend.swift in Sources */,
+				216681192444918BA3D82ABC /* MiniZip.swift in Sources */,
+				DC25FDB404C7979018685189 /* Percentile.swift in Sources */,
+				157F96C45F3712EECD4E9094 /* Protocol.swift in Sources */,
+				DBD01FA3B968451D5170B34A /* SyntheticBackend.swift in Sources */,
+				C1DA636DC6DC47A5DC1A434D /* Telemetry.swift in Sources */,
+				18BEAB0960AD83AFE48DE20E /* Theme.swift in Sources */,
+				932EA38D25A1062A6CC334E7 /* ThermalWorkload.swift in Sources */,
+				53382150CA34110095537B4F /* VantageWorkload.swift in Sources */,
+				2F10C4F8ECD2AE9B67C7C5BE /* WebShotsManifest.swift in Sources */,
+				D9AE90487EB5A55E11575FB8 /* WebShotsWorkload.swift in Sources */,
+				2006680D9E42C5A63D9723A9 /* Workloads.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -320,10 +468,32 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				XROS_DEPLOYMENT_TARGET = 1.0;
+			};
+			name = Release;
+		};
+		5D77F723888E101D660B3C3A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FleetRunner/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.tv;
+				SDKROOT = appletvos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 3;
 			};
 			name = Release;
 		};
@@ -404,10 +574,11 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				XROS_DEPLOYMENT_TARGET = 1.0;
 			};
 			name = Debug;
 		};
@@ -432,6 +603,26 @@
 			};
 			name = Release;
 		};
+		C244EED4BE7FA9A97F598626 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FleetRunner/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.vision;
+				SDKROOT = xros;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 7;
+			};
+			name = Release;
+		};
 		CCA36671A2708AA60F05329C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -451,6 +642,47 @@
 			};
 			name = Release;
 		};
+		D5CB90848C5A5E302D2E18DF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FleetRunner/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.tv;
+				SDKROOT = appletvos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 3;
+			};
+			name = Debug;
+		};
+		FC16EDD6CC961070C79B4DAF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FleetRunner/Info.plist;
+				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.vision;
+				SDKROOT = xros;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 7;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -459,6 +691,24 @@
 			buildConfigurations = (
 				4E39431C2AD4F4B015FE14D3 /* Debug */,
 				CCA36671A2708AA60F05329C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		33B961BFAE37561BF054106D /* Build configuration list for PBXNativeTarget "FleetRunnerTV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D5CB90848C5A5E302D2E18DF /* Debug */,
+				5D77F723888E101D660B3C3A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4F964983B9E09AD6DC879769 /* Build configuration list for PBXNativeTarget "FleetRunnerVision" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FC16EDD6CC961070C79B4DAF /* Debug */,
+				C244EED4BE7FA9A97F598626 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

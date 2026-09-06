@@ -55,7 +55,19 @@ export type Descriptor = {
   os: string | null;
   app_ver: string;
 
-  kind: "laptop" | "desktop" | null;
+  /**
+   * Which OS family this agent runs. Declared rather than left for the
+   * collector to infer: its fallback rule reads an `os` string and answers
+   * "ios" or "android", so a MacBook registered as an Android phone until this
+   * field existed.
+   */
+  platform: "macos" | "linux" | "windows" | string;
+  /**
+   * The shape. `sbc` is a single-board computer — a Pi or a Jetson, which is a
+   * desktop by chassis and nothing like one in any way that matters to a
+   * benchmark. `ci` is an ephemeral runner registering for one job.
+   */
+  kind: "laptop" | "desktop" | "sbc" | "ci" | "container" | null;
   arch: string | null;
   gpu: string | null;
   vram_mb: number | null;
@@ -88,6 +100,21 @@ export type BeaconSample = {
  * plant-ID eval's accuracy ended up living in `decode_tok_s`.
  */
 export type Metrics = {
+  /**
+   * benchmark(synthetic): proof that this agent's synthetic backend is the
+   * fleet's synthetic backend. Both are needed -- a digest with no round count
+   * cannot be compared with anything.
+   */
+  synthetic_digest?: string;
+  synthetic_rounds?: number;
+
+  /** llm-eval. See the collector's result schema for what each one excludes. */
+  score_pct?: number;
+  scored_items?: number;
+  judged_items?: number;
+  judge_score_pct?: number;
+  judge_model?: string;
+  refusal_pct?: number;
   load_ms?: number;
   prefill_tok_s?: number;
   decode_tok_s?: number;
@@ -185,6 +212,16 @@ export type RegisterPost = {
   descriptor: Descriptor;
   pools: string[];
   capabilities: string[];
+  /**
+   * Seconds of silence this agent should survive before the collector forgets
+   * it. Omitted for a permanent machine, which is the default and the only
+   * behaviour that existed before.
+   *
+   * Set by an agent that knows it is temporary -- a CI runner, a container
+   * started for one job. Without it every CI run leaves a permanent offline
+   * device behind, and a shelf of ghosts is a shelf nobody reads.
+   */
+  ttl_s?: number;
 };
 
 /** Reads an integer job param, falling back when it is absent or not a number. */

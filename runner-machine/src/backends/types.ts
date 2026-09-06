@@ -21,10 +21,31 @@ export type IterResult = {
   loadMs?: number;
 };
 
+/**
+ * Proof that a backend is doing the arithmetic it claims to be doing.
+ *
+ * Only the synthetic backend can answer this, and only the synthetic backend
+ * needs to: it is the one whose entire purpose is being IDENTICAL on every
+ * platform, and the one whose numbers are compared across hardware that shares
+ * no code. A digest over a fixed number of rounds on a fresh block is
+ * deterministic everywhere, so a runner that disagrees with the specification
+ * says so in a result row rather than in a subtly wrong tok/s.
+ *
+ * llama.cpp and the rest return null: their output depends on a model file and
+ * a hardware backend, and there is no fixed answer to attest to.
+ */
+export type Attestation = { digest: string; rounds: number };
+
 export interface Backend {
   readonly name: string;
   /** Prepares the backend and returns load time in ms. */
   load(job: JobSpec): Promise<number>;
   runIteration(job: JobSpec): Promise<IterResult>;
   unload(): void;
+  /**
+   * A fixed-work digest this backend can be checked against, or null when the
+   * question does not apply. Must not disturb measured state: it runs on its
+   * own block, so calling it mid-benchmark changes no number.
+   */
+  attest?(): Attestation | null;
 }

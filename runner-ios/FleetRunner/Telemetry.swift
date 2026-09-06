@@ -55,24 +55,91 @@ enum Telemetry {
             model: machine,
             soc: machine,
             ramMb: Int64(ProcessInfo.processInfo.physicalMemory / (1024 * 1024)),
-            os: "ios-\(UIDevice.current.systemVersion)",
-            appVer: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+            os: "\(Self.platform)-\(UIDevice.current.systemVersion)",
+            appVer: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0",
+            platform: Self.platform,
+            kind: Self.formFactor()
         )
     }
 
+    /// Which Apple platform this binary was built for.
+    ///
+    /// Compile-time, because that is what the question is about: the same
+    /// source produces an iOS app, a tvOS app and a watchOS app, and the
+    /// numbers they report are only comparable when the table can tell them
+    /// apart. `os` is built from this too, so a tvOS runner reports
+    /// `tvos-18.2` rather than calling itself iOS with a television's memory.
+    ///
+    /// visionOS is checked before iOS: a "Designed for iPad" build running on
+    /// Vision Pro compiles under `os(iOS)` and would otherwise report itself
+    /// as an iPhone with a very unusual amount of RAM.
+    static var platform: String {
+        #if os(visionOS)
+        return "visionos"
+        #elseif os(tvOS)
+        return "tvos"
+        #elseif os(watchOS)
+        return "watchos"
+        #elseif targetEnvironment(macCatalyst)
+        return "catalyst"
+        #else
+        return "ios"
+        #endif
+    }
+
+    /// The shape, from the interface idiom the OS hands us.
+    ///
+    /// `.pad` covers both a real iPad and a "Designed for iPad" build on a
+    /// headset, so visionOS is answered from the compile-time platform first —
+    /// the same ordering, and the same reason, as `platform` itself.
+    static func formFactor() -> String {
+        #if os(visionOS)
+        return "headset"
+        #elseif os(watchOS)
+        return "watch"
+        #elseif os(tvOS)
+        return "tv"
+        #elseif targetEnvironment(macCatalyst)
+        return "desktop"
+        #else
+        switch UIDevice.current.userInterfaceIdiom {
+        case .pad: return "tablet"
+        case .tv: return "tv"
+        case .mac: return "desktop"
+        case .vision: return "headset"
+        default: return "phone"
+        }
+        #endif
+    }
+
     /// Simulators report battery level -1; treat as 100 so constraints behave.
+    ///
+    /// tvOS has no battery API at all -- not a battery that reads -1, but an
+    /// `isBatteryMonitoringEnabled` that does not exist, because an Apple TV is
+    /// mains-powered and Apple removed the question. Reporting 100 there is the
+    /// same answer a plugged-in device gives and is the one that makes
+    /// `min_battery_pct` and `require_charging` behave sensibly: a television
+    /// is, permanently, a charging device.
     static func batteryPct() -> Int {
+        #if os(tvOS)
+        return 100
+        #else
         UIDevice.current.isBatteryMonitoringEnabled = true
         let level = UIDevice.current.batteryLevel
         return level < 0 ? 100 : Int(level * 100)
+        #endif
     }
 
     static func isCharging() -> Bool {
+        #if os(tvOS)
+        return true
+        #else
         UIDevice.current.isBatteryMonitoringEnabled = true
         switch UIDevice.current.batteryState {
         case .charging, .full: return true
         default: return false
         }
+        #endif
     }
 
     /// Shared thermal enum: nominal / fair / serious / critical.

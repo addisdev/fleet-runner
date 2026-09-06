@@ -62,22 +62,52 @@ export async function orNull<T>(fn: () => Promise<T | null>): Promise<T | null> 
  * file there that this user can execute", not "does the name look plausible".
  */
 export async function which(bin: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
-  if (bin.includes(path.sep) || bin.includes("/")) return (await executable(bin)) ? path.resolve(bin) : null;
+  if (bin.includes(path.sep) || bin.includes("/")) {
+    return (await executable(bin, env)) ? path.resolve(bin) : null;
+  }
   const dirs = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
-  const exts = process.platform === "win32"
-    ? (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)
-    : [""];
+  const exts = process.platform === "win32" ? pathExts(env) : [""];
   for (const dir of dirs) {
     for (const ext of exts) {
       const candidate = path.join(dir, bin + ext);
-      if (await executable(candidate)) return candidate;
+      if (await executable(candidate, env)) return candidate;
     }
   }
   return null;
 }
 
-async function executable(file: string): Promise<boolean> {
+/** The extensions Windows will run, lower-cased. */
+function pathExts(env: NodeJS.ProcessEnv): string[] {
+  return (env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+    .split(";")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Can this user run that file?
+ *
+ * Two different questions on two families, and asking the POSIX one on Windows
+ * gets the wrong answer in the dangerous direction.
+ *
+ * On POSIX it is the execute bit, which is what `X_OK` tests.
+ *
+ * On Windows there is no execute bit at all: `fs.access(X_OK)` succeeds for any
+ * file the user can read, so a text file would answer "yes, executable". What
+ * actually decides whether Windows will run something is its EXTENSION being in
+ * PATHEXT. Testing permission there means `FLEET_LLAMA_BENCH` pointing at a
+ * README resolves as a llama-bench, and the agent then declares
+ * `benchmark:llama.cpp` — taking those jobs off the queue from a machine that
+ * could have run them, and returning an error row an hour later. That is the
+ * exact failure the capability probes exist to prevent, and the Windows CI job
+ * added in this wave is what surfaced it.
+ */
+async function executable(file: string, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
   try {
+    if (process.platform === "win32") {
+      await access(file, constants.F_OK);
+      return pathExts(env).includes(path.extname(file).toLowerCase());
+    }
     await access(file, constants.X_OK);
     return true;
   } catch {

@@ -3,7 +3,7 @@
 // collector's real job is serving long-polls to the fleet.
 import type { FastifyInstance } from "fastify";
 import { db } from "../db.js";
-import { AGE, beaconFields, deviceStatus, hasBattery, iso, parse, worstThermal } from "./shared.js";
+import { AGE, beaconFields, deviceStatus, hasBattery, iso, parse, worstThermal, isExpired} from "./shared.js";
 import { health, schedulesView } from "./system.js";
 
 const CACHE_MS = 2000;
@@ -12,16 +12,28 @@ let cached: { at: number; body: unknown } | null = null;
 function build() {
   const now = new Date();
 
-  const deviceRows = db
-    .prepare(`SELECT device_id, descriptor, pools, last_seen, last_beacon, ${AGE("last_seen")} AS age_s FROM devices`)
+  const deviceRows = (db
+    .prepare(
+      `SELECT device_id, descriptor, pools, ttl_s, last_seen, last_beacon, ${AGE("last_seen")} AS age_s
+       FROM devices`,
+    )
     .all() as {
     device_id: string;
     descriptor: string;
     pools: string;
+    ttl_s: number | null;
     last_seen: string;
     last_beacon: string | null;
     age_s: number;
-  }[];
+  }[])
+    // Expired ephemeral agents are dropped here for the same reason the device
+    // list drops them: a closed browser tab and a finished CI runner are not
+    // devices anybody should go looking for. Without this the shelf hides them
+    // and the overview keeps counting them, so fifty CI runs add fifty offline
+    // devices to the front page that the Devices page will not show and nobody
+    // can click on -- which is the ghost problem the TTL exists to prevent,
+    // moved to the screen most people read first.
+    .filter((d) => !isExpired(d, d.age_s));
 
   const busy = new Set(
     (db.prepare("SELECT claimed_by FROM jobs WHERE status = 'claimed' AND claimed_by IS NOT NULL").all() as {

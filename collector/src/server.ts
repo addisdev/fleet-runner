@@ -22,11 +22,13 @@ import {
   POWER_CONFIG_PATH,
   SCHEDULER_TICK_MS,
   SWEEP_MS,
+  TAILNET_ALLOWLIST,
 } from "./config.js";
 import { evaluate, expireSnoozes, notify, reconcile } from "./alerts.js";
 import { requireToken } from "./api/guard.js";
 import { invalidateOverview, publish, registerApi } from "./api/index.js";
-import { capabilityMatches, deviceCapabilities, effectivePools } from "./api/shared.js";
+import { AGE, capabilityMatches, deviceCapabilities, effectivePools, isExpired } from "./api/shared.js";
+import { admit, isTailnetAddress, normaliseIp, whois } from "./tailnet.js";
 // Dependency chains live beside the cancel path, which also has to settle
 // waiters; imported here rather than duplicated. mutations.ts imports nothing
 // from this file, so there is no cycle.
@@ -35,6 +37,7 @@ import {
   validateDepRefs, validateDependencies, type DepSettlement,
 } from "./api/mutations.js";
 import { registerDashStatic } from "./dash-static.js";
+import { registerRunnerWeb } from "./runner-web.js";
 import { startPowerSampler } from "./power.js";
 import { endMirror } from "./api/mirror.js";
 
@@ -146,6 +149,13 @@ type JobSpec = {
 // external API's data (Search Console, App Store / Play reviews) into the
 // artifact store, and digest turns the week's archived reviews into a
 // summary by farming batch jobs to the shelf's on-device models.
+/**
+ * The longest an ephemeral agent may ask to be remembered for. A day: past
+ * that, "ephemeral" is not what the word means, and a permanent device is
+ * spelled by omitting the field.
+ */
+const MAX_DEVICE_TTL_S = 86_400;
+
 const WORKLOADS = new Set([
   "benchmark", "batch", "pipeline", "install", "ui-test", "drain", "soak",
   "web-test", "web-shots", "web-audit", "web-unfurl", "archive", "digest",
@@ -160,6 +170,11 @@ const WORKLOADS = new Set([
   "build", "speech-eval", "embed-eval", "vantage", "locale-shots", "app-soak", "a11y-audit",
   // Wave 3: pipelines that feed the evals, and the workloads that need hardware.
   "model-convert", "dataset-prep", "serve", "shell", "push-latency", "camera-eval", "desktop-ui-test",
+  // Wave 6: the fleet finally measures whether an answer is any good, not only
+  // how fast it arrived.
+  "llm-eval",
+  // Wave 7: the app under test, from angles a pass/fail suite does not cover.
+  "size-report", "upgrade-test",
 ]);
 
 function touchDevice(deviceId: string) {
@@ -171,16 +186,26 @@ function touchDevice(deviceId: string) {
  *  will actually do. */
 export function matchingDevices(pool?: string, match?: string, workload?: string, backend?: string | null) {
   return (
-    db.prepare("SELECT device_id, pools, pools_override, descriptor, capabilities FROM devices").all() as {
+    db.prepare(
+      `SELECT device_id, pools, pools_override, descriptor, capabilities, ttl_s,
+              ${AGE("last_seen")} AS age_s
+       FROM devices`,
+    ).all() as {
       device_id: string;
       pools: string;
       pools_override: string | null;
       descriptor: string;
       capabilities: string | null;
+      ttl_s: number | null;
+      age_s: number | null;
     }[]
   ).filter((d) => {
     const pools = effectivePools(d);
     const capabilities = deviceCapabilities(d);
+    // An expired ephemeral agent is gone, not idle. Fanning out to it would
+    // mint a child job pinned to a browser tab that was closed an hour ago,
+    // which then sits queued forever with nothing to explain why.
+    if (isExpired(d, d.age_s)) return false;
     if (pool && !pools.includes(pool)) return false;
     // Checked before the expression, so a match expression can narrow the set
     // but never widen an agent past what its own code can run.
@@ -208,8 +233,10 @@ export function matchingDevices(pool?: string, match?: string, workload?: string
 function workloadServiceableBy(workload: string, backend?: string | null): boolean {
   if (WORKLOADS.has(workload)) return true;
   return (
-    db.prepare("SELECT capabilities FROM devices").all() as { capabilities: string | null }[]
-  ).some((d) => {
+    db.prepare(
+      `SELECT capabilities, ttl_s, ${AGE("last_seen")} AS age_s FROM devices`,
+    ).all() as { capabilities: string | null; ttl_s: number | null; age_s: number | null }[]
+  ).filter((d) => !isExpired(d, d.age_s)).some((d) => {
     const declared = deviceCapabilities(d);
     // A legacy agent's null means "no opinion", which cannot be read as a claim
     // to run a workload that did not exist when it registered.
@@ -500,14 +527,40 @@ function sweepLeases() {
 app.post("/devices/register", async (req, reply) => {
   const b = req.body as {
     device_id?: string; descriptor?: object; pools?: string[]; capabilities?: string[];
+    ttl_s?: number;
   };
   if (!b?.device_id) return reply.code(400).send({ error: "device_id required" });
+  // An agent that knows it is temporary says so. See the ttl_s column in db.ts:
+  // absent means a permanent shelf device, which is the default and the only
+  // behaviour that existed before.
+  if (b.ttl_s !== undefined &&
+      (!Number.isInteger(b.ttl_s) || b.ttl_s < 1 || b.ttl_s > MAX_DEVICE_TTL_S))
+    return reply.code(400).send({ error: `ttl_s must be an integer between 1 and ${MAX_DEVICE_TTL_S}` });
   if (b.capabilities !== undefined &&
       (!Array.isArray(b.capabilities) || b.capabilities.some((c) => typeof c !== "string")))
     return reply.code(400).send({ error: "capabilities must be an array of strings" });
   // An agent that sends no capabilities keeps whatever it declared last, rather
   // than having them erased: an older build of the same runner re-registering
   // during a rollback would otherwise widen itself back to everything.
+  // Who is on the other end, when the other end is on the tailnet.
+  //
+  // This is not authentication and does not make POST /jobs safe to expose --
+  // see src/tailnet.ts. It is the narrow thing FLEET_BIND made necessary: once
+  // the collector answers on its tailnet address so a roaming laptop can claim
+  // work, "the network I chose" includes every node on the tailnet, and a
+  // personal fleet should be able to name which of them are its devices.
+  //
+  // Off unless FLEET_TAILNET_ALLOWLIST is set, and it never fences the LAN.
+  if (TAILNET_ALLOWLIST.length > 0) {
+    const ip = normaliseIp(req.ip);
+    // whois is only paid for when it can change the answer.
+    const peer = isTailnetAddress(ip) ? await whois(ip) : null;
+    const decision = admit(ip, TAILNET_ALLOWLIST, peer);
+    if (!decision.admit) {
+      app.log.warn({ device_id: b.device_id, ip, why: decision.why }, "registration refused");
+      return reply.code(403).send({ error: `registration refused: ${decision.why}` });
+    }
+  }
   const capabilities = b.capabilities === undefined ? null : JSON.stringify(b.capabilities);
   // Where it registered from, kept to a /24 (or the IPv6 prefix): enough to
   // tell the house from a cafe, without keeping a movement log.
@@ -517,14 +570,20 @@ app.post("/devices/register", async (req, reply) => {
     if (ip.includes(":")) return ip.split(":").slice(0, 4).join(":") + "::/64";
     return null;
   })();
+  // ttl_s follows the same rule as capabilities: an agent that does not send it
+  // keeps whatever it declared last. A runner rolled back to a build that
+  // predates the field must not silently become permanent, or a CI runner's
+  // ghost outlives the run it was made for.
+  const ttlS = b.ttl_s === undefined ? null : b.ttl_s;
   db.prepare(
-    `INSERT INTO devices (device_id, descriptor, pools, capabilities, last_net, last_seen)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `INSERT INTO devices (device_id, descriptor, pools, capabilities, last_net, ttl_s, last_seen)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(device_id) DO UPDATE SET
        descriptor = excluded.descriptor, pools = excluded.pools, last_seen = excluded.last_seen,
        capabilities = COALESCE(excluded.capabilities, devices.capabilities),
-       last_net = COALESCE(excluded.last_net, devices.last_net)`,
-  ).run(b.device_id, JSON.stringify(b.descriptor ?? {}), JSON.stringify(b.pools ?? []), capabilities, net);
+       last_net = COALESCE(excluded.last_net, devices.last_net),
+       ttl_s = COALESCE(excluded.ttl_s, devices.ttl_s)`,
+  ).run(b.device_id, JSON.stringify(b.descriptor ?? {}), JSON.stringify(b.pools ?? []), capabilities, net, ttlS);
   announce({
     type: "device", device_id: b.device_id, event: "register",
     pools: b.pools ?? [], capabilities: b.capabilities ?? null,
@@ -1282,6 +1341,10 @@ app.get("/dash/legacy/bench", async (_req, reply) => {
 // decide precedence — Fastify prefers static routes over the /dash/* wildcard —
 // but reading them in this order matches how a request resolves.
 registerApi(app, announce, matchingDevices);
+// Before the dashboard's wildcard, though Fastify prefers the static route
+// either way. /runner is the one page in this collector that is itself an
+// agent: opening it enrols the browser that opened it.
+registerRunnerWeb(app);
 registerDashStatic(app);
 
 app.get("/", async (_req, reply) => reply.redirect("/dash"));

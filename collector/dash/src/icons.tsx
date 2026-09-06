@@ -89,6 +89,32 @@ const PATHS = {
       <circle cx="8" cy="9" r="2.25" />
     </>
   ),
+  // An answer, marked. The evals target says "scored against a known answer";
+  // this says "scored against a rubric", which is the distinction llm-eval
+  // exists to make.
+  // A balance. Size is the one measurement people argue about in the abstract
+  // and never look at, so it gets the instrument rather than a file icon.
+  // An arrow rising over a stored stack: the version goes up, the data stays.
+  upgrade: (
+    <>
+      <path d="M2.75 11.5v1.75h10.5V11.5" />
+      <path d="M8 12.25V2.5M4.75 5.75L8 2.5l3.25 3.25" />
+      <path d="M2.75 8.75h2.5M10.75 8.75h2.5" />
+    </>
+  ),
+  scale: (
+    <>
+      <path d="M8 2.25v11M4.5 13.25h7" />
+      <path d="M2 5.5h12M8 3.75l-6 1.5M8 3.75l6 1.5" />
+      <path d="M1.25 9.25a2.75 2.75 0 0 0 5.5 0L4 5.5zM9.25 10a2.75 2.75 0 0 0 5.5 0L12 6.25z" />
+    </>
+  ),
+  judged: (
+    <>
+      <path d="M2.25 3.5a1.25 1.25 0 0 1 1.25-1.25h9a1.25 1.25 0 0 1 1.25 1.25v6a1.25 1.25 0 0 1-1.25 1.25H7.5l-3.25 3v-3H3.5A1.25 1.25 0 0 1 2.25 9.5z" />
+      <path d="M5.75 6.5L7.25 8l3-3.25" />
+    </>
+  ),
   desktop: (
     <>
       <rect x="1.75" y="2.75" width="12.5" height="8.5" rx="1" />
@@ -409,6 +435,9 @@ const WORKLOAD_ICON: Record<string, IconName> = {
   "push-latency": "bell",
   "camera-eval": "camera",
   "desktop-ui-test": "desktop",
+  "llm-eval": "judged",
+  "size-report": "scale",
+  "upgrade-test": "upgrade",
 };
 
 /** The workload's name with its icon, for job tables. */
@@ -455,6 +484,16 @@ export const NAV_ICON: Record<string, IconName> = {
  * platform is a two-value ios/android split (anything not iOS is called
  * android), which would draw a MacBook running the machine runner as a phone.
  */
+/**
+ * The silhouettes the shelf can draw.
+ *
+ * Deliberately fewer than the platform vocabulary: a glyph answers "what shape
+ * is this thing" at a glance, and a tablet is a phone at this size. Anything
+ * without its own shape falls back to the phone, which is what the shelf is
+ * mostly made of.
+ */
+export type GlyphKind = "phone" | "laptop" | "tv" | "watch" | "headset" | "board" | "browser";
+
 export function DeviceGlyph({
   kind,
   status,
@@ -462,7 +501,7 @@ export function DeviceGlyph({
   simulator,
   size = 44,
 }: {
-  kind: "phone" | "laptop";
+  kind: GlyphKind;
   status: "online" | "stale" | "offline";
   busy?: boolean;
   simulator?: boolean;
@@ -477,6 +516,69 @@ export function DeviceGlyph({
         <rect class="screen" x="9" y="13" width="34" height="20" rx="1.5" />
         {status === "online" && <path class="pulse" d="M14 23h4l2.5-5 4 11 2.5-6h11" />}
         <path class="chin" d="M1.5 42.5h49" />
+      </svg>
+    );
+
+  // A television: wider than the laptop, and standing on a foot rather than
+  // hinged, which is the whole difference a glance has to catch.
+  if (kind === "tv")
+    return (
+      <svg class={cls} width={size * 1.7} height={size * 1.7} viewBox="0 0 52 52" aria-hidden="true">
+        <rect class="body" x="2" y="7" width="48" height="30" rx="3" />
+        <rect class="screen" x="5.5" y="10.5" width="41" height="23" rx="1.5" />
+        {status === "online" && <path class="pulse" d="M12 22h5l3-6 4.5 12 3-7h12" />}
+        <path class="chin" d="M26 37v6M17 43.5h18" />
+      </svg>
+    );
+
+  // A watch: the phone's proportions, shrunk, with a band above and below.
+  // Drawn small on purpose — a watch that reads as a phone would put a wrist
+  // in a table of handsets, which is the confusion the kind field exists to end.
+  if (kind === "watch")
+    return (
+      <svg class={cls} width={size} height={size * 1.73} viewBox="0 0 30 52" aria-hidden="true">
+        <path class="chin" d="M11 4.5h8M11 47.5h8" />
+        <rect class="body" x="5" y="12" width="20" height="28" rx="6" />
+        <rect class="screen" x="8" y="15.5" width="14" height="21" rx="3" />
+        {status === "online" && <path class="pulse" d="M10 26h2l1-3 2 6 1-3h4" />}
+      </svg>
+    );
+
+  // A headset: two eye housings and a strap. Quest and Vision Pro both run
+  // agents; neither is a phone, however much its silicon says otherwise.
+  if (kind === "headset")
+    return (
+      <svg class={cls} width={size * 1.7} height={size * 1.7} viewBox="0 0 52 52" aria-hidden="true">
+        <rect class="body" x="4" y="14" width="44" height="22" rx="10" />
+        <rect class="screen" x="9" y="19" width="14" height="12" rx="5" />
+        <rect class="screen" x="29" y="19" width="14" height="12" rx="5" />
+        {status === "online" && <path class="pulse" d="M23 25h6" />}
+        <path class="chin" d="M4 22c-2.5 1.5-2.5 6.5 0 8M48 22c2.5 1.5 2.5 6.5 0 8" />
+      </svg>
+    );
+
+  // A single-board computer: a bare board with a pin header along one edge and
+  // a chip in the middle. No screen, because that is exactly what it lacks.
+  if (kind === "board")
+    return (
+      <svg class={cls} width={size * 1.7} height={size * 1.7} viewBox="0 0 52 52" aria-hidden="true">
+        <rect class="body" x="6" y="12" width="40" height="28" rx="2.5" />
+        <rect class="screen" x="19" y="21" width="14" height="11" rx="1.5" />
+        {status === "online" && <path class="pulse" d="M21 27h2l1.5-3.5 2.5 7 1.5-3.5h4" />}
+        <path class="chin" d="M11 16.5h24M11 35.5h9" />
+      </svg>
+    );
+
+  // A browser tab: a window with a tab on it. The runner that needs no install
+  // is the one device on the shelf that is not a device, and it should not be
+  // drawn as one.
+  if (kind === "browser")
+    return (
+      <svg class={cls} width={size * 1.7} height={size * 1.7} viewBox="0 0 52 52" aria-hidden="true">
+        <path class="chin" d="M8 12.5h11l2.5-4h8" />
+        <rect class="body" x="4" y="12" width="44" height="28" rx="3" />
+        <rect class="screen" x="7.5" y="19.5" width="37" height="17" rx="1.5" />
+        {status === "online" && <path class="pulse" d="M14 28h5l2.5-5 4 10 2.5-5h10" />}
       </svg>
     );
 

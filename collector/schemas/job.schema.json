@@ -27,7 +27,12 @@
       "required": ["name", "format", "sha256"],
       "properties": {
         "name": { "type": "string" },
-        "format": { "enum": ["gguf", "mlmodelc", "tflite"] },
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The on-disk shape of the model artifact. No longer a closed enum, for the same reason `workload` stopped being one: a runner that can load a format is the only thing that makes it real, and closing the set meant a new runtime could not be named in a job until the collector shipped a release. The three the phone runners ship with are listed first; the rest are formats a runner in this fleet loads today.",
+          "examples": ["gguf", "mlmodelc", "tflite", "onnx", "ort", "pte", "mlx", "safetensors"]
+        },
         "quant": { "type": "string" },
         "sha256": {
           "type": "string",
@@ -55,12 +60,24 @@
           ],
           "description": "A content hash, or the literal \"latest\" — which resolves to the newest artifact published under this app name, ordered by publish_seq. Pinning a literal hash tests that build forever; one of these spent six days guarding a build older than the code it was meant to guard."
         },
-        "platform": { "enum": ["android", "ios"], "default": "android" }
+        "platform": {
+          "type": "string",
+          "default": "android",
+          "description": "Which platform's build this artifact is, which decides how it gets installed: an APK over adb, a zipped .app over simctl or devicectl. Open like the rest, so a target added later is nameable here; the host executor refuses a platform it has no installer for by name, rather than guessing at one.",
+          "examples": ["android", "ios", "tvos", "watchos", "visionos", "macos"]
+        }
       }
     },
     "backend": {
-      "enum": ["synthetic", "llama.cpp", "coreml", "litert", "whisper.cpp", "mlx"],
-      "description": "Which implementation runs the workload. `synthetic` is a SHA-256 digest loop that every runner implements identically token for token — real, device-comparable hardware numbers, never LLM numbers — and it is the default a result row assumes when a spec names none. `mlx` is probed for by the machine agent but has no backend behind it yet."
+      "type": "string",
+      "minLength": 1,
+      "description": "Which implementation runs the workload. `synthetic` is a SHA-256 digest loop that every runner implements identically token for token -- real, device-comparable hardware numbers, never LLM numbers -- and it is the default a result row assumes when a spec names none. `mlx` is probed for by the machine agent but has no backend behind it yet.\n\nNo longer a closed enum, and enforced by capabilities instead: an agent declaring `benchmark:onnx` is what makes that pairing runnable, and the collector refuses a backend no registered agent declares with a 422 naming it. Closing the set meant every new runtime -- ONNX Runtime, ExecuTorch, WebGPU -- needed a collector release before a job could so much as mention it.\n\nIt is also how a workload picks among several toolchains for one job. `build` uses it for the build kind: a machine declares `build:xcode`, and naming that backend routes the job to the Mac rather than to whichever machine polled first. Build jobs carrying the kind only in `params.kind` keep working unchanged -- see the machine agent's capabilities.ts for why bare `build` stays declared alongside.\n\nThe browser runner declares neither `synthetic` nor a bare `benchmark`: its only native hash is asynchronous, so its rate is not the same quantity as a phone's. It names `jssha` and `webcrypto` instead, which is what keeps a browser's number out of a column of phones' numbers.",
+      "examples": [
+        "synthetic", "llama.cpp", "coreml", "litert", "whisper.cpp", "mlx",
+        "onnx", "ort-web", "executorch", "webgpu", "webllm",
+        "jssha", "webcrypto",
+        "gradle", "xcode", "npm"
+      ]
     },
     "suite": {
       "type": "object",

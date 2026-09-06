@@ -18,7 +18,11 @@
     "dash:build": "npm --prefix dash run build",
     "dash:dev": "npm --prefix dash run dev",
     "seed:schedules": "tsx scripts/seed-schedules.ts",
-    "ci:upload": "tsx scripts/ci-upload.ts"
+    "ci:upload": "tsx scripts/ci-upload.ts",
+    "conformance": "tsx scripts/conformance.ts",
+    "test:web-runner": "tsx scripts/test-runner-web.ts",
+    "shoot:runner-web": "tsx scripts/shoot-runner-web.ts",
+    "chaos": "tsx scripts/chaos.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",

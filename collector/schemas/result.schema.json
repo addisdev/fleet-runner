@@ -39,7 +39,15 @@
       "type": "object",
       "description": "Workload metrics; memory is labeled, never laundered.\n\nEvery field here means one thing. Before the vision-eval and drain fields existed, those workloads reused the LLM slots — vision put top-1 accuracy in decode_tok_s, p50 latency in ttft_ms and images/sec in prefill_tok_s; drain put percent-per-hour in decode_tok_s — and top-5 and p95 had nowhere to go at all, so they were only ever in the hand-written eval report. Rows predating these fields still carry that convention, and the dashboard marks anything it had to infer that way. New runners must populate the named fields instead.",
       "properties": {
-        "load_ms": { "type": "number" },
+        "synthetic_digest": {
+        "type": "string",
+        "description": "benchmark(synthetic): hex SHA-256 of the backend's 4 KiB block after synthetic_rounds folds, reported so the fleet's central claim is checkable instead of asserted.\n\nThe synthetic backend exists to be identical on every platform token for token -- that is the only reason a 2019 Android phone, an iPhone and a laptop can appear in one tok/s column. Each runner pins this digest in its own test suite against its own implementation, which proves each one is self-consistent and proves nothing about whether they agree with each other. Reporting it turns a cross-runner disagreement into a failed conformance clause rather than into two different measurements printed in one table.\n\nOptional: an agent that does not report it is not refused, it is only unattested. scripts/conformance.ts recomputes the reference independently and compares."
+      },
+      "synthetic_rounds": {
+        "type": "number",
+        "description": "benchmark(synthetic): how many fold rounds synthetic_digest covers. Required alongside it -- a digest with no round count cannot be compared with anything."
+      },
+      "load_ms": { "type": "number" },
         "prefill_tok_s": { "type": "number" },
         "decode_tok_s": { "type": "number" },
         "ttft_ms": { "type": "number" },
@@ -68,9 +76,49 @@
       "clock_offset_ms": { "type": "number", "description": "self-check: offset against NTP. A skewed executor clock makes every duration in the results table wrong in a way nothing else would reveal" },
       "checks_failed": { "type": "number", "description": "self-check: how many host checks failed, so the alert rule needs no parsing" },
 
+      "download_bytes": {
+        "type": "number",
+        "description": "size-report: the sum of the archive's COMPRESSED entries, which is roughly what a user waits for. Distinct from artifact_bytes (the archive on disk) and installed_bytes (everything unpacked); they differ by a lot, because native libraries compress well and resources do not, and quoting one when somebody meant another is the usual way a size report misleads."
+      },
+      "installed_bytes": {
+        "type": "number",
+        "description": "size-report: everything unpacked -- roughly what the build occupies on the device."
+      },
+      "file_count": {
+        "type": "number",
+        "description": "size-report: files in the archive, excluding directory records."
+      },
+      "largest_entry_bytes": {
+        "type": "number",
+        "description": "size-report: the single biggest file, uncompressed. A build that grew because of one asset and one that grew everywhere need different responses, and this is the cheapest way to tell them apart from a trend line."
+      },
       "build_s": { "type": "number", "description": "build: wall-clock seconds for the build itself, excluding checkout and upload" },
       "artifact_bytes": { "type": "number", "description": "build: size of the produced app or package" },
 
+      "score_pct": {
+        "type": "number",
+        "description": "llm-eval: percentage of DETERMINISTICALLY scorable items the model got right -- exact, contains, regex and json rules. Judged items are excluded and counted in judged_items, because one number is reproducible by anyone holding the eval set and the other depends on which model was serving that day; averaging them together would quietly produce neither."
+      },
+      "scored_items": {
+        "type": "number",
+        "description": "llm-eval: how many items score_pct covers, so a partial run is never mistaken for a full one."
+      },
+      "judged_items": {
+        "type": "number",
+        "description": "llm-eval: items whose rule was `judge` and so needed a model to grade them."
+      },
+      "judge_score_pct": {
+        "type": "number",
+        "description": "llm-eval: percentage of judged items a judge model passed. Absent, not zero, when no judge answered in the shape it was asked for -- 'the judge did not reply PASS or FAIL' is a different fact from 'the answer was wrong'."
+      },
+      "judge_model": {
+        "type": "string",
+        "description": "llm-eval: which model graded the judged items. A judged score is only comparable against another run graded by the same model, which is why this rides on the row rather than in a note."
+      },
+      "refusal_pct": {
+        "type": "number",
+        "description": "llm-eval: percentage of completions that open like a refusal. A FLOOR rather than a measurement -- it matches a short list of openings and will miss a creative refusal. Counted separately from correctness because the two have different fixes: a quantised model that has started refusing benign prompts is a quantisation problem, one that answers confidently and wrongly is a capability problem, and a single accuracy figure cannot tell them apart."
+      },
       "wer_pct": { "type": "number", "description": "speech-eval: word error rate after case and punctuation normalisation. Lower is better, and it can exceed 100 when a model inserts more words than the reference contains" },
       "rtf": { "type": "number", "description": "speech-eval: real-time factor, audio seconds per wall second. Above 1 means the device transcribes faster than the clip plays, which is the shippability line" },
       "clips": { "type": "number", "description": "speech-eval: how many clips the score covers, so a partial run is never mistaken for a full one" },
@@ -125,6 +173,19 @@
         "reviews_count": { "type": "integer", "description": "archive(asc/play) and digest: reviews pulled / digested" },
         "avg_rating": { "type": "number", "description": "archive(asc/play) and digest: mean star rating over those reviews" },
         "clusters": { "type": "integer", "description": "digest: topic clusters in the assembled digest" }
+      }
+    },
+    "upgrade": {
+      "type": "object",
+      "description": "upgrade-test: which step of the upgrade this row is about, and between which two builds.\n\nThe stage is the whole value of the row. A failure at install-old or seed is the OLD build's problem and says nothing about the upgrade; at upgrade it is packaging (a signature mismatch, a downgraded versionCode); at launch it is a migration that crashes on start; at verify it upgraded, launched, and the data is wrong. 'upgrade-test failed' without the stage sends somebody to read the wrong logs.",
+      "properties": {
+        "stage": { "enum": ["install-old", "seed", "upgrade", "launch", "verify", "done"] },
+        "from_sha256": { "type": "string" },
+        "to_sha256": { "type": "string" },
+        "kept_data": {
+          "type": "boolean",
+          "description": "False means the old build was uninstalled first, which makes the run measure nothing and exists only as a deliberate contrast when a migration is suspected."
+        }
       }
     },
     "artifacts": {

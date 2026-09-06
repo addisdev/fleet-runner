@@ -38,13 +38,15 @@ POST /devices/register
 
 ```json
 {
-  "device_id": "pixel-4a",
+  "device_id": "living-room-tv",
   "descriptor": {
-    "model": "Pixel 4a", "soc": "Snapdragon 730G", "ram_mb": 5648,
-    "os": "android-13", "app_ver": "0.2.0", "arch": "arm64"
+    "model": "AFTKA", "soc": "Amlogic S905Y4", "ram_mb": 2048,
+    "os": "android-11", "app_ver": "0.3.0", "arch": "arm64",
+    "platform": "android", "kind": "tv"
   },
   "pools": ["ml-capable"],
-  "capabilities": ["benchmark", "batch", "batch:litert"]
+  "capabilities": ["benchmark"],
+  "ttl_s": 300
 }
 ```
 
@@ -59,6 +61,49 @@ matter most in practice.
 [Capabilities](concepts.md#capabilities) for the three rules that govern it; the
 one to internalise is that omitting the key means "no opinion" and sending `[]`
 means "nothing", and they are different on purpose.
+
+### `platform` and `kind`
+
+**`platform`** is which OS family you run. An open string: `android`, `ios`,
+`tvos`, `watchos`, `visionos`, `macos`, `linux`, `windows`, `web` are the ones
+in use. Send it. An agent that omits it gets the old rule — iOS if `os` looks
+like iOS, Android otherwise — which is kept so that a collector upgrade does
+not relabel agents written before the field existed. That rule is also why the
+field had to exist: it does not report a platform, it reports a guess, and
+every desktop agent registered as an Android phone until it could say
+otherwise.
+
+**`kind`** is the form factor: `phone`, `tablet`, `laptop`, `desktop`, `tv`,
+`watch`, `headset`, `sbc`, `browser`, `ci`, `container`. Null when you do not
+say, never guessed — a phone and a TV stick running the same Android build are
+indistinguishable from a descriptor, and inventing an answer puts a television
+in a table of handsets.
+
+Both are open sets. A platform nobody has thought of yet does not need a
+collector release before it can be named.
+
+### `ttl_s`, if you are temporary
+
+Omit it and you are a shelf device: a phone that is switched off is still a
+phone and should stay in the registry reading offline until somebody picks it
+up. Send it and you are saying the opposite — that your absence is the end of
+you rather than a fault.
+
+```
+ttl_s: 300     # remember me for five minutes of silence
+```
+
+This is for agents whose disappearance is normal: a browser tab that was
+closed, a CI runner whose job finished, a container that exited. Without it,
+every CI run leaves a permanent offline device behind and the shelf fills with
+ghosts.
+
+The window slides against `last_seen`, which every poll and every beacon
+already refreshes, so an agent that is still working never expires out from
+under its own job. When it does expire the row is kept, not deleted: the
+results you posted stay attributable and `GET /api/devices/:id` still resolves
+you. What changes is that the queue stops offering you work and you leave the
+shelf.
 
 ## 2. Claim work
 
@@ -173,6 +218,23 @@ payload, so it survives and can be rendered later, whereas folding it into
 Say how you measured, when it is ambiguous. `mem_method` exists because RSS on
 macOS and PSS on Android are not the same quantity, and reporting one under the
 other's name would be laundering.
+
+### `backend` and `model.format` are open too
+
+Both were closed enums and are now open strings, for the same reason `workload`
+is: the thing that makes a runtime real is a runner that can load it, and
+closing the set meant a new runtime could not be named in a job until the
+collector shipped a release.
+
+Enforcement moved to capabilities, where it already was for workloads. An agent
+declaring `benchmark:onnx` is what makes that pairing runnable; a backend no
+registered agent declares is refused at enqueue with a 422 naming it.
+
+Name your backend for what it actually is. The browser runner declares
+`benchmark:jssha` and `benchmark:webcrypto` rather than `benchmark:synthetic`,
+because a browser's only native hash is asynchronous and its rate is not the
+same quantity as a phone's — see [Make your numbers
+comparable](writing-a-runner.md#make-your-numbers-comparable).
 
 ## 5. Artifacts
 

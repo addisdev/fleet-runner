@@ -299,6 +299,22 @@ for (const [column, ddl] of [
   // exactly this reason. A prefix, not the full address: enough to tell one
   // place from another, not a log of where a laptop has been.
   ["last_net", "last_net TEXT"],
+  // How long this agent should survive its own silence, in seconds. NULL is
+  // the shelf: a phone that is off is still a phone, and it should stay in the
+  // registry reading offline until somebody picks it up again.
+  //
+  // A value here says the opposite -- that this agent is EPHEMERAL and its
+  // absence is the end of it, not a fault. A browser tab that was closed, a CI
+  // runner whose job finished, a container that exited: each registered, did
+  // one thing, and is not coming back. Without this they accumulate forever as
+  // offline devices, and a shelf where most entries are ghosts is a shelf
+  // nobody reads.
+  //
+  // Deliberately a TTL against last_seen rather than an expiry timestamp:
+  // last_seen is already refreshed by every poll and every beacon, so the
+  // window slides for free and an agent that is still working never expires
+  // out from under its own job.
+  ["ttl_s", "ttl_s INTEGER"],
 ] as const) {
   if (!deviceColumns.has(column)) db.exec(`ALTER TABLE devices ADD COLUMN ${ddl}`);
 }

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The banner a TV launcher shows instead of an icon.
+
+  Android TV asks for 320x180 and draws it large, ten feet from a sofa, so this
+  is the mark beside the name rather than the mark alone: at that distance a
+  48dp glyph scaled up is a smudge, and the word is what a person is actually
+  looking for on a row of tiles.
+
+  A vector rather than a PNG so it stays sharp on a 4K launcher and adds no
+  binary to a repository that deliberately tracks none. The palette is the
+  fleet's: the dark tile from colors.xml and the amber that is the mark and the
+  pulse and nothing else.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- The tile. Deliberately the same #1C2025 the launcher icon sits on, so a
+         phone's icon and a TV's banner read as one product. -->
+    <path
+        android:fillColor="#1C2025"
+        android:pathData="M0,0h320v180H0z" />
+
+    <!-- The mark: the phone outline from ic_launcher, scaled and moved left. -->
+    <path
+        android:fillColor="#E3A44A"
+        android:pathData="M40,46h44a6,6 0 0 1 6,6v76a6,6 0 0 1 -6,6H40a6,6 0 0 1 -6,-6V52a6,6 0 0 1 6,-6zM43,55v70h38V55H43zM52,130h20v4H52z" />
+
+    <!-- The pulse inside it, the same trace the dashboard draws on an online
+         device. -->
+    <path
+        android:fillColor="#E3A44A"
+        android:pathData="M48,90h6l4,-11 7,22 4.5,-11H76v5h-3.5l-7,17 -7,-22 -4,7H48v-7z" />
+
+    <!-- "Fleet Runner", drawn as paths so the banner needs no font and renders
+         identically on every launcher. -->
+    <group android:translateX="118" android:translateY="72">
+        <!-- F L E E T -->
+        <path android:fillColor="#F7F8FA"
+              android:pathData="M0,0h20v5H6v9h12v5H6v14H0z" />
+        <path android:fillColor="#F7F8FA"
+              android:pathData="M26,0h6v28h14v5H26z" />
+        <path android:fillColor="#F7F8FA"
+              android:pathData="M52,0h21v5H58v8h13v5H58v10h15v5H52z" />
+        <path android:fillColor="#F7F8FA"
+              android:pathData="M79,0h21v5H85v8h13v5H85v10h15v5H79z" />
+        <path android:fillColor="#F7F8FA"
+              android:pathData="M104,0h24v5h-9v28h-6V5h-9z" />
+    </group>
+    <group android:translateX="118" android:translateY="116">
+        <!-- R U N N E R -->
+        <path android:fillColor="#9AA2AE"
+              android:pathData="M0,0h13a9,9 0 0 1 3,17.5L22,33h-7l-5,-14H6v14H0zM6,5v9h6a4.5,4.5 0 0 0 0,-9z" />
+        <path android:fillColor="#9AA2AE"
+              android:pathData="M28,0h6v21a6,6 0 0 0 12,0V0h6v21a12,12 0 0 1 -24,0z" />
+        <path android:fillColor="#9AA2AE"
+              android:pathData="M60,0h6l13,21V0h6v33h-6L66,12v21h-6z" />
+        <path android:fillColor="#9AA2AE"
+              android:pathData="M92,0h6l13,21V0h6v33h-6L98,12v21h-6z" />
+        <path android:fillColor="#9AA2AE"
+              android:pathData="M124,0h20v5h-14v8h12v5h-12v10h14v5h-20z" />
+        <path android:fillColor="#9AA2AE"
+              android:pathData="M150,0h13a9,9 0 0 1 3,17.5L172,33h-7l-5,-14h-4v14h-6zM156,5v9h6a4.5,4.5 0 0 0 0,-9z" />
+    </group>
+</vector>

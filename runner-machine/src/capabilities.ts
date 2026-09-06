@@ -76,6 +76,15 @@ export function capabilitiesFrom(flags: CapabilityFlags): string[] {
   // reports a skipped check for whatever is not. A machine that cannot answer
   // any of its questions still answers "I could not", which is the whole point.
   caps.push("self-check");
+  // llm-eval needs nothing installed either. Its deterministic rules are
+  // arithmetic over strings, and the judge -- when a set has judged items -- is
+  // reached over HTTP at an endpoint the JOB names, typically one a `serve` job
+  // announced. So the capability is a statement about this agent's code, which
+  // is always true, rather than about a toolchain. A job whose set needs a
+  // judge and whose spec names no endpoint is refused with a result row saying
+  // exactly that, which is the honest failure: scoring only the deterministic
+  // subset would report a different measurement under the same name.
+  caps.push("llm-eval");
   // Same bare-plus-specific shape as build, for the same reason: a job spec has
   // nowhere to put an output format that the collector's capabilityMatches
   // would read, so `convert:gguf` alone would be a machine that can convert and
