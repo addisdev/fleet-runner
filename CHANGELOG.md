@@ -93,6 +93,30 @@ Waves 4 to 8: the fleet stops being a shelf of phones.
   entry in one direction only, so an allowlist written the careful way silently
   refused the node it was written for.
 
+## [0.3.1] — 2026-09-06
+
+### Fixed
+
+- **The iOS runner could not launch on any simulator runtime newer than 18.4.**
+  `import WebKit` plus one call to `callAsyncJavaScript` made the linker
+  hard-require `/usr/lib/swift/libswiftWebKit.dylib`, because for a deployment
+  target below 18.4 the SDK's `$ld$previous$` rules place about thirty
+  Swift-only WebKit APIs in that library. The overlay was folded into
+  `WebKit.framework` at 18.4 and the standalone dylib stopped shipping, so dyld
+  refused to start the process. The one call is now expressed with
+  `evaluateJavaScript`, which is the plain Objective-C API and back-deploys, and
+  the dependency disappears entirely.
+
+### Added
+
+- **Two iOS checks, run by CI, because the job had only ever proved the app
+  compiles.** `check-backdeploy.sh` fails if the app links a Swift overlay that
+  the SDK says has moved, which is the exact shape of the bug above and takes
+  seconds. `launch-smoke.sh` installs on the oldest runtime available and
+  asserts the process survives. The static one carries the weight: a CI runner
+  ships only the newest iOS runtime, and that is precisely where a
+  back-deployment bug does not reproduce.
+
 ## [0.3.0] — 2026-09-05
 
 Documentation, and the things a public project needs that this one did not have.
@@ -251,7 +275,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/addisdev/fleet-runner/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/addisdev/fleet-runner/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/addisdev/fleet-runner/releases/tag/v0.1.0

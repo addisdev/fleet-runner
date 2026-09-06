@@ -83,6 +83,20 @@ A simulator reports `-1`, which the collector reads as "no telemetry" rather
 than as a flat battery, so the simulator path is honest — but that means the
 real-device path is unproven rather than known good.
 
+**It is checked that the app starts, not only that it compiles.** That is not
+paranoia: `import WebKit` used to hard-link a Swift overlay that newer runtimes
+no longer carry, so the app died in dyld before `main()` while every build
+stayed green. Two scripts, both run by CI:
+
+```
+./check-backdeploy.sh   # links no overlay that only exists for old targets
+./launch-smoke.sh       # installs on the oldest runtime here, and it survives
+```
+
+The first is the one that catches back-deployment, because a CI runner has only
+the newest runtime and that is exactly where such a bug does not reproduce. The
+second catches a process that dies at launch for any other reason.
+
 **On a simulator the Core ML backend is forced to CPU, and says so.** The
 Simulator's emulated GPU returned an all-zero logits tensor for the plant-ID
 model: silently, with no error, while `.cpuOnly` gave logits identical to the
