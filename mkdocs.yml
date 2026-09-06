@@ -96,6 +96,7 @@ nav:
       - Cookbook: integration/cookbook.md
   - Reference:
       - The protocol: protocol.md
+      - Platforms: platforms.md
       - Writing a runner: writing-a-runner.md
       - HTTP API: api.md
   - Deploy:

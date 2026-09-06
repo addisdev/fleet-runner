@@ -9,7 +9,9 @@ import { chromium } from "playwright";
 
 const ROOT = "/Users/addisdev/Desktop/Fleet Runner/fleet-runner/.claude/worktrees/waves-4-8/collector";
 const TSX = path.join(ROOT, "node_modules/tsx/dist/cli.mjs");
-const OUT = path.join(ROOT, "docs/img");
+// The documentation site's image tree, not the collector's: mkdocs builds
+// with --strict and treats a link that climbs out of docs/ as broken.
+const OUT = path.join(ROOT, "../docs/img");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -70,8 +72,6 @@ try {
 
   await page.emulateMedia({ colorScheme: "light" });
   await page.screenshot({ path: path.join(OUT, "runner-web.png") });
-  await page.emulateMedia({ colorScheme: "dark" });
-  await page.screenshot({ path: path.join(OUT, "runner-web-dark.png") });
   console.log("wrote", path.join(OUT, "runner-web.png"));
   await browser.close();
 } finally {

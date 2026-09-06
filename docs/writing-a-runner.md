@@ -96,6 +96,48 @@ The pattern: when you cannot measure the thing asked for, **fail with a message
 naming what is missing**. A wrong number recorded as a result is worse than a
 failure, because a failure gets investigated.
 
+## Check it against the suite
+
+```bash
+npm run conformance -- --device <your-device-id>
+```
+
+Point it at your running agent and it drives it through eight clauses. Every
+one of them is something that has actually gone wrong in this fleet, on some
+platform.
+
+Conformant does not mean "implements every workload" — a watch that cannot run
+llama.cpp is a perfectly good fleet member, and a clause your capabilities put
+out of scope is **skipped** rather than failed. It means your agent is honest.
+
+| Clause | What it checks |
+|---|---|
+| 1 register | you said enough about yourself to be scheduled |
+| 2 benchmark | you run what you declared, and close the job |
+| 3 metrics | every metric name you post is one the schema declares |
+| 4 identity | your synthetic backend matches the specification |
+| 5 capabilities | you never claim a workload you did not declare |
+| 6 cancel | a cancelled job stops within one beacon interval |
+| 7 lease | a long job's lease deadline advances while you work |
+| 8 constraints | an unmeetable precondition is refused with a reason |
+
+**Clause 3 is the `recall_at1` bug as a check.** Swift's
+`convertToSnakeCase` does not split on a digit, so that metric encoded one
+underscore short of its declared name and silently never arrived. Nothing
+threw; the number was simply absent, and the collector stored the payload so it
+was not lost — only unqueryable, forever.
+
+**Clause 4 checks the claim everything else rests on.** The suite recomputes
+the synthetic block digest from the written specification, independently of any
+runner's code, and compares it to `metrics.synthetic_digest` if you report one.
+Each runner pinning its own digest against its own implementation proves every
+one self-consistent and nothing about whether they agree with each other.
+Attesting is optional; an agent that does not is unattested rather than
+refused.
+
+A FAIL is a bug in your agent. A WARN is a soft contract nothing is refused for
+breaking yet, and each one says what would make it a FAIL.
+
 ## Handle these four things and you are done
 
 **Long-poll properly.** A `204` is normal, not an error. Reconnect immediately.

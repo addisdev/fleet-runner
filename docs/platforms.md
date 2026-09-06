@@ -19,7 +19,7 @@ that says which ones somebody has watched register is worth something.
 
 | Platform | Runner | How it joins | Verified |
 |---|---|---|---|
-| **Any browser** | `collector/runner-web` | open `http://<collector>/runner` | **yes** — driven end to end by a real Chromium against a real collector, both backends, digest checked |
+| **Any browser** | `collector/runner-web/` | open `http://<collector>/runner` | **yes** — driven end to end by a real Chromium against a real collector, both backends, digest checked |
 | **Android TV, Google TV, Fire TV** | `runner-android` | `adb connect`, then `adb install` | **partly** — the built APK declares a leanback launcher and a banner, checked with `aapt2 dump badging`. No TV has run it |
 | **Meta Quest** | `runner-android` | sideload via `adb` | **no** — Quest is Android 12 and reports `UI_MODE_TYPE_NORMAL`, so the runner identifies it by the VR feature flag. Never run on one |
 | **Wear OS** | `runner-android` | `adb install` over Wi-Fi debugging | **no** — the watch feature flag is read and declared; never run on one |
@@ -84,7 +84,7 @@ Apple target, not a missing one.
 
 ## The browser: the one with no install
 
-![The browser runner: a Chromium tab registered with a collector and running a benchmark](../collector/docs/img/runner-web.png)
+![The browser runner: a Chromium tab registered with a collector and running a benchmark](img/runner-web.png)
 
 `http://<collector>/runner` enrols the browser that opens it. A smart TV's
 built-in browser, a games console, a Chromebook, a Kindle, an iPad too old for
@@ -130,6 +130,6 @@ forever as an offline device nobody can find.
    off the queue from a device that could have run it.
 3. Run the conformance suite: `npm run conformance -- --device <id>`. Eight
    clauses, each of them something that has actually gone wrong here. A skip is
-   fine; a FAIL is a bug in the agent.
+   fine; a FAIL is a bug in the agent. See [Writing a runner](writing-a-runner.md).
 4. Add a row to the table at the top of this page, and put the honest answer in
    the last column.

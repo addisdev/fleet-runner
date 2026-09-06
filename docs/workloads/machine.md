@@ -91,6 +91,81 @@ The gating, in order:
 4. A value that is not a well-formed sha256 is refused, which matters because
    that value arrives from an attacker-controllable job spec.
 
+## `llm-eval`
+
+Scores what a device generated. The fleet has measured LLM tok/s since it
+existed and never measured whether the answers survived quantisation — vision
+has `top1_pct`, speech has `wer_pct`, embeddings have `recall_at_k`, and
+generation had a rate and nothing else. A Q4 model that is fast and wrong is not
+shippable.
+
+Two jobs. A device generates; a machine scores.
+
+```json
+{ "schema": 1, "job_id": "score-1", "workload": "llm-eval", "executor": "device",
+  "depends_on": ["gen-1"],
+  "params": { "eval_set_sha256": "<the prompts>",
+              "completions_sha256": "${jobs.gen-1.artifact}",
+              "judge_endpoint": "${jobs.serve-judge.endpoint}",
+              "judge_model": "qwen2.5-7b" } }
+```
+
+Scoring is here and not on the phone for three reasons that are one reason. A
+judge model is bigger than the model under test by design — a 0.5B model
+grading its own output tells you what a 0.5B model thinks. A device that both
+generates and scores makes a bug in its scorer indistinguishable from a bug in
+its model. And one scorer for the whole fleet means a tablet's 71% and a
+phone's 68% differ because the models differ.
+
+### The eval set
+
+An array of items, each carrying how to score it:
+
+| `score.kind` | Passes when |
+|---|---|
+| `exact` | the completion equals `expect`, after case and outer whitespace |
+| `contains` | every string in `expect` appears |
+| `regex` | `pattern` matches the raw completion |
+| `json` | the completion parses as JSON, with `require_keys` if given |
+| `judge` | a judge model replies PASS |
+
+Normalisation is case and surrounding whitespace and **nothing else** — not
+punctuation, not articles. Every additional normalisation makes a score look
+better while meaning less, and this number exists to be compared against the
+same set on other hardware, where a generous scorer hides exactly the
+degradation being looked for.
+
+`json` handles what models actually emit: JSON inside a fenced code block, or
+an object surrounded by prose. It does not repair invalid JSON. A model that emits a
+trailing comma has failed the item, and a scorer that fixes it is measuring the
+fixer.
+
+### Two numbers, never averaged
+
+`score_pct` covers the deterministically scorable items and is reproducible by
+anyone holding the eval set. `judge_score_pct` covers the judged ones and
+depends on which model was serving that day. A single blended figure would
+quietly be neither.
+
+`refusal_pct` is counted separately again, and is a **floor** rather than a
+measurement — it matches a short list of openings and will miss a creative
+refusal. It is apart from correctness because the two have different fixes: a
+quantised model that has started refusing benign prompts is a quantisation
+problem, one that answers confidently and wrongly is a capability problem.
+
+### Two refusals
+
+A set with judged items and **no `judge_endpoint` fails the job**. Scoring the
+deterministic subset and reporting that as the score would publish a different
+measurement under the same name.
+
+Completions uploaded as a **bare array of strings are refused**. Position is not
+identity: an eval set edited between generating and scoring would grade every
+answer against the wrong prompt, and every number would look normal.
+
+A per-item report is uploaded as an artifact, because a score with no way to see
+which items failed is a number nobody can act on.
+
 ## `self-check`
 
 The fleet inspecting its own hosts: disk, tool versions, NTP offset, and whether

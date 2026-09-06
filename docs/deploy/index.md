@@ -41,6 +41,54 @@ forward, no hotel wifi, no guest network.
 That matters more than it looks, because the LAN-only assumption stops being
 true the moment one of your agents is a laptop that leaves the house.
 
+### The tailnet allowlist
+
+**This is not authentication and it does not make the collector safe to
+expose.** Everything above still holds. What it addresses is narrower: once the
+collector answers on its tailnet address so a roaming laptop can claim work,
+"the network I chose" includes every node on the tailnet — including one
+somebody added with a share link, and including a phone handed round at a
+conference.
+
+So the network is still the boundary. It is just a network you can enumerate.
+
+```bash
+FLEET_TAILNET_ALLOWLIST=my-macbook,pixel-4a,fleet-ci-runner
+```
+
+| Peer registering | What happens |
+|---|---|
+| loopback | admitted |
+| a LAN address | admitted, under the posture above |
+| a tailnet address (100.64.0.0/10) | must resolve, via `tailscale whois`, to a node in the list |
+| anything, with the list unset | admitted — nothing is checked, which is the default |
+
+Three deliberate choices:
+
+- **It fences the tailnet, not the house.** An allowlist that also fenced the
+  LAN would mean enabling it broke every phone on the shelf.
+- **A tailnet address that cannot be identified is refused.** If an unavailable
+  `tailscale` binary made the lookup fail open, the allowlist would disable
+  itself exactly when it was needed — so the collector needs the CLI on its
+  PATH, which a launchd agent does not get for free.
+- **Entries are names, not patterns.** No globs. An allowlist that can be got
+  wrong quietly is worse than one that has to be typed out.
+
+A refusal is a 403 on `POST /devices/register` and a warning in the log naming
+the node and the reason.
+
+### CI runners as devices, for four minutes
+
+Rather than opening the collector to GitHub, the runner comes to the collector:
+it joins the tailnet, registers with a `ttl_s`, claims the `build` job for its
+own commit, publishes the artifact and disappears. Everything after that runs on
+real hardware at home, and `report_to.github_status` closes the loop back to the
+pull request.
+
+`collector/ci/ephemeral-runner.yml` is a worked example, and an example on
+purpose — a workflow that tries to reach a collector it cannot see fails on
+every push.
+
 ## Running under launchd
 
 The plists in
