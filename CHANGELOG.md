@@ -12,6 +12,15 @@ independently of the version below.
 
 ## [Unreleased]
 
+### Changed
+
+- **CI no longer runs the iOS launch smoke**, only the static
+  `check-backdeploy.sh`. Booting a simulator cost about seven minutes a run, and
+  the launch check could not catch the back-deployment bug it was written for
+  anyway: a GitHub macOS runner ships only the newest iOS runtime, which is
+  precisely where such a bug does not reproduce. `launch-smoke.sh` stays in the
+  repository as the tool to run by hand on a machine with older runtimes.
+
 ## [0.4.0] — 2026-09-06
 
 Waves 4 to 8: the fleet stops being a shelf of phones.
