@@ -7,14 +7,17 @@
 # any deployment target below 18.4, newer runtimes stopped shipping that file,
 # and the app died in dyld before main(). It built perfectly on every push.
 #
-# Run against the OLDEST runtime the machine has, because back-deployment is
-# the thing that breaks and the newest runtime is the one that hides it.
+# Run it by hand. CI does not, deliberately: booting a simulator costs about
+# seven minutes there, and a GitHub macOS runner ships only the newest iOS
+# runtime -- so "oldest available" would be the newest there is, and the bug
+# above would not reproduce. `check-backdeploy.sh` is what guards that class in
+# CI, statically and in seconds.
 #
-# Which is also this script's limit, and worth knowing: a GitHub macOS runner
-# ships only the newest iOS runtime, so on CI "oldest available" is the newest
-# there is, and the bug above would NOT reproduce here. `check-backdeploy.sh`
-# is what catches that class anywhere; this catches a process that dies at
-# launch for any reason, on whatever runtime is to hand.
+# This is the one to reach for on a machine with older runtimes installed, or
+# when something dies at launch for a reason a link check cannot see: a bad
+# Info.plist, a missing resource, a crashing initialiser. It runs against the
+# OLDEST runtime present, because back-deployment is what breaks and the newest
+# runtime is the one that hides it.
 #
 #   ./launch-smoke.sh [path/to/FleetRunner.app]
 set -uo pipefail

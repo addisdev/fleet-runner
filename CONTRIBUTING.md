@@ -92,6 +92,14 @@ error rather than something to skip, so a spec naming it unconditionally cannot
 be built from a fresh clone. If you regenerate with the framework present, the
 project will show as modified — do not commit that.
 
+**An iOS build succeeding does not mean the app starts.** `import WebKit` once
+hard-linked a Swift overlay that newer runtimes no longer ship, and the app died
+in dyld before `main()` on every push that CI called green. `check-backdeploy.sh`
+guards that statically and CI runs it. If you touch anything that imports a
+system framework, also run `./launch-smoke.sh` by hand — CI cannot, because a
+GitHub runner has only the newest iOS runtime and back-deployment breaks on the
+older ones.
+
 **A metric name that is not in `result.schema.json` is stored and unqueryable.**
 Add it to the schema in the same change that emits it. This has already cost
 one write-up its reproducibility: an eval's accuracy rode in `decode_tok_s`
