@@ -21,6 +21,8 @@ independently of the version below.
   precisely where such a bug does not reproduce. `launch-smoke.sh` stays in the
   repository as the tool to run by hand on a machine with older runtimes.
 
+## [0.4.0] — 2026-09-06
+
 Waves 4 to 8: the fleet stops being a shelf of phones.
 
 ### Added
@@ -284,7 +286,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/addisdev/fleet-runner/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/addisdev/fleet-runner/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/addisdev/fleet-runner/compare/v0.1.0...v0.2.0
