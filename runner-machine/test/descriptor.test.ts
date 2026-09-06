@@ -28,7 +28,17 @@ for (const platform of FOREIGN) {
     assert.ok(d.ram_mb === null || d.ram_mb > 0);
     // Everything else is either a real answer or an honest null, never junk.
     for (const v of [d.model, d.soc, d.os, d.gpu]) assert.ok(v === null || typeof v === "string");
-    assert.ok(d.kind === null || d.kind === "laptop" || d.kind === "desktop");
+    // `ci` and `container` are here because `describe` overrides the chassis
+    // probes when the process is in one — and a GitHub runner sets CI=true, so
+    // this very test reports `ci` when it runs in CI and `laptop` when it runs
+    // on somebody's machine. Pinning the three chassis answers was correct
+    // until the environment could override them, and CI is where that first
+    // showed: the assertion passed on every developer machine and failed on
+    // Linux, which is the whole reason the matrix exists.
+    assert.ok(
+      ["laptop", "desktop", "sbc", "ci", "container", null].includes(d.kind),
+      `unexpected kind ${JSON.stringify(d.kind)}`,
+    );
   });
 }
 
