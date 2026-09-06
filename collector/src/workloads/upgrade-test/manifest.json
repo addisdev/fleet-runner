@@ -1,0 +1,46 @@
+{
+  "name": "upgrade-test",
+  "capability": "devices",
+  "executor": "host",
+  "description": "Install the version users already have, put data in it, upgrade in place, and check the data survived.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "from_build": {
+        "type": "string",
+        "description": "The build users are coming FROM. Resolved against the artifact store the same way `latest` is. Required: an upgrade test with no starting version is an install test."
+      },
+      "from_sha256": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$",
+        "description": "Pins the starting build by hash instead of by name, for reproducing a specific report."
+      },
+      "seed_flow": {
+        "type": "string",
+        "description": "A Maestro flow run against the OLD build to create state worth preserving — sign in, add a record, set a preference. Without it this proves only that the app still launches."
+      },
+      "verify_flow": {
+        "type": "string",
+        "description": "A Maestro flow run against the NEW build that asserts the state is still there. Its failure is the finding."
+      },
+      "app_id": {
+        "type": "string",
+        "description": "Bundle id / package name, for the launch check. Defaults to the suite's app_id."
+      },
+      "keep_data": {
+        "type": "boolean",
+        "default": true,
+        "description": "Whether the upgrade preserves data. True installs over the top, which is what users experience. False uninstalls first, which measures nothing and exists only to produce a contrasting run when a migration is suspected."
+      }
+    }
+  },
+  "example": {
+    "app": { "name": "", "build": "latest", "sha256": "latest" },
+    "params": {
+      "from_build": "",
+      "seed_flow": "seed-account",
+      "verify_flow": "account-survived"
+    }
+  }
+}

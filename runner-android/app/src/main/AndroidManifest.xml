@@ -16,10 +16,42 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- One APK, every Android shape.
+         =====================================================================
+         This agent already ran on a TV stick, a headset and a watch: it is a
+         foreground service and a text field, and none of that needs a phone.
+         What stopped it was packaging, not code. Each declaration below removes
+         one reason an installer or a launcher would refuse it.
+
+         A television has no touchscreen, and the Play Store and several TV
+         launchers treat `android.hardware.touchscreen` as required-by-default
+         and filter the app out entirely. Same for the faketouch fallback. The
+         phones are unaffected: declaring a feature not required never removes
+         it from a device that has one. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.faketouch" android:required="false" />
+    <!-- A TV also has no camera, no telephony, no GPS and often no microphone.
+         None of these are used by the runner; they are declared not-required so
+         that nothing downstream infers them from a permission. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Leanback is what a TV launcher looks for. Not required, because
+         requiring it would hide the app from every phone on the shelf. -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- Declared so a Wear device's launcher lists the app. Not required, for
+         the same reason. -->
+    <uses-feature android:name="android.hardware.type.watch" android:required="false" />
+
+    <!-- `banner` is a third thing beside `icon` and `roundIcon`, not a
+         replacement for either: a TV launcher draws a 320x180 banner and
+         ignores the icon, and every other launcher does the reverse. -->
     <application
         android:label="Fleet Runner"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:banner="@drawable/tv_banner"
         android:theme="@style/Theme.FleetRunner"
         android:usesCleartextTraffic="true">
         <!-- Cleartext is deliberate: the collector speaks plain HTTP and is only
@@ -31,6 +63,14 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- A TV launcher shows only activities carrying LEANBACK_LAUNCHER.
+                     Without this line the APK installs onto a Fire TV or a Google
+                     TV perfectly well and then cannot be started from the remote,
+                     which reads as "it does not work on TV" and is really "there
+                     is no icon". Both categories on one filter, so the same
+                     activity is the entry point everywhere rather than there
+                     being a TV build and a phone build. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
 

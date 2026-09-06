@@ -23,6 +23,21 @@ export const BIND = (process.env.FLEET_BIND ?? "0.0.0.0")
   .split(",")
   .map((h) => h.trim())
   .filter(Boolean);
+/**
+ * Tailnet nodes allowed to register as devices. Comma-separated; empty (the
+ * default) checks nothing at all, which is the behaviour that existed before.
+ *
+ * This fences the tailnet, not the house. A LAN peer is still governed by the
+ * posture the README describes -- an allowlist that also fenced the house would
+ * mean enabling it broke every phone on the shelf. See src/tailnet.ts.
+ *
+ *   FLEET_TAILNET_ALLOWLIST=my-macbook,pixel-4a,fleet-host
+ */
+export const TAILNET_ALLOWLIST = (process.env.FLEET_TAILNET_ALLOWLIST ?? "")
+  .split(",")
+  .map((n) => n.trim())
+  .filter(Boolean);
+
 export const DATA_DIR = process.env.FLEET_DATA_DIR ?? path.resolve("data");
 export const ARTIFACT_DIR = process.env.FLEET_ARTIFACT_DIR ?? path.resolve("artifacts/store");
 export const POWER_CONFIG_PATH = process.env.FLEET_POWER_CONFIG ?? path.resolve("power.json");

@@ -1,0 +1,24 @@
+{
+  "name": "size-report",
+  "capability": "network",
+  "executor": "host",
+  "description": "Break down a build's size: what a user downloads, what lands on the device, and which parts are big.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "top": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 10,
+        "description": "How many of the largest individual files to name in the report."
+      }
+    },
+    "description": "Which build is measured comes from `app` (name, build, sha256, platform). Nothing is installed and no device is touched, so this runs on any host that can reach the artifact store."
+  },
+  "example": {
+    "app": { "name": "", "build": "latest", "sha256": "latest" },
+    "params": { "top": 10 }
+  }
+}

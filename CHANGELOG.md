@@ -12,6 +12,87 @@ independently of the version below.
 
 ## [Unreleased]
 
+Waves 4 to 8: the fleet stops being a shelf of phones.
+
+### Added
+
+- **A browser tab is a fleet device.** `http://<collector>/runner` enrols the
+  browser that opens it — one HTML file, no build step, no install. A smart TV's
+  browser, a console, a Chromebook, a Kindle, a friend's phone via a QR code.
+  It declares `benchmark:jssha` and `benchmark:webcrypto` and deliberately NOT
+  `benchmark:synthetic`, because a browser's only native hash is asynchronous
+  and its rate is not the same quantity as a phone's. What it does prove is
+  correctness: it reports `synthetic_digest`, so it can be shown to be doing the
+  fleet's arithmetic.
+- **Platform and kind are declared by the agent**, not inferred from an `os`
+  string. `platform` is an open string (`android`, `ios`, `tvos`, `watchos`,
+  `visionos`, `macos`, `linux`, `windows`, `web`) and `kind` names the form
+  factor. The old regex remains as the fallback for agents that predate the
+  fields, so upgrading does not relabel a running shelf. The dashboard facets
+  both out of the data and draws a television, a watch, a headset, a board and
+  a browser tab rather than drawing everything as a phone.
+- **`backend` and `model.format` are open strings**, enforced by capabilities
+  the way `workload` already was. ONNX, MLX, ExecuTorch and WebGPU can be named
+  in a job without a collector release.
+- **A driver registry** under `collector/src/drivers/`: adb, simctl, devicectl,
+  each a file. Both Apple tools always reported the real platform in their
+  listings and nothing was reading it, so every booted simulator was called
+  `ios` and an Apple TV was filtered out one line into discovery. tvOS, watchOS
+  and visionOS devices are now discoverable and installable.
+- **A conformance suite** — `npm run conformance -- --device <id>` — that drives
+  a running agent through eight clauses, each of them something that has
+  actually gone wrong here. It turns the `recall_at1` bug into a check anybody
+  can run, and verifies the synthetic backend's block digest against the
+  specification rather than against another runner's code.
+- **Ephemeral agents.** `ttl_s` at registration means a closed browser tab and a
+  finished CI runner leave the shelf instead of accumulating as offline ghosts.
+  The row is kept, so their results stay attributable.
+- **Android reaches every shape it always could.** Leanback launcher category,
+  a TV banner, and touchscreen declared not-required, so the same APK installs
+  and starts on Android TV, Fire TV, Quest and Wear.
+- **A tvOS target** in the iOS project, from the same sources: two conditions
+  rather than a fork. A visionOS target is written and has never been compiled.
+- **A Dockerfile for the machine agent**, multi-arch by construction.
+- **`llm-eval`**: the fleet finally measures whether an answer is any good and
+  not only how fast it arrived. A device generates, a machine scores — five
+  rules, with the deterministic and model-judged halves reported separately and
+  never averaged.
+- **`upgrade-test`**: install the version users have, seed it, upgrade in place,
+  check the data survived. The stage is on every row, because "upgrade-test
+  failed" without it sends somebody to read the wrong logs.
+- **`size-report`**: archive, download and installed bytes, grouped per ABI. No
+  device, no toolchain, so it can run on every push and the trend exists when
+  somebody finally asks.
+- **A tailnet allowlist**, off by default. Not authentication, and it does not
+  make the collector safe to expose — it fences the tailnet so that a
+  `FLEET_BIND` that reaches outside the house still only admits nodes you named.
+  It never fences the LAN.
+- **`npm run chaos`**: the collector's own guarantees, made to fail on purpose.
+  A lapsed lease, exhausted attempts, a rotted artifact, a `SIGKILL` mid-job, a
+  cancelled job across a restart.
+- **CI on the platforms the machine agent claims**: Windows and arm64 Linux
+  alongside x64 Linux and macOS, printing the descriptor each one would send.
+- **`docs/platforms.md`**: every platform, what it takes to join, and an honest
+  column saying which have actually been watched to register.
+
+### Changed
+
+- `physicalIos` is `physicalApple`, and discovery no longer drops every Apple
+  device that is not an iPhone or iPad.
+- The machine agent's benchmark beacons on a clock rather than on an iteration
+  count. It previously beaconed only in sustained mode, which meant an ordinary
+  benchmark could not learn it had been cancelled until the background beacon
+  came round a minute later — by which time it had finished. Found by the
+  conformance suite.
+- Maestro's flow helpers moved from `executor.ts` into `workloads/flows.ts`, so
+  a workload directory can run a flow. Three handlers are now directories.
+
+### Fixed
+
+- The tailnet allowlist matched a short node name against a fully qualified
+  entry in one direction only, so an allowlist written the careful way silently
+  refused the node it was written for.
+
 ## [0.3.1] — 2026-09-06
 
 ### Fixed

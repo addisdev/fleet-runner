@@ -100,6 +100,22 @@ struct DeviceDescriptor: Codable {
     let ramMb: Int64
     let os: String
     let appVer: String
+    /**
+     Which Apple platform this build is, and what shape the device is.
+
+     `platform` is resolved at COMPILE time, not from `UIDevice`, because it
+     names the SDK this binary was built against and that is a fact about the
+     binary. A tvOS build and an iOS build are different products from the same
+     source; asking the running device would give the same answer for a
+     "Designed for iPad" build on visionOS as for a real iOS one, which is
+     exactly the distinction a benchmark table needs to keep.
+
+     `kind` is the shape, from the interface idiom. The two are separate on
+     purpose: an iPhone and an iPad are one platform and two kinds, while an
+     Apple TV and an iPhone are two platforms whose kinds also differ.
+     */
+    let platform: String
+    let kind: String?
 }
 
 struct Metrics: Codable {

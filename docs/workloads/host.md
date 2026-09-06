@@ -24,6 +24,67 @@ it guards — see [Publish on merge](../integration/publish-on-merge.md).
 With nothing attached, the job is claimed and fails cleanly with
 `no android targets attached`, which is the correct answer rather than a hang.
 
+## `upgrade-test`
+
+Does the version users already have survive becoming this one? Almost no app
+project automates this, and it is the failure that actually loses people. A
+clean install passes every suite in the fleet; the path nobody runs is a real
+user with two years of data taking an update and the migration dropping a table.
+
+```json
+{ "schema": 1, "job_id": "upg-1", "workload": "upgrade-test", "executor": "host",
+  "app": { "name": "app-android", "build": "latest", "sha256": "latest" },
+  "params": { "from_sha256": "<the build users have>",
+              "seed_flow": "seed-account", "verify_flow": "account-survived",
+              "app_id": "com.example.app" } }
+```
+
+Five steps: install the old build, seed it with a flow, install the new build
+**over** it, launch, verify. Step three is the one that has to be right —
+`adb install -r` and simctl both upgrade in place and keep the sandbox, and an
+uninstall between the two would make this an install test with extra steps that
+passes forever.
+
+**The stage is on every row and is the point of the row.** A failure at
+`install-old` or `seed` is the old build's problem and says nothing about the
+upgrade; at `upgrade` it is packaging, a signature mismatch or a downgraded
+versionCode; at `launch` it is a migration that crashes on start; at `verify` it
+upgraded, it launched, and the data is wrong. "upgrade-test failed" without the
+stage sends somebody to read the wrong logs.
+
+`from_build` must already be resolved to a hash. The executor deliberately does
+not resolve build names — the collector owns publish ordering, and a workload
+guessing which artifact "1.4.0" meant could pick a different one than the
+dashboard shows.
+
+## `size-report`
+
+The cheapest workload here. No device, no install, no toolchain: it fetches an
+artifact a `build` job published and reads its zip central directory. So it can
+run on every push forever, and the value is the trend — a graph of download size
+per build answers "when did this get big" months later, which nobody can answer
+retrospectively without having measured all along.
+
+```json
+{ "schema": 1, "job_id": "size-1", "workload": "size-report", "executor": "host",
+  "app": { "name": "app-android", "build": "latest", "sha256": "latest" } }
+```
+
+Three numbers, because one misleads:
+
+| Metric | What it is |
+|---|---|
+| `artifact_bytes` | the archive: what CI publishes and the store holds |
+| `download_bytes` | the sum of compressed entries: roughly what a user waits for |
+| `installed_bytes` | everything unpacked: roughly what it occupies on the device |
+
+They differ by a lot — native libraries compress well and resources do not — and
+quoting one when somebody meant another is the usual way a size report misleads.
+
+Native libraries group **per ABI** rather than as one `lib/`. `lib/` being huge
+tells you nothing you did not know; `lib/arm64-v8a` being 18 MB of it tells you
+what to split.
+
 ## `ui-test`
 
 Maestro flows or an XCUITest bundle, per device, with the JUnit report parsed

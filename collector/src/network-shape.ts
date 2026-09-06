@@ -66,8 +66,15 @@ const ADB = process.env.ADB_BIN ?? "adb";
 const STATE_DIR = process.env.FLEET_STATE_DIR ?? path.join(os.homedir(), ".fleet");
 const JOURNAL = path.join(STATE_DIR, "network-shape.json");
 
-/** The subset of a Target this module needs; structurally the executor's. */
-export type ShapeTarget = { id: string; platform: "android" | "ios"; kind?: "device" | "simulator" };
+/**
+ * The subset of a Target this module needs; structurally the executor's.
+ *
+ * `platform` is an open string because the executor's is. Every branch below
+ * asks "is this Android", never "is this one of exactly two platforms", so a
+ * tvOS or visionOS target takes the Apple path it should take rather than
+ * failing a type check on its way to the same answer.
+ */
+export type ShapeTarget = { id: string; platform: string; kind?: "device" | "simulator" };
 
 /** The subset of a Job this module needs. */
 export type ShapeJob = {
@@ -431,12 +438,16 @@ export async function apply(target: ShapeTarget, profile: string, job: ShapeJob 
     return hostShape(target, job, p.kind);
   }
 
-  // offline
-  if (target.platform === "ios") {
+  // offline. Every Apple platform, not just iOS: a tvOS or watchOS simulator
+  // shares the Mac's network stack for exactly the same reason an iOS one
+  // does, and devicectl has no more of a radio switch for an Apple TV than it
+  // has for an iPhone. Naming the platform in the message keeps the refusal
+  // true when the target is not an iPhone.
+  if (target.platform !== "android") {
     throw new Error(
-      `the offline profile cannot be applied to the iOS target ${target.id}: a simulator uses the Mac's own ` +
-      "network and has no per-simulator switch, and there is no devicectl path to a device's radios. " +
-      "(simctl status_bar --dataNetwork only redraws the status bar icon; the app stays fully online.)",
+      `the offline profile cannot be applied to the ${target.platform} target ${target.id}: a simulator uses ` +
+      "the Mac's own network and has no per-simulator switch, and there is no devicectl path to a device's " +
+      "radios. (simctl status_bar --dataNetwork only redraws the status bar icon; the app stays fully online.)",
     );
   }
 
