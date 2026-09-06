@@ -68,20 +68,38 @@ test("FLEET_LLAMA_BENCH pointing at nothing is not a declaration", async () => {
   assert.equal(await resolveLlamaBench({ FLEET_LLAMA_BENCH: path.join(dir, "llama-bench"), PATH: "" }), null);
 });
 
+// The next two are a pair: a file the platform will not run, and one it will.
+// What makes the difference is not the same question on the two families, and
+// the pair only means anything if each side asks its platform's own version —
+// POSIX asks about the execute bit, Windows about the extension, because
+// Windows has no execute bit for `fs.access` to test.
+
 test("FLEET_LLAMA_BENCH pointing at a non-executable file is not a declaration", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "frm-"));
-  const file = path.join(dir, "llama-bench");
+  const file = path.join(dir, process.platform === "win32" ? "llama-bench.txt" : "llama-bench");
   await writeFile(file, "#!/bin/sh\n");
-  await chmod(file, 0o644);
-  assert.equal(await resolveLlamaBench({ FLEET_LLAMA_BENCH: file, PATH: "" }), null);
+  if (process.platform !== "win32") await chmod(file, 0o644);
+  assert.equal(
+    await resolveLlamaBench({ FLEET_LLAMA_BENCH: file, PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" }),
+    null,
+  );
 });
 
 test("FLEET_LLAMA_BENCH pointing at a real executable resolves", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "frm-"));
-  const file = path.join(dir, "llama-bench");
-  await writeFile(file, "#!/bin/sh\nexit 0\n");
-  await chmod(file, 0o755);
-  assert.equal(await resolveLlamaBench({ FLEET_LLAMA_BENCH: file, PATH: "" }), file);
+  if (process.platform === "win32") {
+    const file = path.join(dir, "llama-bench.cmd");
+    await writeFile(file, "@echo off\r\nexit /b 0\r\n");
+    assert.equal(
+      await resolveLlamaBench({ FLEET_LLAMA_BENCH: file, PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" }),
+      file,
+    );
+  } else {
+    const file = path.join(dir, "llama-bench");
+    await writeFile(file, "#!/bin/sh\nexit 0\n");
+    await chmod(file, 0o755);
+    assert.equal(await resolveLlamaBench({ FLEET_LLAMA_BENCH: file, PATH: "" }), file);
+  }
 });
 
 test("a bare llama-bench on a supplied PATH resolves", async () => {
@@ -104,17 +122,6 @@ test("a bare llama-bench on a supplied PATH resolves", async () => {
     await chmod(file, 0o755);
     assert.equal(await resolveLlamaBench({ PATH: dir }), file);
   }
-});
-
-test("on Windows an extension PATHEXT does not list is not runnable", async () => {
-  // The other half of the same rule, and the one that matters: without it,
-  // FLEET_LLAMA_BENCH pointing at a README would resolve as a llama-bench and
-  // the agent would declare a backend it does not have.
-  if (process.platform !== "win32") return;
-  const dir = await mkdtemp(path.join(tmpdir(), "frm-"));
-  const file = path.join(dir, "llama-bench.txt");
-  await writeFile(file, "not a program\r\n");
-  assert.equal(await resolveLlamaBench({ FLEET_LLAMA_BENCH: file, PATH: "", PATHEXT: ".COM;.EXE;.BAT;.CMD" }), null);
 });
 
 test("which does not invent a binary that is not there", async () => {
