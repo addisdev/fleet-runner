@@ -12,6 +12,8 @@ independently of the version below.
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-06
+
 ### Fixed
 
 - **The iOS runner could not launch on any simulator runtime newer than 18.4.**
@@ -192,7 +194,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/addisdev/fleet-runner/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/addisdev/fleet-runner/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/addisdev/fleet-runner/releases/tag/v0.1.0
