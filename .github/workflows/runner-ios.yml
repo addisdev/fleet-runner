@@ -33,3 +33,24 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO
+
+      # The static half: does the app link a Swift overlay that only exists
+      # for old deployment targets? Seconds, no simulator, and it catches the
+      # exact bug that shipped -- `import WebKit` hard-linking
+      # /usr/lib/swift/libswiftWebKit.dylib, which newer runtimes do not carry.
+      #
+      # This runs first because the dynamic check below CANNOT catch that class
+      # here: a GitHub macOS runner ships only the newest iOS runtime, and the
+      # newest runtime is precisely the one where the bug does not reproduce.
+      - name: No back-deployed Swift overlays
+        run: ./check-backdeploy.sh
+
+      # The dynamic half: building it and running it are two different claims,
+      # and until this step existed only the first was ever checked. It boots
+      # the oldest runtime available and asserts the process survives launch,
+      # printing dyld's own words when it does not.
+      #
+      # It is slow -- most of it is the simulator boot -- and this workflow is
+      # path-filtered, so it only runs when runner-ios/ actually changes.
+      - name: Launch it
+        run: ./launch-smoke.sh

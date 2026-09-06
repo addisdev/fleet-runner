@@ -28,6 +28,9 @@ extension Workloads {
 
     static let webShotsLoadTimeoutS: TimeInterval = 30
     static let webShotsWaitForTimeoutS: TimeInterval = 15
+    /// Web fonts are given their own, shorter budget: a page whose fonts never
+    /// settle should still be captured, just slightly early.
+    static let webShotsFontsTimeoutS: TimeInterval = 5
 
     static func runWebShots(job: JobSpec, client: CollectorClient, deviceId: String,
                             artifacts: ArtifactCache) async {
@@ -390,8 +393,7 @@ final class WebShotCapture: NSObject, WKNavigationDelegate {
         if let mask = page.mask, !mask.isEmpty {
             try? await inject(css: WebShots.maskCSS(mask))
         }
-        _ = try? await webView.callAsyncJavaScript(
-            "await document.fonts.ready; return true;", contentWorld: .page)
+        await waitForFonts(timeout: Workloads.webShotsFontsTimeoutS)
 
         let settle = WebShots.settleMs(for: page)
         if settle > 0 { try? await Task.sleep(for: .milliseconds(settle)) }
@@ -476,6 +478,48 @@ final class WebShotCapture: NSObject, WKNavigationDelegate {
             try? await Task.sleep(for: .milliseconds(200))
         }
         throw WebShotsError(message: "waitFor '\(selector)' never matched inside \(Int(timeout))s")
+    }
+
+    /// Waits for web fonts to settle, the way `document.fonts.ready` does.
+    ///
+    /// Polling a flag is uglier than awaiting the promise directly, and it is
+    /// deliberate. Awaiting it needs `callAsyncJavaScript`, and that call is
+    /// what stopped the app from starting at all.
+    ///
+    /// `callAsyncJavaScript` is one of about thirty WebKit APIs that live in
+    /// Swift's WebKit overlay, and for a deployment target below 18.4 the
+    /// linker resolves those to `/usr/lib/swift/libswiftWebKit.dylib` — a
+    /// library that no longer ships in newer runtimes, because the overlay was
+    /// folded into WebKit.framework at 18.4. Using one of them made the app
+    /// fail to *launch*, in dyld, before any of this ran, on every runtime
+    /// newer than the move. `launch-smoke.sh` exists to catch that returning.
+    ///
+    /// `evaluateJavaScript` is the plain Objective-C API and is available on
+    /// every runtime this app supports.
+    ///
+    /// Fonts not settling is not an error. A screenshot taken a moment early
+    /// is a worse screenshot; a capture abandoned over a webfont is no
+    /// screenshot at all.
+    private func waitForFonts(timeout: TimeInterval) async {
+        // `document.fonts.status` is not enough on its own: it reads "loaded"
+        // before a font has been asked for as well as after it has arrived, so
+        // polling it can return true before any loading starts. The promise is
+        // the thing that means "settled", so latch it and poll the latch.
+        let js = """
+        (function () {
+          if (!document.fonts) { return true; }
+          if (window.__fleetFontsReady === undefined) {
+            window.__fleetFontsReady = false;
+            document.fonts.ready.then(function () { window.__fleetFontsReady = true; });
+          }
+          return window.__fleetFontsReady === true;
+        })();
+        """
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let value = try? await webView.evaluateJavaScript(js), (value as? Bool) == true { return }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
     }
 
     private func inject(css: String) async throws {
