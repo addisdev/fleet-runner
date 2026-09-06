@@ -1,4 +1,7 @@
-# fleet-runner-machine
+# runner-machine
+
+*Part of [Fleet Runner](../README.md). The collector is
+[`../collector`](../collector).*
 
 The desktop half of **Fleet Runner**, a personal device lab: a Node agent that turns a laptop or
 desktop into a node the [collector](../collector) can send work to.

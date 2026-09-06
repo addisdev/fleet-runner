@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "job_id": "bench-nightly",
+  "workload": "benchmark",
+  "executor": "device",
+  "backend": "synthetic",
+  "params": { "prompt_tokens": 256, "gen_tokens": 64, "warmup_iters": 1, "measure_iters": 3 },
+  "targets": { "match": "ram_mb >= 3000" },
+  "constraints": { "require_charging": true, "min_battery_pct": 30 },
+  "fanout": true
+}

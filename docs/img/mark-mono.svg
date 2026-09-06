@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Fleet Runner">
+<!-- The mark without its charcoal tile, for placing on a coloured header.
+     currentColor so it inherits the header's foreground in either theme. -->
+<rect x="15.25" y="8.25" width="17.5" height="31.5" rx="3.25" fill="none" stroke="currentColor" stroke-width="2.5"/>
+<path d="M18.5 24h2.6l1.9-5.4 2.9 11 2-5.6h1.6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M21.5 35.25h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job_id": "store-shots",
+  "workload": "locale-shots",
+  "executor": "host",
+  "app": { "name": "your-app-android", "build": "nightly", "sha256": "latest" },
+  "params": { "flow": "your-app/store-shots.yaml", "locales": ["en-US", "de-DE", "ja-JP", "ar-EG"] },
+  "targets": { "exclusive": true },
+  "lease": { "ttl_s": 3600 }
+}

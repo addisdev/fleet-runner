@@ -97,7 +97,7 @@ export type Job = {
 
 // The generic XCUITest bundle lives in the iOS runner repo; one scheme tests
 // any app via TEST_RUNNER_-passed env (FLEET_APP_ID / FLEET_ASSERTS).
-const WEB_SPECS_DIR = process.env.FLEET_WEB_SPECS_DIR ?? path.resolve("web-specs");
+const WEB_SPECS_DIR = process.env.FLEET_WEB_SPECS_DIR ?? path.resolve("examples/web-specs");
 
 // A sibling directory in the mono repo. It used to be a sibling checkout, and
 // FLEET_IOS_PROJECT still overrides it, which is what the executor host on the

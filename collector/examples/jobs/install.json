@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "job_id": "install-nightly",
+  "workload": "install",
+  "executor": "host",
+  "app": { "name": "your-app-android", "build": "nightly", "sha256": "latest", "platform": "android" },
+  "targets": { "match": "os ~ 'android'", "device_kind": "device" }
+}

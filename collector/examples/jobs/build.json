@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "job_id": "build-903",
+  "workload": "build",
+  "executor": "device",
+  "params": {
+    "repo": "git@github.com:you/your-app.git",
+    "ref": "main",
+    "kind": "gradle",
+    "task": "assembleRelease",
+    "app": "your-app-android"
+  },
+  "targets": { "match": "capabilities ~ 'build:gradle'" },
+  "constraints": { "require_ac": true, "require_idle_s": 300, "max_load": 2 },
+  "lease": { "ttl_s": 3600 },
+  "report_to": { "github_status": "you/your-app@0000000000000000000000000000000000000000" }
+}

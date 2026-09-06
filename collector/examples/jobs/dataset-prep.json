@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job_id": "prep-plantnet",
+  "workload": "dataset-prep",
+  "executor": "device",
+  "params": { "source": "plantnet-300k", "max_items": 120, "split": "held-out" },
+  "targets": { "match": "capabilities ~ 'dataset-prep'" },
+  "constraints": { "require_ac": true },
+  "lease": { "ttl_s": 3600 }
+}

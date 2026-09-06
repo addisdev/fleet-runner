@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job_id": "drain-weekly",
+  "workload": "drain",
+  "executor": "host",
+  "app": { "name": "your-app-android", "build": "nightly", "sha256": "latest" },
+  "params": { "duration_s": 14400, "track": "your-app/commute.gpx" },
+  "targets": { "pool": "battery", "exclusive": true },
+  "lease": { "ttl_s": 21600 }
+}

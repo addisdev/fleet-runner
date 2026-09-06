@@ -1,5 +1,12 @@
 # Fleet Runner — Dashboard Plan
 
+!!! note "Kept as written, 2026-08. Not maintained."
+
+    This is the plan the dashboard was built from, and it is complete — every
+    phase in it shipped. It is kept for the reasoning, not as a reference.
+    For how the dashboard works today, see [the API](../api.md) and
+    [Concepts](../concepts.md).
+
 *Companion to `fleet-runner-plan.html`, which lives beside the repo checkouts and
 covers all four components. This document is collector-only, so it lives here.
 Written 2026-08-18.*
@@ -42,7 +49,7 @@ Written 2026-08-18.*
 >
 > **Legacy is not deletable yet** — one gap remains: the cross-device benchmark
 > comparison at `/dash/legacy/bench`, which needs D3's trend charts.
-> Details in [`README.md`](../README.md#dashboard).
+> Details in [`README.md`](https://github.com/addisdev/fleet-runner/tree/main/collector#readme).
 
 ## 0. Where we are
 

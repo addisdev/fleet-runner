@@ -36,7 +36,7 @@ jobs:
         run: |
           npx --yes tsx scripts/ci-upload.ts \
             --collector "${{ secrets.FLEET_COLLECTOR_URL }}" \
-            --app       greenfolio-android \
+            --app       your-app-android \
             --build     "$(git describe --tags --always)" \
             --platform  android \
             --artifact  app/build/outputs/apk/debug/app-debug.apk

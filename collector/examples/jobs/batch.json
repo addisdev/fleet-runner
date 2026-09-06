@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "job_id": "batch-prompts",
+  "workload": "batch",
+  "executor": "device",
+  "backend": "llama.cpp",
+  "model": { "name": "qwen2.5-0.5b", "format": "gguf", "quant": "Q4_K_M", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  "params": { "input_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "max_items": 200, "max_tokens": 256 },
+  "targets": { "match": "ram_mb >= 4000" },
+  "constraints": { "require_charging": true }
+}

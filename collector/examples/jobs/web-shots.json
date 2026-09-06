@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "job_id": "visual-nightly",
+  "workload": "web-shots",
+  "executor": "host",
+  "suite": { "kind": "playwright", "flows": "your-site" },
+  "params": { "browser": ["chromium", "android-device"] },
+  "targets": { "url": "https://example.com", "exclusive": true },
+  "lease": { "ttl_s": 2400 }
+}

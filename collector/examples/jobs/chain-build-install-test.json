@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "job_id": "ui-903",
+  "workload": "ui-test",
+  "executor": "host",
+  "depends_on": ["build-903", "install-903"],
+  "app": {
+    "name": "your-app-android",
+    "build": "903",
+    "sha256": "${jobs.build-903.artifact}"
+  },
+  "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" },
+  "targets": { "exclusive": true },
+  "lease": { "ttl_s": 1800 }
+}

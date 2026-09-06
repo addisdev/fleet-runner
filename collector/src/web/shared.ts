@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { uploadArtifact } from "../fleet-client.js";
 
-export const WEB_SPECS_DIR = process.env.FLEET_WEB_SPECS_DIR ?? path.resolve("web-specs");
+export const WEB_SPECS_DIR = process.env.FLEET_WEB_SPECS_DIR ?? path.resolve("examples/web-specs");
 
 /**
  * Resolve a suite.flows value to its directory under web-specs, refusing

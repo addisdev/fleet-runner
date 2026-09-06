@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "job_id": "bench-qwen",
+  "workload": "benchmark",
+  "executor": "device",
+  "backend": "llama.cpp",
+  "model": { "name": "qwen2.5-0.5b", "format": "gguf", "quant": "Q4_K_M", "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" },
+  "params": { "prompt_tokens": 512, "gen_tokens": 128, "warmup_iters": 1, "measure_iters": 3 },
+  "targets": { "match": "ram_mb >= 4000 && os ~ 'android'" },
+  "constraints": { "require_charging": true }
+}

@@ -1,6 +1,6 @@
 .DS_Store
+site/
 
-# Worktrees created by the Claude Code harness live here. They are real
-# checkouts of this repository, so the main checkout should not report them
-# as untracked content.
-.claude/worktrees/
+# Claude Code keeps its worktrees here. They are real checkouts of this
+# repository, so committing them would nest the repo inside itself.
+.claude/

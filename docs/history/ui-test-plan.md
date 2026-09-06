@@ -1,5 +1,11 @@
 # Nightly UI tests across iOS, Android and web
 
+!!! note "Kept as written, 2026-08. Not maintained."
+
+    Written before the UI-testing work, including the parts that turned out
+    wrong. For what the fleet actually runs today, see
+    [Host workloads](../workloads/host.md).
+
 *Written 2026-08-19. Companion to [`dashboard-plan.md`](dashboard-plan.md).*
 
 ## 0. What actually exists
@@ -139,7 +145,7 @@ hardware found a year-old latent bug in the test that exists to find bugs.**
 
 `mac-xcode` now runs on the **runner host**, not the primary
 workstation, with the iPhone cabled there. Standing it up is written down in
-[`ios-executor-host.md`](ios-executor-host.md); three things from that are
+[`ios-executor-host.md`](../deploy/ios-executor.md); three things from that are
 worth repeating here because each cost real time:
 
 - **The local-network gate applies per host.** A LaunchAgent there cannot reach

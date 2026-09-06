@@ -16,8 +16,16 @@ import path from "node:path";
 import { exec } from "../fleet-client.js";
 import type { Target } from "./types.js";
 
-/** Where the flow files live. A sibling of the collector in a normal checkout. */
-export const FLOWS_DIR = process.env.FLEET_FLOWS_DIR ?? path.resolve("flows");
+/**
+ * Where the flow files live.
+ *
+ * `examples/flows` rather than `flows`: develop moved them under examples/ when
+ * the documentation site landed, and this module was extracted from executor.ts
+ * before that. A stale default here would not fail loudly — `resolveFlow` would
+ * report "flow not found" for a flow that is right there, which reads as a
+ * typo in the job spec rather than as a path this file got wrong.
+ */
+export const FLOWS_DIR = process.env.FLEET_FLOWS_DIR ?? path.resolve("examples/flows");
 
 /**
  * Maestro, or wherever this host keeps it. A LaunchAgent's PATH is not a login

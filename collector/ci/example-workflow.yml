@@ -1,7 +1,7 @@
 # Per-PR device test. Copy into an app repo as .github/workflows/. See README.md.
 #
 # When (and only when) the fleet gets connected to real CI, a workflow like
-# this goes into an app repo (e.g. greenfolio-android). Until then this file
+# this goes into an app repo (e.g. your-app-android). Until then this file
 # documents the contract and nothing reads it.
 #
 # Requirements at connect time, none of which exist today by design:
@@ -27,11 +27,11 @@ jobs:
           cat > fleet-job.json <<EOF
           {
             "schema": 1,
-            "job_id": "gf-smoke-${{ github.event.pull_request.number }}-${{ github.run_attempt }}-${{ github.sha }}",
+            "job_id": "app-smoke-${{ github.event.pull_request.number }}-${{ github.run_attempt }}-${{ github.sha }}",
             "workload": "ui-test",
             "executor": "host",
-            "app": { "name": "greenfolio-android", "build": "pr-${{ github.event.pull_request.number }}", "sha256": "replaced-by-upload" },
-            "suite": { "kind": "maestro", "flows": "greenfolio/smoke.yaml" },
+            "app": { "name": "your-app-android", "build": "pr-${{ github.event.pull_request.number }}", "sha256": "replaced-by-upload" },
+            "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" },
             "targets": { "exclusive": true },
             "lease": { "ttl_s": 1200 },
             "report_to": { "github_status": "${{ github.repository }}@${{ github.sha }}" }

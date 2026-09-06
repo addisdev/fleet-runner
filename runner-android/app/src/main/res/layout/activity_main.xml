@@ -1,58 +1,486 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The runner's one screen.
+
+  A fleet device spends its life face-down on a shelf, so this is read in two
+  situations and no others: while enrolling it, and while standing over it
+  wondering why it is not taking work. Both questions are answered above the
+  fold — what the agent is doing, which collector it is talking to, and whether
+  the battery or the heat is about to disqualify it from a job — and the
+  settings that only matter once are the fields underneath.
+
+  Plain views on shape drawables rather than Material components: the app
+  depends on appcompat alone, and the whole Material library is a large answer
+  to "we need a card and a pill". No fake status bar either — Android draws the
+  real one on top.
+-->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="24dp">
+    android:background="@color/fleet_bg"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="12dp"
+    android:paddingBottom="16dp"
+    android:fitsSystemWindows="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/title"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:paddingBottom="16dp" />
-
-    <EditText
-        android:id="@+id/collector_url"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/hint_collector_url"
-        android:inputType="textUri" />
-
-    <EditText
-        android:id="@+id/device_id"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="@string/hint_device_id"
-        android:inputType="text" />
-
+    <!-- header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:paddingTop="12dp">
+        android:gravity="center_vertical"
+        android:paddingBottom="12dp">
 
-        <Button
-            android:id="@+id/start"
+        <ImageView
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_glyph"
+            android:importantForAccessibility="no" />
+
+        <TextView
             android:layout_width="0dp"
-            android:layout_weight="1"
             android:layout_height="wrap_content"
-            android:text="@string/start" />
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:text="@string/title"
+            android:textSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/fleet_ink" />
+
+        <!-- The live pill: the same three states and the same colours as the
+             dashboard's live dot, and like it only animated while connecting. -->
+        <LinearLayout
+            android:id="@+id/live_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:background="@drawable/bg_pill"
+            android:paddingStart="10dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
+
+            <View
+                android:id="@+id/live_dot"
+                android:layout_width="8dp"
+                android:layout_height="8dp"
+                android:background="@drawable/dot" />
+
+            <TextView
+                android:id="@+id/live_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/status_stopped"
+                android:textSize="12sp"
+                android:textColor="@color/fleet_ink_dim" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:scrollbars="none"
+        android:clipToPadding="false">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- hero: the status, at the size of the only question that matters -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="20dp">
+
+                <com.taylab.fleetrunner.ui.PulseTraceView
+                    android:id="@+id/pulse"
+                    android:layout_width="match_parent"
+                    android:layout_height="64dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:baselineAligned="true"
+                    android:layout_marginTop="14dp">
+
+                    <TextView
+                        android:id="@+id/headline"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Stopped"
+                        android:textSize="24sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/fleet_ink"
+                        tools:ignore="HardcodedText" />
+
+                    <TextView
+                        android:id="@+id/beacon_age"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:textSize="12sp"
+                        android:fontFamily="monospace"
+                        android:textColor="@color/fleet_ink_faint"
+                        android:visibility="gone"
+                        tools:text="12s ago"
+                        tools:visibility="visible" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/subtitle"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/not_registered"
+                    android:textSize="14sp"
+                    android:textColor="@color/fleet_ink_dim" />
+            </LinearLayout>
+
+            <!-- collector -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="16dp"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_collector"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.07"
+                    android:textColor="@color/fleet_ink_dim" />
+
+                <EditText
+                    android:id="@+id/collector_url"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:background="@drawable/bg_field"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="8dp"
+                    android:hint="@string/hint_collector_url"
+                    android:inputType="textUri"
+                    android:textSize="15sp"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/fleet_ink"
+                    android:textColorHint="@color/fleet_ink_faint"
+                    android:importantForAutofill="no" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/divider" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_device_id"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:letterSpacing="0.07"
+                    android:textColor="@color/fleet_ink_dim" />
+
+                <EditText
+                    android:id="@+id/device_id"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:background="@drawable/bg_field"
+                    android:paddingTop="6dp"
+                    android:paddingBottom="8dp"
+                    android:hint="@string/hint_device_id"
+                    android:inputType="text"
+                    android:textSize="15sp"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/fleet_ink"
+                    android:textColorHint="@color/fleet_ink_faint"
+                    android:importantForAutofill="no" />
+            </LinearLayout>
+
+            <!-- The three readings that decide whether this device may take a
+                 job: charge, heat, and what is carrying its traffic. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="12dp"
+                android:baselineAligned="false">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_tile"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_battery"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:textColor="@color/fleet_ink_dim" />
+
+                    <TextView
+                        android:id="@+id/battery_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/dash"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/fleet_ink" />
+
+                    <FrameLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="3dp"
+                        android:layout_marginTop="10dp"
+                        android:background="@drawable/bg_meter_track">
+
+                        <View
+                            android:id="@+id/battery_meter"
+                            android:layout_width="0dp"
+                            android:layout_height="match_parent"
+                            android:background="@drawable/bg_meter_fill" />
+                    </FrameLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_tile"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_thermal"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:textColor="@color/fleet_ink_dim" />
+
+                    <TextView
+                        android:id="@+id/thermal_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/dash"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/fleet_ink" />
+
+                    <!-- Four steps, not one coloured word: "serious" as three
+                         lit steps reads as most of the way to trouble. -->
+                    <LinearLayout
+                        android:id="@+id/thermal_steps"
+                        android:layout_width="match_parent"
+                        android:layout_height="3dp"
+                        android:layout_marginTop="10dp"
+                        android:orientation="horizontal">
+
+                        <View android:id="@+id/thermal_step_1" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:background="@drawable/bg_meter_track" />
+                        <View android:id="@+id/thermal_step_2" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="3dp" android:background="@drawable/bg_meter_track" />
+                        <View android:id="@+id/thermal_step_3" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="3dp" android:background="@drawable/bg_meter_track" />
+                        <View android:id="@+id/thermal_step_4" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="3dp" android:background="@drawable/bg_meter_track" />
+                    </LinearLayout>
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="10dp"
+                    android:orientation="vertical"
+                    android:background="@drawable/bg_tile"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/label_network"
+                        android:textSize="10sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.06"
+                        android:textColor="@color/fleet_ink_dim" />
+
+                    <TextView
+                        android:id="@+id/network_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/dash"
+                        android:textSize="20sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/fleet_ink"
+                        android:maxLines="1" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="7dp"
+                        android:text="@string/beacon_interval"
+                        android:textSize="11sp"
+                        android:textColor="@color/fleet_ink_faint" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- The job card appears only when there is a job to name. -->
+            <LinearLayout
+                android:id="@+id/job_card"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/bg_card"
+                android:padding="16dp"
+                android:layout_marginTop="12dp"
+                android:visibility="gone"
+                tools:visibility="visible">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/job_label"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/label_running"
+                        android:textSize="11sp"
+                        android:textStyle="bold"
+                        android:letterSpacing="0.07"
+                        android:textColor="@color/fleet_ink_dim" />
+
+                    <TextView
+                        android:id="@+id/job_pill"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_pill"
+                        android:paddingStart="9dp"
+                        android:paddingEnd="9dp"
+                        android:paddingTop="2dp"
+                        android:paddingBottom="2dp"
+                        android:textSize="12sp"
+                        android:textStyle="bold"
+                        android:textColor="@color/fleet_warn"
+                        tools:text="claimed" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/job_workload"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:textColor="@color/fleet_ink"
+                    tools:text="benchmark" />
+
+                <TextView
+                    android:id="@+id/job_id"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:textSize="12sp"
+                    android:fontFamily="monospace"
+                    android:ellipsize="middle"
+                    android:maxLines="1"
+                    android:textColor="@color/fleet_ink_dim"
+                    tools:text="bench-qwen-q4-nightly-31" />
+
+                <TextView
+                    android:id="@+id/job_elapsed"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:textSize="12sp"
+                    android:textColor="@color/fleet_ink_dim"
+                    tools:text="started 3m 12s ago" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:layout_marginBottom="4dp"
+                android:text="@string/foreground_note"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp"
+                android:textColor="@color/fleet_ink_faint" />
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- controls: 48dp tall, full width, well past the 44dp floor -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="12dp"
+        android:baselineAligned="false">
 
         <Button
             android:id="@+id/stop"
             android:layout_width="0dp"
+            android:layout_height="48dp"
             android:layout_weight="1"
-            android:layout_height="wrap_content"
-            android:text="@string/stop" />
+            android:background="@drawable/bg_button_secondary"
+            android:text="@string/stop"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            android:textColor="@color/fleet_accent"
+            android:stateListAnimator="@null" />
+
+        <Button
+            android:id="@+id/start"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="2"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/bg_button_primary"
+            android:text="@string/start"
+            android:textAllCaps="false"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:textColor="@color/fleet_on_accent"
+            android:stateListAnimator="@null" />
     </LinearLayout>
 
+    <!-- The status sentence. Keeps its id and its text so the Maestro flows
+         that read the agent's state off this screen keep working. -->
     <TextView
         android:id="@+id/status"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="24dp"
-        android:textSize="16sp"
-        android:text="@string/status_stopped" />
+        android:layout_marginTop="10dp"
+        android:gravity="center"
+        android:text="@string/status_stopped"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:textColor="@color/fleet_ink_faint" />
 </LinearLayout>

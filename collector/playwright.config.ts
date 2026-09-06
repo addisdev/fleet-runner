@@ -9,7 +9,7 @@ import { defineConfig, devices } from "@playwright/test";
  * PLAYWRIGHT_BASE_URL.
  */
 export default defineConfig({
-  testDir: "web-specs",
+  testDir: "examples/web-specs",
   // No retries. A retry that turns red into green destroys the signal the
   // suite exists to produce; the dashboard's flaky detection is the gate.
   retries: 0,

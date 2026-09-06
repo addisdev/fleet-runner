@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "job_id": "shell-maintenance",
+  "workload": "shell",
+  "executor": "device",
+  "params": { "script_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "args": ["--prune"] },
+  "targets": { "match": "capabilities ~ 'shell'" },
+  "constraints": { "require_ac": true }
+}

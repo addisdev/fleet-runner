@@ -125,6 +125,9 @@ step("every workload has an icon");
 // The schema is the contract for a name that three codebases write and one
 // reads. Nothing enforced it until now, and the last drift cost the plant-ID
 // eval's numbers their queryability.
+step("example job specs validate");
+if (!(await run(process.execPath, [TSX, "scripts/check-examples.ts"]))) failed = true;
+
 step("metric names match the schema");
 if (!(await run(process.execPath, [TSX, "scripts/check-metrics.ts"]))) failed = true;
 

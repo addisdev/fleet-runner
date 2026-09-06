@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "job_id": "thermal-sustained",
+  "workload": "thermal",
+  "executor": "device",
+  "backend": "synthetic",
+  "params": { "prompt_tokens": 256, "gen_tokens": 64, "duration_s": 900 },
+  "targets": { "device_id": "sm-x930-0d41" },
+  "constraints": { "require_charging": true },
+  "lease": { "ttl_s": 1800 }
+}

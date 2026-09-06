@@ -34,7 +34,14 @@
           "examples": ["gguf", "mlmodelc", "tflite", "onnx", "ort", "pte", "mlx", "safetensors"]
         },
         "quant": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        "sha256": {
+          "type": "string",
+          "anyOf": [
+            { "pattern": "^[a-f0-9]{64}$" },
+            { "pattern": "^\\$\\{jobs\\.[^}]+\\}$" }
+          ],
+          "description": "A content hash, or a ${jobs.<id>.artifact} reference to a dependency's output, substituted at promotion."
+        }
       }
     },
     "app": {
@@ -44,7 +51,15 @@
       "properties": {
         "name": { "type": "string" },
         "build": { "type": "string" },
-        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sha256": {
+          "type": "string",
+          "anyOf": [
+            { "pattern": "^[a-f0-9]{64}$" },
+            { "const": "latest" },
+            { "pattern": "^\\$\\{jobs\\.[^}]+\\}$" }
+          ],
+          "description": "A content hash, or the literal \"latest\" — which resolves to the newest artifact published under this app name, ordered by publish_seq. Pinning a literal hash tests that build forever; one of these spent six days guarding a build older than the code it was meant to guard."
+        },
         "platform": {
           "type": "string",
           "default": "android",
@@ -56,10 +71,11 @@
     "backend": {
       "type": "string",
       "minLength": 1,
-      "description": "Which implementation should run this workload. Open, and enforced by capabilities rather than by a list here: an agent declaring `benchmark:onnx` is what makes that pairing runnable, and the collector refuses a backend no registered agent declares with a 422 naming it. Closing the set would have meant every new runtime -- ONNX Runtime, MLX, ExecuTorch, WebGPU -- needed a collector release before a job could so much as mention it.\n\nIt is also how a workload picks among several toolchains for one job. `build` uses it for the build kind: a machine declares `build:xcode`, and naming that backend routes the job to the Mac rather than to whichever machine polled first. Build jobs that carry the kind only in `params.kind` keep working unchanged -- see the machine runner's capabilities.ts for why bare `build` stays declared alongside.",
+      "description": "Which implementation runs the workload. `synthetic` is a SHA-256 digest loop that every runner implements identically token for token -- real, device-comparable hardware numbers, never LLM numbers -- and it is the default a result row assumes when a spec names none. `mlx` is probed for by the machine agent but has no backend behind it yet.\n\nNo longer a closed enum, and enforced by capabilities instead: an agent declaring `benchmark:onnx` is what makes that pairing runnable, and the collector refuses a backend no registered agent declares with a 422 naming it. Closing the set meant every new runtime -- ONNX Runtime, ExecuTorch, WebGPU -- needed a collector release before a job could so much as mention it.\n\nIt is also how a workload picks among several toolchains for one job. `build` uses it for the build kind: a machine declares `build:xcode`, and naming that backend routes the job to the Mac rather than to whichever machine polled first. Build jobs carrying the kind only in `params.kind` keep working unchanged -- see the machine agent's capabilities.ts for why bare `build` stays declared alongside.\n\nThe browser runner declares neither `synthetic` nor a bare `benchmark`: its only native hash is asynchronous, so its rate is not the same quantity as a phone's. It names `jssha` and `webcrypto` instead, which is what keeps a browser's number out of a column of phones' numbers.",
       "examples": [
-        "llama.cpp", "coreml", "litert", "whisper.cpp",
-        "onnx", "ort-web", "mlx", "executorch", "webgpu", "webllm",
+        "synthetic", "llama.cpp", "coreml", "litert", "whisper.cpp", "mlx",
+        "onnx", "ort-web", "executorch", "webgpu", "webllm",
+        "jssha", "webcrypto",
         "gradle", "xcode", "npm"
       ]
     },
