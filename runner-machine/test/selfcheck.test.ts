@@ -8,6 +8,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import {
   offsetMs, roundTripMs, readNtpTimestamp, clientPacket, NTP_EPOCH_OFFSET_S, ntpOffsetMs,
 } from "../src/clock.js";
@@ -169,9 +172,28 @@ test("a tool that is not installed is skipped, not failed", async () => {
 });
 
 test("a tool that is installed but answers nothing recognisable fails", async () => {
-  // /usr/bin/true exists, runs, and prints nothing: a broken install, which is
-  // the one thing this workload exists to notice.
-  const row = await toolCheck("true", ["--version"], parseGradleVersion, { PATH: "/usr/bin:/bin" });
+  // A tool that exists, runs, and prints nothing parseable: a broken install,
+  // which is the one thing this workload exists to notice — and a different
+  // outcome from "not installed", which is not a fault.
+  //
+  // The fixture used to be /usr/bin/true, which does not exist on Windows, so
+  // the check quietly became "a missing tool is skipped" there and asserted
+  // nothing. A script written for the platform tests the same thing on both.
+  const dir = await mkdtemp(path.join(tmpdir(), "frm-selfcheck-"));
+  let bin: string;
+  if (process.platform === "win32") {
+    bin = "quiet-tool";
+    await writeFile(path.join(dir, "quiet-tool.cmd"), "@echo off\r\nexit /b 0\r\n");
+  } else {
+    bin = "quiet-tool";
+    const file = path.join(dir, bin);
+    await writeFile(file, "#!/bin/sh\nexit 0\n");
+    await chmod(file, 0o755);
+  }
+  const row = await toolCheck(bin, ["--version"], parseGradleVersion, {
+    PATH: dir,
+    PATHEXT: ".COM;.EXE;.BAT;.CMD",
+  });
   assert.equal(row.ok, false);
   assert.equal(countFailed([row]), 1);
 });
