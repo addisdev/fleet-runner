@@ -216,38 +216,199 @@ async function linux(): Promise<Partial<Descriptor>> {
 }
 
 // --- Windows ----------------------------------------------------------------
+//
+// Two query surfaces, in the order they are likely to answer.
+//
+// `wmic` used to be the whole Windows path here, chosen because it needs no
+// PowerShell execution policy. The platform matrix then ran the descriptor on
+// windows-latest and every Windows field came back null: `wmic` is a REMOVED
+// feature on current Windows, not a deprecated one, so the probes were asking
+// a question of a binary that is no longer installed. The agent registered —
+// the nulls are the contract working — but `os` and `ram_mb` being null means
+// no `targets.match` expression can select a Windows machine by its OS or its
+// memory, which leaves `device_id`, `platform` and `arch` as the only handles
+// on it.
+//
+// So `Get-CimInstance` leads and `wmic` is the fallback for the older Windows
+// installs that still have it. Both are wrapped: a machine where neither
+// answers reports nulls rather than failing to register.
+
+/** The Windows facts, before they are shaped into descriptor fields. */
+type WinFacts = {
+  model: string | null;
+  soc: string | null;
+  ramBytes: number | null;
+  version: string | null;
+  gpu: string | null;
+  vramBytes: number | null;
+  /** Win32_SystemEnclosure ChassisTypes, comma-joined: "3", or "10,32". */
+  chassis: string | null;
+  /** Whether the machine reported any battery at all. */
+  battery: boolean | null;
+};
 
 async function windows(): Promise<Partial<Descriptor>> {
-  // wmic is deprecated but still the one query surface that needs no PowerShell
-  // execution policy. Every call is wrapped, so a machine where it has finally
-  // been removed reports nulls instead of failing to register.
-  const wmic = async (args: string[]) => orNull(() => out("wmic", args, 15000));
+  // wmic only runs when CIM found nothing at all. A machine that answered the
+  // CIM queries has WMI working, and asking a removed binary the same six
+  // questions afterwards costs six process spawns to learn nothing.
+  const facts = (await cimFacts()) ?? (await wmicFacts());
 
-  const model = wmicValue(await wmic(["computersystem", "get", "model", "/value"]), "Model");
-  const soc = wmicValue(await wmic(["cpu", "get", "name", "/value"]), "Name");
-  const ramBytes = finite(wmicValue(await wmic(["computersystem", "get", "TotalPhysicalMemory", "/value"]), "TotalPhysicalMemory"));
-  const caption = wmicValue(await wmic(["os", "get", "Version", "/value"]), "Version");
-  const gpuRaw = await wmic(["path", "win32_VideoController", "get", "Name,AdapterRAM", "/value"]);
-  const gpu = wmicValue(gpuRaw, "Name");
-  const vramBytes = finite(wmicValue(gpuRaw, "AdapterRAM"));
-  const chassis = wmicValue(await wmic(["systemenclosure", "get", "ChassisTypes", "/value"]), "ChassisTypes");
-  const battery = await wmic(["path", "Win32_Battery", "get", "Name", "/value"]);
-
-  const portable = chassis ? /\b(8|9|10|11|12|14|30|31|32)\b/.test(chassis) : null;
+  const portable = chassisIsPortable(facts.chassis);
   const kind: Descriptor["kind"] =
     portable !== null ? (portable ? "laptop" : "desktop")
-    : battery === null ? null
-    : /Name=\S/.test(battery) ? "laptop" : "desktop";
+    : facts.battery === null ? null
+    : facts.battery ? "laptop" : "desktop";
 
   return {
-    model,
-    soc,
-    ram_mb: ramBytes === null ? null : Math.round(ramBytes / MB),
-    os: caption ? `windows-${caption}` : null,
+    model: facts.model,
+    soc: facts.soc,
+    ram_mb: facts.ramBytes === null ? null : Math.round(facts.ramBytes / MB),
+    os: facts.version ? `windows-${facts.version}` : null,
     kind,
-    gpu,
-    vram_mb: vramBytes === null ? null : Math.round(vramBytes / MB),
+    gpu: facts.gpu,
+    vram_mb: vramMbFromAdapterRam(facts.vramBytes),
   };
+}
+
+/**
+ * One PowerShell process, six CIM queries, one JSON object.
+ *
+ * Combined rather than one shell-out per field because PowerShell startup is
+ * the expensive part and this runs on the path to registration. Each query
+ * stands alone under `SilentlyContinue`: a class that is unavailable leaves
+ * its own fields null instead of taking the other five down with it.
+ */
+const CIM_SCRIPT = [
+  "$ErrorActionPreference='SilentlyContinue'",
+  // Windows PowerShell writes redirected stdout in the console codepage, which
+  // turns an OEM model name with an accent in it into mojibake. The try is
+  // because setting it is not possible in every host, and losing the whole
+  // descriptor over an encoding preference would be the worse trade.
+  "try { [Console]::OutputEncoding=[Text.Encoding]::UTF8 } catch {}",
+  "$cs=Get-CimInstance -ClassName Win32_ComputerSystem",
+  "$cpu=@(Get-CimInstance -ClassName Win32_Processor)[0]",
+  "$osi=Get-CimInstance -ClassName Win32_OperatingSystem",
+  // The first adapter that has a name: a machine with a disabled or
+  // placeholder entry alongside a real card should report the real card.
+  "$vc=@(Get-CimInstance -ClassName Win32_VideoController | Where-Object { $_.Name })[0]",
+  "$se=@(Get-CimInstance -ClassName Win32_SystemEnclosure)",
+  "$bat=@(Get-CimInstance -ClassName Win32_Battery)",
+  // uint64 values go out as strings; JSON numbers would round TotalPhysicalMemory.
+  "[pscustomobject]@{" +
+    "model=$cs.Model;" +
+    "soc=$cpu.Name;" +
+    "ram=[string]$cs.TotalPhysicalMemory;" +
+    "os=$osi.Version;" +
+    "gpu=$vc.Name;" +
+    "vram=[string]$vc.AdapterRAM;" +
+    "chassis=(($se.ChassisTypes|ForEach-Object{[string]$_})-join ',');" +
+    "battery=($bat.Count -gt 0)" +
+  "} | ConvertTo-Json -Compress",
+].join("; ");
+
+async function cimFacts(): Promise<WinFacts | null> {
+  // Windows PowerShell 5.1 ships with every supported Windows and is the one
+  // that is always there; pwsh is tried second for a machine that has only
+  // PowerShell 7. `-Command` is not subject to execution policy — that governs
+  // script files — and -NoProfile keeps a user's profile out of the output.
+  for (const shell of ["powershell", "pwsh"]) {
+    const json = await orNull(() =>
+      out(shell, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", CIM_SCRIPT], 30000),
+    );
+    const facts = winFactsFromCimJson(json);
+    if (facts) return facts;
+  }
+  return null;
+}
+
+/**
+ * The CIM script's JSON, as facts — or null when it answered nothing.
+ *
+ * "Nothing" is the important case: PowerShell exists on plenty of machines
+ * where WMI does not answer, and on macOS and Linux `pwsh` runs the script
+ * happily and finds no `Get-CimInstance` at all. An object of nulls is not an
+ * answer, so it reads as a miss and lets wmic have its turn.
+ */
+export function winFactsFromCimJson(json: string | null): WinFacts | null {
+  if (!json) return null;
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(json) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+
+  const str = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
+
+  const facts: WinFacts = {
+    model: str(parsed.model),
+    soc: str(parsed.soc),
+    ramBytes: finite(str(parsed.ram)),
+    version: str(parsed.os),
+    gpu: str(parsed.gpu),
+    vramBytes: finite(str(parsed.vram)),
+    chassis: str(parsed.chassis),
+    // `false` is a real answer here — a desktop reports no battery — so the
+    // boolean is only null when the script did not produce one.
+    battery: typeof parsed.battery === "boolean" ? parsed.battery : null,
+  };
+  const answered =
+    facts.model !== null || facts.soc !== null || facts.ramBytes !== null ||
+    facts.version !== null || facts.gpu !== null || facts.chassis !== null;
+  return answered ? facts : null;
+}
+
+/**
+ * The old surface, for Windows installs that still have it.
+ *
+ * Unlike the CIM probe this always returns facts rather than a miss: it is the
+ * last thing asked, so an all-null result is the answer.
+ */
+async function wmicFacts(): Promise<WinFacts> {
+  const wmic = async (args: string[]) => orNull(() => out("wmic", args, 15000));
+
+  const gpuRaw = await wmic(["path", "win32_VideoController", "get", "Name,AdapterRAM", "/value"]);
+  const battery = await wmic(["path", "Win32_Battery", "get", "Name", "/value"]);
+
+  return {
+    model: wmicValue(await wmic(["computersystem", "get", "model", "/value"]), "Model"),
+    soc: wmicValue(await wmic(["cpu", "get", "name", "/value"]), "Name"),
+    ramBytes: finite(wmicValue(await wmic(["computersystem", "get", "TotalPhysicalMemory", "/value"]), "TotalPhysicalMemory")),
+    version: wmicValue(await wmic(["os", "get", "Version", "/value"]), "Version"),
+    gpu: wmicValue(gpuRaw, "Name"),
+    vramBytes: finite(wmicValue(gpuRaw, "AdapterRAM")),
+    chassis: wmicValue(await wmic(["systemenclosure", "get", "ChassisTypes", "/value"]), "ChassisTypes"),
+    // wmic prints the header and nothing else when there is no battery, so an
+    // empty result and a failed call look alike; only a named instance counts
+    // as "laptop", and a call that did not run at all stays null.
+    battery: battery === null ? null : /Name=\S/.test(battery),
+  };
+}
+
+/**
+ * Chassis type 8/9/10/11/12/14/30/31/32 are the portable enclosures in the
+ * SMBIOS spec. Null when nothing said.
+ */
+export function chassisIsPortable(chassis: string | null): boolean | null {
+  if (!chassis) return null;
+  return /\b(8|9|10|11|12|14|30|31|32)\b/.test(chassis);
+}
+
+/**
+ * Win32_VideoController.AdapterRAM in MB, or null when it cannot be believed.
+ *
+ * AdapterRAM is a uint32, so every card with 4 GB or more reports the same
+ * saturated ceiling — 4293918720, which is 4095 MB. Passing that through would
+ * put "4095" in the vram_mb column for a 24 GB card and let a match expression
+ * asking for 16000 skip the one machine that could have run the job. Same
+ * discipline as Apple silicon reporting no VRAM: the field says nothing rather
+ * than something false.
+ */
+export function vramMbFromAdapterRam(bytes: number | null): number | null {
+  if (bytes === null || bytes <= 0) return null;
+  if (bytes >= 4293918720) return null;
+  return Math.round(bytes / MB);
 }
 
 /** Pulls `Key=value` out of wmic's /value output. */
