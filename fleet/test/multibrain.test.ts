@@ -15,12 +15,27 @@
  *
  * What it asserts, in order of how much each one matters:
  *
- * 1. The two jobs are never both `claimed`. That is the invariant.
+ * 1. The agent never RAN both jobs at once, measured from the timestamps on the
+ *    result rows each job produced. That is the invariant.
  * 2. Both of them eventually finish. A gate that never released would satisfy
  *    (1) perfectly and be useless.
  * 3. Neither burns an attempt. Being handed a job you could not take is not
  *    evidence that the job is flaky, and three such races would otherwise
  *    retire a perfectly good job.
+ *
+ * ## What this deliberately does NOT assert
+ *
+ * That the two job rows are never both `claimed` at the same instant. It did,
+ * and Windows CI was right to fail it: between brain B's claim transaction and
+ * the agent's `release` call, B's row IS `claimed`, legitimately, and that is
+ * the exact window the release endpoint exists to close rather than a window
+ * that should not exist. On a fast machine the release lands inside one polling
+ * interval and the sample is never taken; on a slower one it is.
+ *
+ * The assertion was measuring the collector's bookkeeping and calling it the
+ * agent's behaviour. What matters is whether one piece of hardware ran two
+ * benchmarks at once, and the honest evidence for that is when the rows were
+ * written.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -157,25 +172,45 @@ test(
       const read = (base: string, id: string) =>
         fetch(`${base}/jobs/${id}`).then((r) => r.json()) as Promise<Job>;
 
-      let bothClaimed = 0;
       let jobA: Job | null = null;
       let jobB: Job | null = null;
       for (let i = 0; i < 300; i++) {
         [jobA, jobB] = await Promise.all([read(A, "from-A"), read(B, "from-B")]);
-        if (jobA.status === "claimed" && jobB.status === "claimed") bothClaimed += 1;
         const settled = (j: Job) => j.status === "done" || j.status === "failed";
         if (settled(jobA) && settled(jobB)) break;
         await sleep(400);
       }
 
-      // (1) The invariant.
-      assert.equal(bothClaimed, 0, "the device was never claimed by both brains at once");
-      // (2) A gate that never let go would pass (1) and be useless.
+      // (2) A gate that never let go would satisfy (1) perfectly and be useless.
       assert.equal(jobA?.status, "done", `A: ${jobA?.last_error ?? ""}`);
       assert.equal(jobB?.status, "done", `B: ${jobB?.last_error ?? ""}`);
       // (3) A release is not a failed attempt.
       assert.equal(jobA?.attempts, 1, "the winner ran once");
       assert.equal(jobB?.attempts, 1, "and the released job was not charged for the race");
+
+      // (1) The invariant, measured from when the agent actually wrote rows.
+      //
+      // A benchmark posts a row per measured iteration and a final row, so the
+      // span from a job's first row to its last is when this agent was working
+      // on it. Two jobs running at once on one device would overlap; two run in
+      // sequence cannot.
+      const spanOf = async (base: string, id: string): Promise<{ from: number; to: number }> => {
+        const body = (await fetch(`${base}/api/results?job=${id}`).then((r) => r.json())) as {
+          results: { created_at: string }[];
+        };
+        assert.ok(body.results.length > 0, `${id} produced result rows`);
+        const at = body.results.map((r) => Date.parse(r.created_at));
+        return { from: Math.min(...at), to: Math.max(...at) };
+      };
+      const spanA = await spanOf(A, "from-A");
+      const spanB = await spanOf(B, "from-B");
+      const overlaps = spanA.from <= spanB.to && spanB.from <= spanA.to;
+      assert.equal(
+        overlaps,
+        false,
+        `the agent ran both jobs at once: A ${new Date(spanA.from).toISOString()}..${new Date(spanA.to).toISOString()}, ` +
+          `B ${new Date(spanB.from).toISOString()}..${new Date(spanB.to).toISOString()}`,
+      );
     } finally {
       agent?.stop();
       for (const brain of [brainA, brainB]) {

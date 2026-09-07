@@ -1566,7 +1566,17 @@ export async function listen(): Promise<{ port: number; addresses: string[]; id:
   openDb(DATA_DIR);
   const me = identity(DATA_DIR);
 
-  await app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" });
+  try {
+    await app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" });
+  } catch (e) {
+    // A collector that could not take its port must not keep its database open.
+    // On POSIX that is a leaked handle nobody notices; on Windows the file
+    // cannot then be deleted at all, which is how this was found -- the
+    // lifecycle check's own temp directory would not go away after it
+    // deliberately provoked a second `listen()`.
+    closeDb();
+    throw e;
+  }
   // Node binds one address per server, so every address after the first gets a
   // bare TCP listener whose connections are handed to the same HTTP server.
   // One Fastify app, one route table, several front doors.
