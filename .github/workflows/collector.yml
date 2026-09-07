@@ -17,12 +17,36 @@ defaults:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # The collector had never run on Windows. It could not: the database was
+    # better-sqlite3, a native addon, and the suite's "start a real collector on
+    # a kernel-assigned port with a temporary database" step meant every run
+    # needed a compiled binary for the platform under test. Replacing it with
+    # node:sqlite -- which is in the runtime, on every platform Node ships for,
+    # with nothing to compile -- is what made a Windows run possible at all, and
+    # this row is what proves the replacement was complete. A single leftover
+    # native import passes on Linux and fails here.
+    #
+    # ubuntu-24.04-arm is the same argument for the other axis: the brain is
+    # meant to run on a Raspberry Pi, and this is the cheapest proof that it
+    # will before anybody puts one on a shelf. runner-machine.yml has run both
+    # for a while; the collector had neither. Both are free for public
+    # repositories.
+    name: ${{ matrix.os }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
     strategy:
       # Both versions report, so a failure on one does not hide the other.
       fail-fast: false
       matrix:
+        os: [ubuntu-latest]
         node: ["22", "24"]
+        include:
+          # One Node version off the main axis for each added platform. The
+          # matrix here is about the operating system, and doubling each new one
+          # by Node version buys a second run of the same JavaScript.
+          - os: windows-latest
+            node: "24"
+          - os: ubuntu-24.04-arm
+            node: "24"
 
     steps:
       - uses: actions/checkout@v4
@@ -40,6 +64,15 @@ jobs:
       # The dashboard has its own package.json, so `npm test` skips building it
       # when its modules are absent rather than failing on a missing binary.
       # This step is what makes that build actually happen here.
+      #
+      # Honestly: this step is the one most likely to behave differently on
+      # Windows, and it has not been watched do so. `npm --prefix` resolves
+      # relative to the drive rather than the working directory in some npm
+      # versions, and the dashboard's build shells out through npm to a binary
+      # that is a `.cmd` shim there rather than an executable. If the Windows
+      # row goes red, read this step's log before assuming the collector itself
+      # is at fault -- and if it turns out to be `--prefix`, the fix is
+      # `working-directory: collector/dash` rather than a skip.
       - name: Install dashboard dependencies
         run: npm --prefix dash ci
 

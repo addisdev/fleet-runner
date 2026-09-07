@@ -1,4 +1,10 @@
-# The machine runner, containerised.
+# The machine runner, containerised -- the AGENT ONLY.
+#
+# For the whole program -- collector, dashboard, agent and the `fleet` CLI --
+# use `fleet/Dockerfile`, which is what `ghcr.io/addisdev/fleet` publishes. This
+# one stays because "a device that joins somebody else's fleet" is a smaller and
+# genuinely different thing to want, and it is the image to reach for when the
+# brain is elsewhere.
 #
 # One command turns any Linux box, NAS, Synology, Pi or cloud instance with
 # Docker into a fleet device:

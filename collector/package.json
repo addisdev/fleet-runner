@@ -25,6 +25,7 @@
     "chaos": "tsx scripts/chaos.ts"
   },
   "dependencies": {
+    "bonjour-service": "^1.4.4",
     "fastify": "^5.4.0",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.62.1",

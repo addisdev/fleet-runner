@@ -51,7 +51,12 @@ const VERSION_FILE = path.join(ROOT, "VERSION");
  */
 const SITES = [
   { file: "collector/package.json", re: /("version":\s*")([^"]+)(")/ },
+  // A constant rather than a read of package.json, because the bundle carries
+  // the collector without carrying its package.json.
+  { file: "collector/src/version.ts", re: /(export const APP_VERSION = ")([^"]+)(")/ },
   { file: "collector/dash/package.json", re: /("version":\s*")([^"]+)(")/ },
+  { file: "fleet/package.json", re: /("version":\s*")([^"]+)(")/ },
+  { file: "fleet/src/version.ts", re: /(export const VERSION = ")([^"]+)(")/ },
   { file: "runner-machine/package.json", re: /("version":\s*")([^"]+)(")/ },
   // The descriptor's `app_ver`, which is what the collector actually stores.
   { file: "runner-machine/src/descriptor.ts", re: /(export const APP_VER = ")([^"]+)(")/ },

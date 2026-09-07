@@ -11,10 +11,13 @@ import { renderDash, renderBench } from "./dash.js";
 import { cronMatches, isValidCron, minuteKey } from "./cron.js";
 import { evalMatch, isValidMatch } from "./match.js";
 import { identity } from "./identity.js";
+import { APP_VERSION } from "./version.js";
+import { advertise, type Advertised } from "./discovery.js";
 import { pathToFileURL } from "node:url";
 import {
   ARTIFACT_DIR,
   BIND,
+  DISCOVERY,
   freezeConfig,
   DATA_DIR,
   GITHUB_API,
@@ -1404,7 +1407,8 @@ const running: {
   timers: NodeJS.Timeout[];
   extraServers: ReturnType<typeof createServer>[];
   listening: boolean;
-} = { timers: [], extraServers: [], listening: false };
+  advertisement: Advertised | null;
+} = { timers: [], extraServers: [], listening: false, advertisement: null };
 
 /**
  * Start the collector: bind, sweep once, and set the four timers going.
@@ -1447,6 +1451,27 @@ export async function listen(): Promise<{ port: number; addresses: string[]; id:
         "set FLEET_BIND to loopback plus your tailnet address if agents roam",
     );
   }
+  // Announce this brain on the local link, when asked to. Off by default: a
+  // collector should not start advertising itself on somebody's office network
+  // because they upgraded, and the whole security posture here is that the
+  // network is the access control -- so what it announces to is a decision.
+  if (DISCOVERY) {
+    try {
+      running.advertisement = advertise({
+        id: me.id,
+        name: me.name,
+        port: PORT,
+        version: APP_VERSION,
+        log: (m) => app.log.info(m),
+      });
+    } catch (e) {
+      // A host with no multicast, or a socket the OS refused. Discovery is a
+      // convenience; a collector that would not start without it would be a
+      // collector that stops working on a network somebody locked down.
+      app.log.warn(`mDNS advertising is unavailable (${(e as Error).message}); agents will need the URL`);
+    }
+  }
+
   sweepLeases(); // catch claims that lapsed while the collector was down
   // Only samples pools whose power.json entry declares how to read watts, so a
   // fleet with no metering plugs starts exactly as before. Its timers are
@@ -1488,6 +1513,12 @@ export async function listen(): Promise<{ port: number; addresses: string[]; id:
  * of having them taken away by the kernel.
  */
 export async function close(): Promise<void> {
+  // First, so that a browser running elsewhere drops this brain now rather than
+  // listing one that stopped minutes ago.
+  if (running.advertisement) {
+    await running.advertisement.stop().catch(() => {});
+    running.advertisement = null;
+  }
   for (const t of running.timers) clearInterval(t);
   running.timers = [];
   for (const extra of running.extraServers) extra.close();

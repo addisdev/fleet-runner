@@ -37,6 +37,7 @@ jobs:
       android: ${{ steps.filter.outputs.android }}
       ios: ${{ steps.filter.outputs.ios }}
       machine: ${{ steps.filter.outputs.machine }}
+      fleet: ${{ steps.filter.outputs.fleet }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -84,6 +85,10 @@ jobs:
             echo "android=$(match '^(runner-android/|\.github/workflows/(runner-android|ci)\.yml)')"
             echo "ios=$(match '^(runner-ios/|\.github/workflows/(runner-ios|ci)\.yml)')"
             echo "machine=$(match '^(runner-machine/|\.github/workflows/(runner-machine|ci)\.yml)')"
+            # fleet supervises the collector and the machine agent and imports
+            # both, so a change to either can break it. Its filter is
+            # deliberately wider than its own directory.
+            echo "fleet=$(match '^(fleet/|collector/|runner-machine/|\.github/workflows/(fleet|ci)\.yml)')"
           } | tee -a "$GITHUB_OUTPUT"
 
   # Not path-filtered and not conditional: the version spans every component, so
@@ -116,9 +121,14 @@ jobs:
     if: needs.changes.outputs.machine == 'true'
     uses: ./.github/workflows/runner-machine.yml
 
+  fleet:
+    needs: changes
+    if: needs.changes.outputs.fleet == 'true'
+    uses: ./.github/workflows/fleet.yml
+
   ci-ok:
     name: ci-ok
-    needs: [changes, version, collector, runner-android, runner-ios, runner-machine]
+    needs: [changes, version, collector, runner-android, runner-ios, runner-machine, fleet]
     # Without this the gate inherits the default "only if every dependency
     # succeeded", which makes a skipped suite skip the gate -- and a skipped
     # required check never reports, which is the exact bug being fixed.

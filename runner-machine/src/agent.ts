@@ -63,6 +63,12 @@ export type RunningAgent = {
   deviceId: string;
   capabilities: string[];
   collector: string;
+  /**
+   * Whether this agent was in the registry by the time startAgent resolved.
+   * False means the collector was not reachable yet and the claim loop is still
+   * trying -- the agent is running, it is simply not yet known.
+   */
+  registered: boolean;
   stop: () => void;
 };
 
@@ -261,12 +267,13 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
     });
   }
 
-  async function claimLoop(): Promise<void> {
-    // startAgent has already registered once, so that it could resolve only
+  async function claimLoop(alreadyRegistered: boolean): Promise<void> {
+    // startAgent may have registered already, so that it could resolve only
     // after this agent exists in the registry. Re-registering here on the first
-    // pass would be a harmless upsert and a confusing pair of identical log
+    // pass would then be a harmless upsert and a confusing pair of identical log
     // lines; every LATER pass is a reconnect, where re-registering is the point.
-    let registered = true;
+    // When the initial attempts all failed, this loop owns the first one too.
+    let registered = alreadyRegistered;
     while (!stopped) {
       try {
         if (!registered) {
@@ -315,17 +322,44 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
     log("FLEET_URL unset; using the loopback default");
   }
   capabilities = await probeCapabilities();
-  // Registered before returning, so a caller that is about to enqueue work does
+
+  // Register before returning, so a caller that is about to enqueue work does
   // not have to poll the registry to find out whether this agent exists yet.
-  await register();
-  log(`registered; capabilities: ${capabilities.join(", ")}`);
+  //
+  // Retried rather than awaited once, and this is not a nicety. Under `fleet
+  // up` the brain and the agent start in the same instant, and the agent
+  // reliably wins the race to the first request -- so a single attempt would
+  // mean the agent exits on every boot, the supervisor restarts it, and it
+  // exits again, until it hits the crash-loop ceiling and gives up on a fleet
+  // that is working perfectly. It also covers the ordinary case of a laptop
+  // whose brain is a machine that has not finished booting.
+  //
+  // A failure at the end of this is still not fatal: the claim loop retries
+  // forever, which is the behaviour a shelf device has always had. What the
+  // caller loses is the guarantee that registration has already happened, and
+  // it is told so rather than left to infer it.
+  let registeredNow = false;
+  for (const wait of [0, 500, 1_000, 2_000, 4_000, 8_000]) {
+    if (wait) await sleep(wait);
+    try {
+      await register();
+      registeredNow = true;
+      break;
+    } catch (e) {
+      if (wait === 8_000) {
+        log(`could not register with ${client.base} yet (${(e as Error).message}); the claim loop keeps trying`);
+      }
+    }
+  }
+  if (registeredNow) log(`registered; capabilities: ${capabilities.join(", ")}`);
   void beaconLoop();
-  void claimLoop();
+  void claimLoop(registeredNow);
 
   return {
     deviceId,
     capabilities,
     collector: client.base,
+    registered: registeredNow,
     /**
      * Stop claiming and stop beaconing.
      *
