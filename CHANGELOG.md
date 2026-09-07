@@ -12,14 +12,92 @@ independently of the version below.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-06
+
+What the project looks like to somebody who has just found it, and one
+platform that could not describe itself.
+
+### Fixed
+
+- **A Windows agent reports what it is again.** Every descriptor field came
+  from `wmic`, which is a *removed* feature on current Windows rather than a
+  deprecated one, so a Windows runner registered with `model`, `soc`, `ram_mb`,
+  `os` and `gpu` all null. It still ran work — the probes degrade to nulls as
+  designed — but `targets.match` could not select a Windows machine by its OS
+  or its memory, which left `device_id`, `platform` and `arch` as the only
+  handles on one. The probes now lead with PowerShell `Get-CimInstance` and
+  keep `wmic` as the fallback for older installs, in one process running six
+  queries because its startup is the expensive part and this sits on the path
+  to registration. `vram_mb` stays null on purpose: `AdapterRAM` is a uint32,
+  so every card with 4 GB or more reports the same saturated ceiling, and
+  reporting that as 4095 would let a match expression asking for 16000 skip the
+  24 GB machine that could have run the job.
+
+### Added
+
+- **An asset pipeline.** `docs/brand.md` claimed the banner and the social card
+  were rendered from source; no such source was in the repository, so nobody
+  could regenerate either when the mark changed. `docs/assets/` now holds one
+  HTML file per figure on the brand's tokens, with shared device outlines and
+  self-hosted OFL fonts, and `npm run assets` in `collector/` renders each with
+  Playwright at 2× into `docs/img/`.
+- **Five hand-drawn figures**: how it fits together, the life of a job, the
+  protocol on two rails, all 28 workloads by who can claim them, and platform
+  coverage — the last encoding the honest column of `docs/platforms.md`, so an
+  amber outline means somebody watched it register, a lit pulse in a grey
+  outline means the code builds and no such device has run it, and an unlit
+  tile means it has not been run at all.
+- **Three screens and a recording, captured from real work.**
+  `npm run shoot:dash` and `npm run shoot:motion` each start a collector on a
+  spare port with its own data directory and run the real agents against it.
+  The first retakes the getting-started result by running the job that guide
+  tells you to run, opens an alert with a `self-check` that fails honestly
+  because an agent started by hand is not loaded under launchd, and drives a
+  whole visual regression — shoot this project's own built documentation site,
+  accept the baseline, serve it again with a theme colour changed, shoot it
+  again. The percentages on that grid are measured from pixels that really
+  differ. The second records the Overview at 4 frames a second while a laptop
+  and two browser runners claim a fan-out and report back.
+- `collector/examples/web-specs/fleet-docs/`, the shots manifest that visual
+  capture uses. It has to sit under the directory `playwright.config.ts` names
+  as its `testDir`; a manifest anywhere else means `playwright test` finds no
+  tests and every page reports `missing`.
+
 ### Changed
 
+- **The architecture diagram is drawn rather than generated.** It was a mermaid
+  block, in three copies. GitHub renders mermaid in its own theme with its own
+  layout engine, so it was the one element on the page that could not be made
+  to match the rest, and it sat in the section a reader uses to decide whether
+  to keep reading. The protocol page's sequence diagram goes the same way. The
+  unused mermaid export `docs/img/architecture.svg` is deleted.
+- **The banner names the components in this repository** rather than the three
+  archived repositories, and its empty right half shows the shelf's own device
+  outlines.
+- **The README opens on the thing working.** Banner, the claim, the numbers,
+  eighteen seconds of a fan-out, then the documentation table. "What is in
+  here" moves below how it fits together and what it can run. Four badges — CI,
+  docs, release, licence — go above the banner.
+- The documentation index takes the architecture figure as its hero and turns
+  its "Start here" table into grid cards.
 - **CI no longer runs the iOS launch smoke**, only the static
   `check-backdeploy.sh`. Booting a simulator cost about seven minutes a run, and
   the launch check could not catch the back-deployment bug it was written for
   anyway: a GitHub macOS runner ships only the newest iOS runtime, which is
   precisely where such a bug does not reproduce. `launch-smoke.sh` stays in the
   repository as the tool to run by hand on a machine with older runtimes.
+- `shoot-runner-web.ts` resolved the collector from an absolute path into a
+  worktree that will not exist next month, and now resolves from its own
+  location.
+
+### Not done, and said so
+
+- **There is no Evals screenshot.** That screen shows the plant-ID accuracy
+  rows, which a fresh database cannot have, and seeding them would put invented
+  numbers under a heading that says measured. There is no composite of the
+  three agent apps either; that needs the Android and iOS agents built and
+  running on real devices. `docs/brand.md` says both where somebody would go
+  looking.
 
 ## [0.4.0] — 2026-09-06
 
@@ -100,6 +178,14 @@ Waves 4 to 8: the fleet stops being a shelf of phones.
 
 ### Fixed
 
+- **A Windows machine agent described itself as nulls.** Every Windows field
+  came from `wmic`, which is a removed feature on current Windows rather than
+  merely a deprecated one, so `model`, `soc`, `ram_mb`, `os`, `gpu` and
+  `vram_mb` all answered nothing — leaving `device_id`, `platform` and `arch`
+  as the only handles a `targets.match` expression had on a Windows machine.
+  The probes now lead with PowerShell `Get-CimInstance` and keep `wmic` as the
+  fallback for older installs. Found by the platform matrix added in this same
+  release, which is what it was added to do.
 - The tailnet allowlist matched a short node name against a fully qualified
   entry in one direction only, so an allowlist written the careful way silently
   refused the node it was written for.
@@ -286,7 +372,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/addisdev/fleet-runner/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/addisdev/fleet-runner/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/addisdev/fleet-runner/compare/v0.2.0...v0.3.0

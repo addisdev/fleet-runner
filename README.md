@@ -1,5 +1,10 @@
 # Fleet Runner
 
+[![CI](https://github.com/addisdev/fleet-runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/addisdev/fleet-runner/actions/workflows/ci.yml)
+[![Docs](https://github.com/addisdev/fleet-runner/actions/workflows/docs.yml/badge.svg?branch=main)](https://addisdev.github.io/fleet-runner/)
+[![Release](https://img.shields.io/github/v/release/addisdev/fleet-runner?style=flat&color=555555)](https://github.com/addisdev/fleet-runner/releases)
+[![License](https://img.shields.io/github/license/addisdev/fleet-runner?style=flat&color=555555)](LICENSE)
+
 ![Fleet Runner: a shelf of old phones, turned into a device lab you can send work to](docs/img/banner.png)
 
 A shelf of old phones, turned into a device lab you can send work to.
@@ -17,6 +22,15 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 
 ![The dashboard: llama.cpp benchmark numbers measured on a real phone](docs/img/results.png)
 
+## Eighteen seconds
+
+![The Overview while one fan-out benchmark is claimed by three agents at once: the queue fills, three rows appear under running now, and the done count climbs as each reports back](docs/img/fanout.gif)
+
+One `POST /jobs` with `"fanout": true`, and every agent the expression matches
+claims its own child job. Above: a laptop and two browser runners on a collector
+that did not exist a minute earlier. Nothing there is staged — it is the
+shipping agents against a real collector, recorded a frame every 250 ms.
+
 ## Documentation
 
 **[addisdev.github.io/fleet-runner](https://addisdev.github.io/fleet-runner/)**
@@ -26,6 +40,43 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 | **[Get started in 15 minutes](https://addisdev.github.io/fleet-runner/getting-started/)** | A collector and a laptop agent, a real job, and a result on the dashboard. Needs Node and nothing else — no Xcode, no NDK, no phone. |
 | **[Wire in your own app](https://addisdev.github.io/fleet-runner/integration/)** | Publish builds on merge, run a nightly on your own devices, and block a pull request on the verdict. |
 | **[The protocol](https://addisdev.github.io/fleet-runner/protocol/)** | Register, long-poll, claim, beacon, report. Enough to write a runner in a language none of these are in. |
+
+## How it fits together
+
+![How it fits together: agents on the shelf, a machine runner and a browser runner speak one JSON protocol to the collector, which holds the queue, registry, leases, artifacts, results and scheduler and serves the dashboard; a host executor on a Mac claims host jobs and drives the shelf from outside](docs/img/architecture.png)
+
+**Device jobs** are claimed by the app on the phone itself. **Host jobs** are
+claimed by an executor on a Mac and drive a device from outside, because
+installing an APK or tapping through a UI test is not something an app can do
+to itself.
+
+"Phone" is no longer the whole story. An agent declares what platform it runs
+and what shape it is, so the same four projects cover Android phones, tablets,
+TV sticks, headsets and watches; iPhone, iPad and Apple TV; macOS, Linux and
+Windows machines; and any browser at all. Which of those have actually been
+watched to register, and which are only believed to work, is
+**[docs/platforms.md](docs/platforms.md)** — with an honest column, because a
+list of platforms a project "supports" is worth very little.
+
+The runners share a protocol, not code — including a synthetic SHA-256
+benchmark that is identical on every platform token for token. That is what
+lets a 2019 Android phone, a current iPhone and a laptop produce numbers you can
+put in the same table, which is the difference between a fleet and a pile of
+phones.
+
+A runner also says what it can run. The queue routes on those declared
+capabilities rather than on a label someone applied, so adding a workload is
+something a runner can do without the collector shipping a release.
+
+## What it can run
+
+![Twenty-eight workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
+
+Twenty-eight workloads, and the column a workload sits in is the answer to
+"who can physically do this". A benchmark runs inside the app on the phone. An
+install needs a cable and a Mac. A build needs a checkout and a toolchain.
+Each has [its own page](https://addisdev.github.io/fleet-runner/workloads/),
+saying what it measures and what it refuses to guess.
 
 ## What is in here
 
@@ -57,52 +108,6 @@ reproduce that report's numbers today.
 
 One repository makes such a change one reviewable diff, and lets `npm test`
 in `collector/` fail when the schema and its mirror disagree.
-
-## How it fits together
-
-```mermaid
-flowchart LR
-    subgraph shelf["the shelf"]
-        A["Android runner"]
-        I["iOS runner"]
-    end
-    M["machine runner<br/><i>laptop or desktop</i>"]
-    subgraph host["a Mac with devices plugged in"]
-        X["host executor<br/><i>adb · Maestro · simctl · Playwright</i>"]
-    end
-    C["<b>collector</b><br/>queue · registry · leases<br/>artifacts · results · scheduler"]
-    D["dashboard"]
-
-    A -- "long-poll, claim, report" --> C
-    I -- "long-poll, claim, report" --> C
-    M -- "long-poll, claim, report" --> C
-    X -- "claims host jobs" --> C
-    X -- "drives from outside" --> shelf
-    C --- D
-```
-
-**Device jobs** are claimed by the app on the phone itself. **Host jobs** are
-claimed by an executor on a Mac and drive a device from outside, because
-installing an APK or tapping through a UI test is not something an app can do
-to itself.
-
-"Phone" is no longer the whole story. An agent declares what platform it runs
-and what shape it is, so the same four projects cover Android phones, tablets,
-TV sticks, headsets and watches; iPhone, iPad and Apple TV; macOS, Linux and
-Windows machines; and any browser at all. Which of those have actually been
-watched to register, and which are only believed to work, is
-**[docs/platforms.md](docs/platforms.md)** — with an honest column, because a
-list of platforms a project "supports" is worth very little.
-
-The runners share a protocol, not code — including a synthetic SHA-256
-benchmark that is identical on every platform token for token. That is what
-lets a 2019 Android phone, a current iPhone and a laptop produce numbers you can
-put in the same table, which is the difference between a fleet and a pile of
-phones.
-
-A runner also says what it can run. The queue routes on those declared
-capabilities rather than on a label someone applied, so adding a workload is
-something a runner can do without the collector shipping a release.
 
 Four hand-written implementations of one protocol stay honest because there is
 a test for it. `npm run conformance -- --device <id>` drives a running agent

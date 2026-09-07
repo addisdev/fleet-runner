@@ -22,7 +22,10 @@
     "conformance": "tsx scripts/conformance.ts",
     "test:web-runner": "tsx scripts/test-runner-web.ts",
     "shoot:runner-web": "tsx scripts/shoot-runner-web.ts",
-    "chaos": "tsx scripts/chaos.ts"
+    "chaos": "tsx scripts/chaos.ts",
+    "assets": "tsx scripts/render-assets.ts",
+    "shoot:dash": "tsx scripts/shoot-dash.ts",
+    "shoot:motion": "tsx scripts/shoot-motion.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",

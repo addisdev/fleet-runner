@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>banner</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  The README banner. The mark, the name, the tagline, the pulse, and on the
+  right the shelf's own device outlines so the banner and the architecture
+  figure are visibly the same family. The footer names the five components
+  in this repository.
+
+  Rendered by `npm run assets` in collector/ to docs/img/banner.png.
+-->
+<div class="figure wide">
+<svg viewBox="0 0 1280 640" width="1280" height="640" role="img"
+     aria-label="Fleet Runner: a shelf of old phones, turned into a device lab you can send work to.">
+
+  <!-- the mark on its tile -->
+  <g transform="translate(96 88)">
+    <rect width="96" height="96" rx="21" fill="var(--panel)"/>
+    <g transform="scale(2)">
+      <rect x="15.25" y="8.25" width="17.5" height="31.5" rx="3.25" fill="none" stroke="var(--amber)" stroke-width="2.5"/>
+      <path d="M18.5 24h2.6l1.9-5.4 2.9 11 2-5.6h1.6" fill="none" stroke="var(--amber)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M21.5 35.25h5" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <text class="t-display" x="94" y="288" style="font-size:78px;letter-spacing:-.02em">Fleet Runner</text>
+  <text class="t-body" x="96" y="342" style="font-size:27px;fill:#B9C0C8">A shelf of old phones, turned into a device lab</text>
+  <text class="t-body" x="96" y="378" style="font-size:27px;fill:#B9C0C8">you can send work to.</text>
+
+  <!-- the shelf, small and grey, on the right -->
+  <g transform="translate(796 118)" opacity=".9">
+    <rect class="l-structure" x="0" y="0" width="388" height="128" rx="10" stroke-dasharray="4 6"/>
+    <use href="#dev-android" x="24"  y="28" width="64" height="72"/>
+    <use href="#dev-iphone"  x="94"  y="28" width="64" height="72"/>
+    <use href="#dev-tablet"  x="164" y="28" width="64" height="72"/>
+    <use href="#dev-tv"      x="234" y="28" width="64" height="72"/>
+    <use href="#dev-watch"   x="304" y="28" width="64" height="72"/>
+  </g>
+  <g transform="translate(796 272)" opacity=".9">
+    <use href="#dev-laptop"  x="24"  y="0" width="64" height="72"/>
+    <use href="#dev-browser" x="94"  y="0" width="64" height="72"/>
+    <text class="t-mono" x="176" y="30">and a laptop, a desktop,</text>
+    <text class="t-mono" x="176" y="52">or any browser at all</text>
+  </g>
+
+  <!-- the pulse -->
+  <path d="M0 468H538L578 416L648 524L688 468H1280" fill="none" stroke="var(--amber-dim)" stroke-width="2.5" stroke-linejoin="round"/>
+
+  <!-- footer -->
+  <text class="t-mono" x="96" y="562" style="font-size:16px">collector · runner-android · runner-ios · runner-machine · runner-web</text>
+  <circle cx="1148" cy="556" r="4.5" fill="var(--green)"/>
+  <text class="t-mono" x="1162" y="562" style="font-size:16px;fill:#B9C0C8">live</text>
+</svg>
+</div>
+<script src="symbols.js"></script>

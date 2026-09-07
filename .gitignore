@@ -4,3 +4,6 @@ site/
 # Claude Code keeps its worktrees here. They are real checkouts of this
 # repository, so committing them would nest the repo inside itself.
 .claude/
+
+# The docs venv, made exactly as requirements-docs.txt says.
+.venv/

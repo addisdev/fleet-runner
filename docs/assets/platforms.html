@@ -1,0 +1,116 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>platforms</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  What can join the fleet, and how far each one has actually got. The encoding
+  is the point of the page: an amber outline means somebody watched it register
+  against a real collector; a grey outline with a lit pulse means the code is
+  written and builds and no such device has ever run it; an unlit tile means it
+  has not been run at all.
+
+  The states here are the last column of docs/platforms.md. If that table
+  changes, this figure is wrong until it is re-rendered.
+
+  Rendered by `npm run assets` in collector/ to docs/img/platforms.png.
+-->
+<div class="figure" style="width:1280px;height:700px">
+<svg viewBox="0 0 1280 700" width="1280" height="700" role="img"
+     aria-label="Platform coverage by runner. Registered against a real collector: Android phone, tablet and emulator; iPhone, iPad and the iOS simulator; macOS; any browser. Written and building but never run on real hardware: Android TV, Apple TV, Linux and Windows outside CI. Not run at all: Quest, Wear OS, visionOS, watchOS, single-board computers and Docker.">
+
+  <text class="t-mono" x="48" y="60">Whether somebody has actually watched it register, or it is only believed to work.</text>
+
+  <!-- ─── runner-android ────────────────────────────────────────────── -->
+  <text class="t-mono-light" x="48" y="156" style="font-size:15px">runner-android</text>
+  <g style="--muted:#E3A44A">
+    <use href="#dev-android" x="299" y="110" width="56" height="63"/>
+    <use href="#dev-tablet"  x="461" y="110" width="56" height="63"/>
+    <use href="#dev-android" x="623" y="110" width="56" height="63"/>
+  </g>
+  <use href="#dev-tv" x="785" y="110" width="56" height="63"/>
+  <g style="--amber:#3A414B">
+    <use href="#dev-headset" x="947" y="110" width="56" height="63"/>
+    <use href="#dev-watch" x="1109" y="110" width="56" height="63"/>
+  </g>
+  <g class="t-mono-light" text-anchor="middle" style="font-size:15px">
+    <text x="327" y="196">phone</text><text x="489" y="196">tablet</text><text x="651" y="196">emulator</text>
+    <text x="813" y="196">TV stick</text><text x="975" y="196">Quest</text><text x="1137" y="196">Wear OS</text>
+  </g>
+  <g class="t-mono" text-anchor="middle">
+    <text x="327" y="216" fill="var(--amber)">registered</text>
+    <text x="489" y="216" fill="var(--amber)">registered</text>
+    <text x="651" y="216" fill="var(--amber)">registered</text>
+    <text x="813" y="216">no TV has run it</text>
+    <text x="975" y="216">never run</text>
+    <text x="1137" y="216">never run</text>
+  </g>
+
+  <!-- ─── runner-ios ────────────────────────────────────────────────── -->
+  <text class="t-mono-light" x="48" y="296" style="font-size:15px">runner-ios</text>
+  <g style="--muted:#E3A44A">
+    <use href="#dev-iphone" x="299" y="250" width="56" height="63"/>
+    <use href="#dev-tablet" x="461" y="250" width="56" height="63"/>
+    <use href="#dev-iphone" x="623" y="250" width="56" height="63"/>
+  </g>
+  <use href="#dev-tv" x="785" y="250" width="56" height="63"/>
+  <g style="--amber:#3A414B">
+    <use href="#dev-headset" x="947" y="250" width="56" height="63"/>
+    <use href="#dev-watch" x="1109" y="250" width="56" height="63"/>
+  </g>
+  <g class="t-mono-light" text-anchor="middle" style="font-size:15px">
+    <text x="327" y="336">iPhone</text><text x="489" y="336">iPad</text><text x="651" y="336">simulator</text>
+    <text x="813" y="336">Apple TV</text><text x="975" y="336">Vision Pro</text><text x="1137" y="336">watchOS</text>
+  </g>
+  <g class="t-mono" text-anchor="middle">
+    <text x="327" y="356" fill="var(--amber)">registered</text>
+    <text x="489" y="356" fill="var(--amber)">registered</text>
+    <text x="651" y="356" fill="var(--amber)">registered</text>
+    <text x="813" y="356">builds, never run</text>
+    <text x="975" y="356">never compiled</text>
+    <text x="1137" y="356">not done</text>
+  </g>
+
+  <!-- ─── runner-machine ────────────────────────────────────────────── -->
+  <text class="t-mono-light" x="48" y="436" style="font-size:15px">runner-machine</text>
+  <g style="--muted:#E3A44A">
+    <use href="#dev-laptop" x="299" y="390" width="56" height="63"/>
+  </g>
+  <use href="#dev-desktop" x="461" y="390" width="56" height="63"/>
+  <use href="#dev-desktop" x="623" y="390" width="56" height="63"/>
+  <g style="--amber:#3A414B">
+    <use href="#dev-board" x="785" y="390" width="56" height="63"/>
+    <use href="#dev-container" x="947" y="390" width="56" height="63"/>
+  </g>
+  <g class="t-mono-light" text-anchor="middle" style="font-size:15px">
+    <text x="327" y="476">macOS</text><text x="489" y="476">Linux</text><text x="651" y="476">Windows</text>
+    <text x="813" y="476">Raspberry Pi</text><text x="975" y="476">Docker</text>
+  </g>
+  <g class="t-mono" text-anchor="middle">
+    <text x="327" y="496" fill="var(--amber)">registered</text>
+    <text x="489" y="496">CI only</text>
+    <text x="651" y="496">CI only</text>
+    <text x="813" y="496">never run</text>
+    <text x="975" y="496">never built</text>
+  </g>
+
+  <!-- ─── runner-web ────────────────────────────────────────────────── -->
+  <text class="t-mono-light" x="48" y="576" style="font-size:15px">runner-web</text>
+  <g style="--muted:#E3A44A">
+    <use href="#dev-browser" x="299" y="530" width="56" height="63"/>
+  </g>
+  <text class="t-mono-light" x="327" y="616" text-anchor="middle" style="font-size:15px">any browser</text>
+  <text class="t-mono" x="327" y="636" text-anchor="middle" fill="var(--amber)">registered</text>
+  <text class="t-mono" x="461" y="570">A smart TV, a console, a Chromebook, an iPad too old for the App Store —</text>
+  <text class="t-mono" x="461" y="592">anything that will not run a signed app, and does have a browser.</text>
+
+  <!-- ─── legend ────────────────────────────────────────────────────── -->
+  <path class="l-structure" d="M48 656H1232"/>
+  <g style="--muted:#E3A44A"><use href="#dev-android" x="48" y="654" width="30" height="34"/></g>
+  <text class="t-mono" x="86" y="678">watched to register</text>
+  <use href="#dev-android" x="270" y="654" width="30" height="34"/>
+  <text class="t-mono" x="308" y="678">the code is written and builds; no such device has run it</text>
+  <g style="--amber:#3A414B"><use href="#dev-android" x="800" y="654" width="30" height="34"/></g>
+  <text class="t-mono" x="838" y="678">not run at all</text>
+</svg>
+</div>
+<script src="symbols.js"></script>

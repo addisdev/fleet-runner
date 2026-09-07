@@ -16,11 +16,13 @@ jobs:
     # combinations — and the descriptor is seven shell-outs to tools that differ
     # on every one of them.
     #
-    # The Windows entry is the one expected to find things. `wmic` is a removed
-    # feature on current Windows 11, not merely deprecated, so the descriptor's
-    # Windows path may answer nothing at all; that is a real result about a real
-    # platform rather than a broken test, and the probes are contracted to
-    # return nulls rather than throw when a tool is missing.
+    # The Windows entry is the one that found things. It reported a descriptor
+    # of nulls on its first run, because `wmic` — the whole Windows probe path
+    # at the time — is a removed feature on current Windows rather than merely
+    # a deprecated one. The probes now lead with `Get-CimInstance` and keep
+    # `wmic` as the fallback, and the print step below is where that is
+    # confirmed: the fields are still allowed to be null on a runner, and the
+    # probes are still contracted to return nulls rather than throw.
     #
     # ubuntu-24.04-arm stands in for the single-board computers: a Raspberry Pi
     # and a Jetson are arm64 Linux, and this is the cheapest possible proof that

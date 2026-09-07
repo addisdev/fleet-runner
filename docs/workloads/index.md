@@ -4,6 +4,8 @@ What the fleet can be asked to do. A workload is the `workload` field of a job
 spec, and which agent claims it is decided by
 [capabilities](../concepts.md#capabilities) rather than by anything hardcoded.
 
+![Twenty-eight workloads in three columns by who claims them: on the device, on a host, and on a machine](../img/workloads.png)
+
 | Workload | Runs on | What it measures |
 |---|---|---|
 | [`benchmark`](device.md#benchmark) | device, machine | Prefill and decode tok/s via llama.cpp, or a synthetic backend identical on every platform |

@@ -5,6 +5,8 @@ actually been done or is only believed to work. The last column is the point of
 the page. A list of platforms a project "supports" is worth very little; a list
 that says which ones somebody has watched register is worth something.
 
+![Platform coverage by runner, with each tile marked registered, or written and building but never run on real hardware, or not run at all](img/platforms.png)
+
 ## The shelf today
 
 | Platform | Runner | How it joins | Verified |
@@ -148,19 +150,54 @@ also fill `model` from the device tree.
   "gpu": null, "vram_mb": null, "cpu_cores": 4 }
 ```
 
-Every field there comes from `wmic`, and **`wmic` is a removed feature on
+Every field there came from `wmic`, and **`wmic` is a removed feature on
 current Windows**, not merely deprecated. Only the fields Node answers by
-itself survive.
+itself survived.
 
-The agent still registers and still runs work — the probes degrade to nulls
-exactly as designed, and nothing crashes. But `os` being null means a
-`targets.match` expression can never select a Windows machine by its OS, and
-`ram_mb` being null means it cannot be selected by memory either. Until the
-Windows probes move to `Get-CimInstance`, a Windows agent is addressable only
-by `device_id`, `platform` and `arch`.
+The agent still registered and still ran work — the probes degrade to nulls
+exactly as designed, and nothing crashed. But `os` being null meant a
+`targets.match` expression could never select a Windows machine by its OS, and
+`ram_mb` being null meant it could not be selected by memory either, which left
+`device_id`, `platform` and `arch` as the only handles on a Windows agent.
 
 That is the finding the platform matrix was added to produce, and it is the
 reason it prints the descriptor rather than asserting on it.
+
+### What was done about it
+
+The Windows probes now lead with PowerShell `Get-CimInstance` and keep `wmic`
+as the fallback for older installs, rather than the other way round — one
+PowerShell process running six queries, because its startup is the expensive
+part and this sits on the path to registration:
+
+| Field | Class |
+| --- | --- |
+| `model`, `ram_mb` | `Win32_ComputerSystem` |
+| `soc` | `Win32_Processor` |
+| `os` | `Win32_OperatingSystem` |
+| `gpu`, `vram_mb` | `Win32_VideoController` |
+| `kind` | `Win32_SystemEnclosure`, then `Win32_Battery` |
+
+The same runner now reports:
+
+```json
+{ "model": "Virtual Machine", "soc": "AMD EPYC 9V74 80-Core Processor",
+  "ram_mb": 16379, "os": "windows-10.0.26100",
+  "platform": "windows", "kind": "ci", "arch": "x64",
+  "gpu": "Microsoft Hyper-V Video", "vram_mb": null, "cpu_cores": 4 }
+```
+
+`os` and `ram_mb` answer, so a Windows machine can be selected by its OS and by
+its memory. A hosted runner is a VM, so `model` reads `Virtual Machine` — that
+is a real answer, not a failure.
+
+Two fields are null on purpose. `AdapterRAM` is a uint32, so every card with
+4 GB or more reports the same saturated ceiling; reporting that as `4095` would
+let a match expression asking for 16000 skip the 24 GB machine that could have
+run the job, so the field says nothing instead — and the Hyper-V synthetic
+adapter above has no dedicated memory to report either way. And `kind` still
+reads `ci` rather than the chassis answer: a container's hardware belongs to
+somebody else, and "this will be gone in four minutes" is the more useful fact.
 
 ## Adding one
 
