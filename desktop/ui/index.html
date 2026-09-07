@@ -1,0 +1,82 @@
+<!doctype html>
+<!--
+  The settings window.
+
+  Three files, no framework, no build step -- the same choice as
+  `collector/runner-web/index.html`, which the dashboard docs point at as "the
+  only dashboard that works from a bare checkout". The reasoning carries over
+  almost unchanged: this window has one form in it, and a toolchain that has to
+  run before you can see a checkbox is a toolchain that will be broken on the
+  day somebody wants to change the checkbox. It also keeps the promise in the
+  README literal -- there is no second Node runtime in this app, and adding a
+  bundler would have put one back in the build if not in the bundle.
+
+  `app.withGlobalTauri` in tauri.conf.json is what makes that possible: it puts
+  `window.__TAURI__` on the page, so there is nothing to import and nothing to
+  resolve.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <h1>Fleet</h1>
+  <p id="headline" class="sub">Reading the config...</p>
+</header>
+
+<p id="alert" class="alert" hidden></p>
+
+<section class="panel">
+  <h2>What this machine is</h2>
+  <p class="hint">Roles are a list because a desktop is usually a brain and a runner at once.</p>
+
+  <label class="switch">
+    <input type="checkbox" id="role-brain">
+    <span><b>Brain</b><em>The collector: queue, registry, results, dashboard.</em></span>
+  </label>
+  <label class="switch">
+    <input type="checkbox" id="role-agent">
+    <span><b>Agent</b><em>This machine is a fleet device in its own right.</em></span>
+  </label>
+  <label class="switch">
+    <input type="checkbox" id="role-executor">
+    <span><b>Executor</b><em>Claims host jobs and drives attached phones from outside.</em></span>
+  </label>
+</section>
+
+<section class="panel">
+  <h2>Collector port</h2>
+  <input type="number" id="port" min="1" max="65535" step="1">
+  <p class="hint">The dashboard is served at <code id="dash-url">http://127.0.0.1:8788/dash</code>.</p>
+</section>
+
+<section class="panel">
+  <h2>Brains this agent registers with</h2>
+  <textarea id="collectors" rows="3" spellcheck="false" placeholder="http://fleet-host.local:8788"></textarea>
+  <p class="hint" id="collectors-hint">One URL per line.</p>
+</section>
+
+<div class="actions">
+  <button id="apply" class="primary" disabled>Apply and restart</button>
+  <button id="revert" disabled>Revert</button>
+</div>
+
+<section class="panel">
+  <h2>Recent output</h2>
+  <pre id="log">nothing yet</pre>
+  <p class="hint">Per-component logs are in <code id="log-dir">~/.fleet/logs</code>. This is only what <code>fleet up</code> itself printed.</p>
+</section>
+
+<footer>
+  <span id="config-path">~/.fleet/config.json</span>
+  <span class="warn">FLEET_* environment variables still win over this file.</span>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

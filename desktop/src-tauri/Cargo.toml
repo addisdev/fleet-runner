@@ -1,0 +1,34 @@
+[package]
+name = "fleet-desktop"
+version = "0.5.0"
+description = "Menu-bar shell around the fleet CLI"
+authors = ["addisdev"]
+license = "MIT"
+edition = "2021"
+# Tauri 2's own floor. Named rather than left to chance, because the failure
+# mode of an older toolchain is a wall of trait-resolution errors deep inside a
+# dependency rather than anything that says "your rustc is too old".
+rust-version = "1.77.2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# The sidecar lives here: `tauri_plugin_shell::ShellExt::shell().sidecar(..)`.
+# Nothing in the frontend is allowed to reach it -- see capabilities/default.json.
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(unix)'.dependencies]
+# Only for `kill(pid, SIGTERM)`. tauri-plugin-shell's `CommandChild::kill()` is
+# a SIGKILL, and a SIGKILLed `fleet up` never runs its own shutdown -- so its
+# collector dies with the database mid-write, which is the exact failure the
+# supervisor's SIGTERM draining exists to prevent. See sidecar.rs.
+libc = "0.2"
+
+[features]
+# Kept because `cargo tauri build` sets it; nothing here reads it.
+custom-protocol = ["tauri/custom-protocol"]

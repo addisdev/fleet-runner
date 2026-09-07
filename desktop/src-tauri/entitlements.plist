@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Signing entitlements for the hardened runtime.
+
+  Three of these exist only because of the sidecar, and each one is a build that
+  fails at launch rather than at compile time if it is missing.
+-->
+<plist version="1.0">
+<dict>
+  <!-- Outbound sockets: the collector's own listener is inbound, so both are
+       here. `network.server` is what a brain needs to accept a phone's
+       long-poll; without it the collector binds and nothing can reach it. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <key>com.apple.security.network.server</key>
+  <true/>
+
+  <!-- The sidecar is a Node bundle. Node JITs, and under the hardened runtime
+       a JIT without this entitlement is killed at the first compile with
+       EXC_BAD_ACCESS and no explanation that mentions signing. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- `fleet up` re-spawns itself as `fleet collector` / `fleet agent` (see
+       fleet/src/paths.ts, selfCommand). Under a hardened runtime with library
+       validation on, a helper the parent execs that is not signed by the same
+       team ID is refused. This is also the entitlement to reach for first if
+       the sidecar dies instantly on a signed build and runs fine unsigned. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- NOT sandboxed, deliberately. `fleet doctor` shells out to adb, xcodebuild
+       and simctl; the agent clones repositories into ~/.fleet/cache and the
+       collector writes ~/.fleet/data. A sandboxed build of this would be an app
+       that supervises a fleet it cannot let do any work, so the honest posture
+       is Developer ID signing plus notarisation and no App Store. -->
+</dict>
+</plist>
