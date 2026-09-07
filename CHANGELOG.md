@@ -159,6 +159,40 @@ than one fleet.
   behaviour is unchanged, and they are kept for that release for a specific
   reason: `fleet service install` has never been run and these have.
 
+## [0.4.2] — 2026-09-07
+
+Everything the shelf photograph needs, except the photograph.
+
+### Added
+
+- **The banner and the social card, over a photograph.**
+  `docs/figures/shelf-banner.html` and `shelf-social.html` set the mark, the
+  name and the tagline over a picture of the actual shelf, dimmed and scrimmed,
+  in the lower left, with the gradient running the full width so a shelf on
+  either side of the frame still reads. The photograph itself is deliberately
+  not in the repository: it is a picture of real hardware, and a generated or
+  stock substitute would be the same lie as an invented benchmark. The shot
+  guide is in [`docs/brand.md`](https://addisdev.github.io/fleet-runner/brand/#the-shelf-photograph).
+- **`data-requires` on a figure**, naming a file that figure is built around.
+  Absent, `npm run assets` skips the figure with a message instead of rendering
+  a hole, so the renderer stays green with no photograph in the tree. Present,
+  an `<img>` that fails to load is now an error rather than a gap.
+- **`data-format="jpeg"`**, which writes `.jpg` at quality 82. A drawing is flat
+  colour and compresses to nothing in PNG; a photograph in PNG is several
+  megabytes for no difference a reader can see.
+
+### Changed
+
+- **The figure sources move from `docs/assets/` to `docs/figures/`.** They are
+  inputs to `npm run assets`, not pages, and mkdocs was publishing them — which
+  put the shelf figures' `<img>` for a photograph nobody has taken yet into the
+  built site, where the link check correctly failed on it. Excluding them is the
+  fix; the rename is what makes the exclusion safe, because **Material for
+  MkDocs writes its own theme stylesheets to `site/assets/`**, so excluding
+  `assets/` built a site whose every page linked a stylesheet it no longer
+  shipped. The `docs/assets/` path named in the 0.4.1 notes below is that
+  directory under its old name.
+
 ## [0.4.1] — 2026-09-06
 
 What the project looks like to somebody who has just found it, and one
@@ -611,7 +645,8 @@ The first public release, when the project was still four repositories.
   fleet's history.
 
 [Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/addisdev/fleet-runner/compare/v0.4.1...v0.5.0
+[0.5.0]: https://github.com/addisdev/fleet-runner/compare/v0.4.2...v0.5.0
+[0.4.2]: https://github.com/addisdev/fleet-runner/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/addisdev/fleet-runner/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/addisdev/fleet-runner/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...v0.3.1
