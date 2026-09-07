@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>shelf-social</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  The social card over the shelf photograph, for when the drawn one should be
+  a picture of the real thing instead. Skipped until docs/assets/photo/shelf.jpg
+  exists; see docs/brand.md.
+
+  GitHub serves this at 1280×640 and other platforms crop toward the centre, so
+  everything that has to survive a crop — the mark, the name, the tagline —
+  sits inside the middle 1120×520. The chips and the URL are allowed to be the
+  parts that get cut.
+-->
+<style>
+  .shelf { position: relative; }
+  .shelf img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; filter: brightness(.55) saturate(.85);
+  }
+  .scrim {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(to right, rgba(28,32,37,.94) 0%, rgba(28,32,37,.82) 44%, rgba(28,32,37,.34) 82%, rgba(28,32,37,.24) 100%),
+      linear-gradient(to top, rgba(28,32,37,.7) 0%, rgba(28,32,37,0) 42%);
+  }
+  .top { position: absolute; inset: 0 0 auto 0; height: 6px; background: var(--amber); }
+  .plate { position: absolute; left: 92px; top: 168px; }
+  .row { display: flex; align-items: center; gap: 26px; }
+  .name {
+    font-family: var(--display); font-weight: 700; font-size: 78px;
+    letter-spacing: -.02em; color: var(--text); margin: 0;
+    text-shadow: 0 2px 26px rgba(0,0,0,.6);
+  }
+  .tag {
+    font-family: var(--display); font-weight: 600; font-size: 36px; color: #C6CCD4;
+    margin: 34px 0 0; max-width: 900px; line-height: 1.28;
+    text-shadow: 0 2px 20px rgba(0,0,0,.6);
+  }
+  .chips { position: absolute; left: 92px; bottom: 132px; display: flex; gap: 14px; }
+  .chips span {
+    font-family: var(--mono); font-size: 18px; color: var(--amber);
+    border: 1px solid rgba(227,164,74,.5); border-radius: 6px; padding: 10px 16px;
+    background: rgba(28,32,37,.55);
+  }
+  .url { position: absolute; left: 92px; bottom: 62px; font-family: var(--mono); font-size: 18px; color: #9BA3AC; }
+</style>
+<div class="figure shelf wide" data-requires="photo/shelf.jpg" data-format="jpeg">
+  <img src="photo/shelf.jpg" alt="">
+  <div class="scrim"></div>
+  <div class="top"></div>
+
+  <div class="plate">
+    <div class="row">
+      <svg width="58" height="58" viewBox="0 0 48 48" aria-hidden="true">
+        <rect x="15.25" y="8.25" width="17.5" height="31.5" rx="3.25" fill="none" stroke="#E3A44A" stroke-width="2.5"/>
+        <path d="M18.5 24h2.6l1.9-5.4 2.9 11 2-5.6h1.6" fill="none" stroke="#E3A44A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M21.5 35.25h5" fill="none" stroke="#E3A44A" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+      <p class="name">Fleet Runner</p>
+    </div>
+    <p class="tag">A shelf of old phones, turned into a device lab you can send work to.</p>
+  </div>
+
+  <div class="chips">
+    <span>on-device ML benchmarks</span>
+    <span>real-device UI tests</span>
+    <span>visual regression</span>
+    <span>one job queue</span>
+  </div>
+  <div class="url">github.com/addisdev/fleet-runner</div>
+</div>

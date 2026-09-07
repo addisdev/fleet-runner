@@ -76,6 +76,7 @@ dependency, so nothing new is installed.
 | `img/platforms.png` | 2560×1400 | `assets/platforms.html` |
 | `img/first-result.png`, `alerts.png`, `visual.png` | 1440 wide | `npm run shoot:dash` |
 | `img/fanout.gif` | 1280 wide, 18 s | `npm run shoot:motion` |
+| `img/shelf-banner.jpg`, `shelf-social.jpg` | 2560×1280, JPEG | `assets/shelf-banner.html`, `assets/shelf-social.html` — **skipped until [the photograph](#the-shelf-photograph) exists** |
 | `img/overview.png`, `devices.png`, `jobs.png`, `results.png` | | Dashboard pages, captured with Playwright against a running collector |
 | `img/runner-web.png` | | `npm run shoot:runner-web`, against a throwaway collector |
 | `runner-ios/.../AppIcon.appiconset/icon-1024.png` | 1024×1024, no alpha | `img/icon-source.svg` |
@@ -127,6 +128,61 @@ The spec `visual.png` uses is committed at
 `collector/examples/web-specs/fleet-docs/shots.json`. It has to live under the
 directory `playwright.config.ts` names as its `testDir`; a manifest anywhere
 else means `playwright test` finds no tests and every page reports `missing`.
+
+## The shelf photograph
+
+Every image in this project is drawn or captured from software. The one it does
+not have is a picture of the actual shelf, which is the thing the tagline
+promises and the one a stranger would remember. Nothing rendered replaces it,
+and nothing generated may stand in for it — an invented photograph of hardware
+that does not exist would be the same lie as an invented benchmark, and this
+project's whole argument is that it does not tell those.
+
+So the file is missing on purpose, and the pipeline is built to receive it.
+`assets/shelf-banner.html` and `assets/shelf-social.html` both declare
+`data-requires="photo/shelf.jpg"`, so `npm run assets` skips them with a message
+until the photograph exists rather than rendering a hole.
+
+### Taking it
+
+- **Landscape, 3:2.** Shoot at full resolution and export 2560 px wide.
+- **One soft light from the side**, not from the front. Phone screens are
+  mirrors, and a light in front of them photographs itself. A window at the side
+  during the day is enough.
+- **Expose for the screens, not for the room.** They are the brightest thing in
+  the frame and the only thing that has to survive. A dark shelf with readable
+  screens is the picture; a well-lit shelf with six white rectangles is not.
+- **Every device on, every agent on its status screen**, with the pulse trace
+  visible. All of them registered with the same collector, so if the dashboard
+  is in the frame behind them, its device count agrees with what is on the
+  shelf. That agreement is the kind of detail somebody checks.
+- **Leave room at the bottom left.** That is where the mark, the name and the
+  tagline go, over a gradient. Anything important there gets covered.
+- A dark wall or a dark background suits the palette, but the figure dims and
+  scrims the photograph anyway, so a plain room is fine.
+
+### Using it
+
+1. Save it as `docs/assets/photo/shelf.jpg`.
+2. `npm run assets` in `collector/`, which now also writes
+   `img/shelf-banner.jpg` and `img/shelf-social.jpg`.
+3. In `README.md`, point the first image at `docs/img/shelf-banner.jpg`.
+   The drawn `banner.png` stays where it is and becomes the documentation
+   site's own header image.
+4. Decide about the social card. `shelf-social.jpg` is the photographic version
+   of `social-preview.png`; the drawn one stays the default until you prefer the
+   photograph. Whichever wins has to be uploaded by hand under
+   **Settings → Social preview**, because there is no API for it.
+
+Both photographic figures render as **JPEG at quality 82**, not PNG. A drawing
+is flat colour and compresses to nothing in PNG; a photograph in PNG is several
+megabytes for no difference a reader can see. `data-format="jpeg"` on the figure
+is what selects that.
+
+If the type does not read against your photograph, the number to change is the
+`brightness()` in each figure's `.shelf img` rule — it is doing the work that
+lets off-white and amber sit on a picture at the contrast the rest of the brand
+holds.
 
 !!! warning "Two images this must never be pointed at"
 
