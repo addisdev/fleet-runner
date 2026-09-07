@@ -1,5 +1,10 @@
 # Fleet Runner
 
+[![CI](https://github.com/addisdev/fleet-runner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/addisdev/fleet-runner/actions/workflows/ci.yml)
+[![Docs](https://github.com/addisdev/fleet-runner/actions/workflows/docs.yml/badge.svg?branch=main)](https://addisdev.github.io/fleet-runner/)
+[![Release](https://img.shields.io/github/v/release/addisdev/fleet-runner?style=flat&color=555555)](https://github.com/addisdev/fleet-runner/releases)
+[![License](https://img.shields.io/github/license/addisdev/fleet-runner?style=flat&color=555555)](LICENSE)
+
 ![Fleet Runner: a shelf of old phones, turned into a device lab you can send work to](docs/img/banner.png)
 
 A shelf of old phones, turned into a device lab you can send work to.
@@ -17,6 +22,15 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 
 ![The dashboard: llama.cpp benchmark numbers measured on a real phone](docs/img/results.png)
 
+## Eighteen seconds
+
+![The Overview while one fan-out benchmark is claimed by three agents at once: the queue fills, three rows appear under running now, and the done count climbs as each reports back](docs/img/fanout.gif)
+
+One `POST /jobs` with `"fanout": true`, and every agent the expression matches
+claims its own child job. Above: a laptop and two browser runners on a collector
+that did not exist a minute earlier. Nothing there is staged — it is the
+shipping agents against a real collector, recorded a frame every 250 ms.
+
 ## Documentation
 
 **[addisdev.github.io/fleet-runner](https://addisdev.github.io/fleet-runner/)**
@@ -26,37 +40,6 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 | **[Get started in 15 minutes](https://addisdev.github.io/fleet-runner/getting-started/)** | A collector and a laptop agent, a real job, and a result on the dashboard. Needs Node and nothing else — no Xcode, no NDK, no phone. |
 | **[Wire in your own app](https://addisdev.github.io/fleet-runner/integration/)** | Publish builds on merge, run a nightly on your own devices, and block a pull request on the verdict. |
 | **[The protocol](https://addisdev.github.io/fleet-runner/protocol/)** | Register, long-poll, claim, beacon, report. Enough to write a runner in a language none of these are in. |
-
-## What is in here
-
-Four projects in one repository. They ship independently and share no code —
-only a JSON protocol — but they are versioned together, because the protocol is
-the thing that breaks and a change to it touches three of them at once.
-
-| | What it is |
-|---|---|
-| **[collector/](collector)** | The brain. Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. |
-| **[runner-android/](runner-android)** | The Android agent. A foreground service on anything back to Android 7, with llama.cpp (NDK/JNI) and LiteRT backends. |
-| **[runner-ios/](runner-ios)** | The iOS agent. SwiftUI, with llama.cpp and Core ML backends, speaking the same JSON protocol without sharing a line of code. |
-| **[runner-machine/](runner-machine)** | The desktop agent. A Node process that makes a laptop or desktop a fleet device, so a phone's tok/s and a laptop's land in the same table. |
-| **[collector/runner-web/](collector/runner-web)** | The browser agent. One HTML file the collector serves at `/runner`: opening it enrols the browser that opened it. A smart TV, a console, a Chromebook — anything with no way to install a signed app. |
-
-Each directory has its own README, its own tests and its own CI job, filtered by
-path so a change to a phone runner does not build the dashboard.
-
-### Why one repository
-
-These were four repositories until the protocol started changing. A metric name
-lives in `collector/schemas/result.schema.json` and is mirrored by hand in three
-runners; a capability list is declared by an agent and enforced by the queue.
-Every one of those is a change that has to land in several places at once, and
-across repositories it lands in several pull requests that can each merge alone.
-The drift is not hypothetical — an eval's accuracy once rode in a field named
-`decode_tok_s` because vision had no field of its own, and no query can
-reproduce that report's numbers today.
-
-One repository makes such a change one reviewable diff, and lets `npm test`
-in `collector/` fail when the schema and its mirror disagree.
 
 ## How it fits together
 
@@ -94,6 +77,37 @@ Twenty-eight workloads, and the column a workload sits in is the answer to
 install needs a cable and a Mac. A build needs a checkout and a toolchain.
 Each has [its own page](https://addisdev.github.io/fleet-runner/workloads/),
 saying what it measures and what it refuses to guess.
+
+## What is in here
+
+Four projects in one repository. They ship independently and share no code —
+only a JSON protocol — but they are versioned together, because the protocol is
+the thing that breaks and a change to it touches three of them at once.
+
+| | What it is |
+|---|---|
+| **[collector/](collector)** | The brain. Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. |
+| **[runner-android/](runner-android)** | The Android agent. A foreground service on anything back to Android 7, with llama.cpp (NDK/JNI) and LiteRT backends. |
+| **[runner-ios/](runner-ios)** | The iOS agent. SwiftUI, with llama.cpp and Core ML backends, speaking the same JSON protocol without sharing a line of code. |
+| **[runner-machine/](runner-machine)** | The desktop agent. A Node process that makes a laptop or desktop a fleet device, so a phone's tok/s and a laptop's land in the same table. |
+| **[collector/runner-web/](collector/runner-web)** | The browser agent. One HTML file the collector serves at `/runner`: opening it enrols the browser that opened it. A smart TV, a console, a Chromebook — anything with no way to install a signed app. |
+
+Each directory has its own README, its own tests and its own CI job, filtered by
+path so a change to a phone runner does not build the dashboard.
+
+### Why one repository
+
+These were four repositories until the protocol started changing. A metric name
+lives in `collector/schemas/result.schema.json` and is mirrored by hand in three
+runners; a capability list is declared by an agent and enforced by the queue.
+Every one of those is a change that has to land in several places at once, and
+across repositories it lands in several pull requests that can each merge alone.
+The drift is not hypothetical — an eval's accuracy once rode in a field named
+`decode_tok_s` because vision had no field of its own, and no query can
+reproduce that report's numbers today.
+
+One repository makes such a change one reviewable diff, and lets `npm test`
+in `collector/` fail when the schema and its mirror disagree.
 
 Four hand-written implementations of one protocol stay honest because there is
 a test for it. `npm run conformance -- --device <id>` drives a running agent

@@ -9,20 +9,56 @@ screens and diffs it against a baseline, or drains a battery on purpose and
 plots the curve. Everything lands in one results database with one dashboard
 in front of it.
 
+![How it fits together: agents on the shelf, a machine runner and a browser runner speak one JSON protocol to the collector, which holds the queue, registry, leases, artifacts, results and scheduler and serves the dashboard; a host executor on a Mac claims host jobs and drives the shelf from outside](img/architecture.png)
+
 ## Start here
 
-| | |
-|---|---|
-| **[Get started](getting-started.md)** | A collector and a laptop agent, a real job, and a result you can look at. Fifteen minutes, Node and nothing else. |
-| **[Concepts](concepts.md)** | How the queue thinks: device and host jobs, leases, capabilities, constraints, chains, fan-out and preemption. |
-| **[Workloads](workloads/index.md)** | Everything the fleet knows how to run, what each one measures, and what it refuses to guess. |
-| **[The protocol](protocol.md)** | Register, long-poll, claim, beacon, report. Enough to write a runner in a language none of ours are in. |
-| **[Wire in your app](integration/index.md)** | Publish builds on merge, run a nightly on your own devices, block a pull request on the verdict. |
-| **[Deploy](deploy/index.md)** | Where the services live, running them under launchd or systemd, and the networking that bites. |
+<div class="grid cards" markdown>
+
+-   __[Get started](getting-started.md)__
+
+    ---
+
+    A collector and a laptop agent, a real job, and a result you can look at.
+    Fifteen minutes, Node and nothing else.
+
+-   __[Concepts](concepts.md)__
+
+    ---
+
+    How the queue thinks: device and host jobs, leases, capabilities,
+    constraints, chains, fan-out and preemption.
+
+-   __[Workloads](workloads/index.md)__
+
+    ---
+
+    All 28 of them, what each measures, and what each refuses to guess.
+
+-   __[The protocol](protocol.md)__
+
+    ---
+
+    Register, long-poll, claim, beacon, report. Enough to write a runner in a
+    language none of ours are in.
+
+-   __[Wire in your app](integration/index.md)__
+
+    ---
+
+    Publish builds on merge, run a nightly on your own devices, block a pull
+    request on the verdict.
+
+-   __[Deploy](deploy/index.md)__
+
+    ---
+
+    Where the services live, running them under launchd or systemd, and the
+    networking that bites.
+
+</div>
 
 ## How it fits together
-
-![How it fits together: agents on the shelf, a machine runner and a browser runner speak one JSON protocol to the collector, which holds the queue, registry, leases, artifacts, results and scheduler and serves the dashboard; a host executor on a Mac claims host jobs and drives the shelf from outside](img/architecture.png)
 
 **Device jobs** are claimed by the agent on the device itself. **Host jobs** are
 claimed by an executor on a Mac and drive a device from outside, because
