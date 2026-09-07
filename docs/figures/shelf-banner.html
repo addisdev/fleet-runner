@@ -1,0 +1,71 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>shelf-banner</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  The README banner, once there is a photograph of the actual shelf.
+  `docs/brand.md` has the shot guide; drop the file in as
+  docs/figures/photo/shelf.jpg and run `npm run assets` in collector/.
+
+  Until that file exists this figure is skipped rather than rendered broken,
+  which is what data-requires is for.
+
+  The composition assumes nothing about where the phones sit in the frame: the
+  type goes in the lower left over a gradient that runs the full width, so a
+  shelf on either side of the picture still reads.
+-->
+<style>
+  .shelf { position: relative; }
+  .shelf img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    /* The photograph is the ground here, so it is dimmed to the point where
+       amber and off-white sit on it at the contrast the rest of the brand
+       holds. A banner nobody can read the name on is a photograph. */
+    filter: brightness(.62) saturate(.9);
+  }
+  .scrim {
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(to top, rgba(28,32,37,.96) 0%, rgba(28,32,37,.86) 26%, rgba(28,32,37,.22) 58%, rgba(28,32,37,0) 78%),
+      linear-gradient(to right, rgba(28,32,37,.72) 0%, rgba(28,32,37,0) 62%);
+  }
+  .plate { position: absolute; left: 96px; bottom: 92px; }
+  .name {
+    font-family: var(--display); font-weight: 700; font-size: 74px;
+    letter-spacing: -.02em; color: var(--text); margin: 22px 0 0;
+    text-shadow: 0 2px 24px rgba(0,0,0,.55);
+  }
+  .tag {
+    font-family: var(--body); font-size: 25px; color: #C6CCD4;
+    margin: 10px 0 0; max-width: 720px; line-height: 1.35;
+    text-shadow: 0 2px 18px rgba(0,0,0,.55);
+  }
+  .rule { position: absolute; left: 96px; right: 96px; bottom: 64px; height: 1px; background: rgba(232,234,237,.18); }
+  .feet {
+    position: absolute; left: 96px; bottom: 30px;
+    font-family: var(--mono); font-size: 16px; color: #9BA3AC;
+  }
+  .live { position: absolute; right: 96px; bottom: 30px; font-family: var(--mono); font-size: 16px; color: #C6CCD4; }
+  .live b { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--green); margin-right: 8px; }
+</style>
+<div class="figure shelf wide" data-requires="photo/shelf.jpg" data-format="jpeg">
+  <img src="photo/shelf.jpg" alt="">
+  <div class="scrim"></div>
+
+  <div class="plate">
+    <svg width="76" height="76" viewBox="0 0 48 48" aria-hidden="true">
+      <rect width="48" height="48" rx="10.5" fill="#1C2025"/>
+      <rect x="15.25" y="8.25" width="17.5" height="31.5" rx="3.25" fill="none" stroke="#E3A44A" stroke-width="2.5"/>
+      <path d="M18.5 24h2.6l1.9-5.4 2.9 11 2-5.6h1.6" fill="none" stroke="#E3A44A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M21.5 35.25h5" fill="none" stroke="#E3A44A" stroke-width="2" stroke-linecap="round"/>
+    </svg>
+    <p class="name">Fleet Runner</p>
+    <p class="tag">A shelf of old phones, turned into a device lab you can send work to.</p>
+  </div>
+
+  <div class="rule"></div>
+  <div class="feet">collector · runner-android · runner-ios · runner-machine · runner-web</div>
+  <div class="live"><b></b>live</div>
+</div>

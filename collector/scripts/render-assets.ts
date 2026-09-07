@@ -1,10 +1,14 @@
-// Renders every figure in docs/assets/ to docs/img/ at 2×.
+// Renders every figure in docs/figures/ to docs/img/ at 2×.
+//
+// Sources live in docs/figures/ rather than docs/assets/: Material for MkDocs
+// writes its own theme stylesheets to site/assets/, so a docs/assets/ excluded
+// from the build takes the theme's CSS with it.
 //
 // A figure is an HTML file whose root element carries class="figure" and
 // declares its own CSS size and its own charcoal ground. The rendered PNG is
 // exactly that element at twice its CSS size, so a 1280×640 figure becomes a
 // 2560×1280 image — the size the README banner and the social card already
-// are. Fonts are the ones in docs/assets/fonts/, so the output is the same on
+// are. Fonts are the ones in docs/figures/fonts/, so the output is the same on
 // any machine and in CI, which an SVG with web fonts on GitHub is not.
 //
 //   npm run assets                 every figure
@@ -13,12 +17,13 @@
 // Playwright is already a collector dependency (the host executor drives it),
 // so this costs nothing new.
 
+import { existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { chromium } from "playwright";
 
-const ASSETS = path.resolve(import.meta.dirname, "../../docs/assets");
+const ASSETS = path.resolve(import.meta.dirname, "../../docs/figures");
 const OUT = path.resolve(import.meta.dirname, "../../docs/img");
 
 const onlyAt = process.argv.indexOf("--only");
@@ -50,12 +55,30 @@ try {
     await page.evaluate(() => (document as any).fonts.ready);
     const figure = page.locator(".figure").first();
     if ((await figure.count()) === 0) throw new Error(`${name}.html has no .figure element`);
+
+    const needs = await figure.getAttribute("data-requires");
+    if (needs && !existsSync(path.join(ASSETS, needs))) {
+      console.log(`${name}  skipped — needs docs/figures/${needs}`);
+      await page.close();
+      continue;
+    }
+    // A figure that declares a file it needs is built around that file, so a
+    // broken <img> would render as a hole rather than as a failure.
+    const brokenImages = await page.evaluate(() =>
+      [...document.querySelectorAll(".figure img")].filter((i) => !(i as HTMLImageElement).naturalWidth).length);
+    if (brokenImages > 0) throw new Error(`${name}.html: ${brokenImages} image(s) failed to load`);
+
     const box = await figure.boundingBox();
     if (!box) throw new Error(`${name}.html: .figure has no box`);
-    const target = path.join(OUT, `${name}.png`);
-    await figure.screenshot({ path: target, animations: "disabled" });
+    const jpeg = (await figure.getAttribute("data-format")) === "jpeg";
+    const target = path.join(OUT, `${name}.${jpeg ? "jpg" : "png"}`);
+    await figure.screenshot({
+      path: target,
+      animations: "disabled",
+      ...(jpeg ? { type: "jpeg" as const, quality: 82 } : {}),
+    });
     const size = (await stat(target)).size;
-    console.log(`${name}.png  ${box.width * 2}×${box.height * 2}  ${(size / 1024).toFixed(0)} KB`);
+    console.log(`${path.basename(target)}  ${box.width * 2}×${box.height * 2}  ${(size / 1024).toFixed(0)} KB`);
     await page.close();
   }
 } finally {
