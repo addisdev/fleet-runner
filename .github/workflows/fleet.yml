@@ -1,0 +1,85 @@
+name: fleet
+
+# Called by ci.yml, which owns the change detection and the `ci-ok` check that
+# branch protection requires. Nothing else triggers this file.
+on:
+  workflow_call:
+
+defaults:
+  run:
+    working-directory: fleet
+
+jobs:
+  test:
+    # The three desktop platforms, because that is the claim `fleet` makes and
+    # it had only ever been run on one of them. The supervisor is the part most
+    # likely to differ: process groups, signal delivery and what SIGTERM does to
+    # a child are three things macOS, Linux and Windows each do their own way,
+    # and the suite spawns real children rather than mocking them precisely so
+    # that those differences show up here rather than on somebody's machine.
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: npm
+          cache-dependency-path: fleet/package-lock.json
+
+      - run: npm ci
+
+      # The end-to-end test in test/up.test.ts supervises the REAL collector and
+      # the REAL machine agent, so both need their own dependencies. It skips
+      # itself when they are absent rather than failing, which is right for a
+      # developer running `npm test` in fleet/ alone -- and wrong here, where a
+      # silently skipped end-to-end test is the whole job passing for no reason.
+      # So they are installed, and the step below asserts it did not skip.
+      - name: Dependencies for the components it supervises
+        working-directory: .
+        run: |
+          npm --prefix collector ci
+          npm --prefix runner-machine ci
+
+      - run: npm test
+
+      # `npm test` prints "skipped 1" rather than failing when the components
+      # are missing. That is the correct behaviour and a terrible thing to have
+      # go unnoticed in CI, so the count is checked.
+      - name: The end-to-end test actually ran
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$(npx tsx --test --test-timeout 200000 test/up.test.ts 2>&1 || true)"
+          echo "$out" | tail -20
+          if echo "$out" | grep -qE '^# skipped 1'; then
+            echo "::error::the fleet up end-to-end test skipped itself"
+            exit 1
+          fi
+          echo "$out" | grep -qE '^# pass 1'
+
+      # The bundle is what a release ships, and a bundle that does not build is
+      # a release that cannot be cut. Built here on every platform because
+      # esbuild resolves paths differently on Windows and the assets are copied
+      # with node's own fs, which is where a separator bug would live.
+      - run: npm run build
+
+      - name: The bundle runs with nothing installed beside it
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          cp -r "$GITHUB_WORKSPACE/fleet/dist" release
+          cd release
+          node bin/fleet.mjs version
+          # doctor exits 0 on a machine missing every optional toolchain, which
+          # is what a CI runner is. What is being checked is that it RUNS -- the
+          # bundled agent probes, the bundled collector's browser check, and the
+          # config file all load from inside one file with no node_modules.
+          FLEET_HOME="$RUNNER_TEMP/fleet-home" node bin/fleet.mjs doctor

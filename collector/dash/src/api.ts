@@ -99,7 +99,31 @@ export type Beacon = {
   mem_method: string | null;
   process_alive: boolean | null;
   job_id: string | null;
+  /**
+   * Set when this device is running a job for a DIFFERENT collector.
+   *
+   * Rendered rather than ignored because "busy for another brain" and "idle,
+   * and nothing here is offering it work" look identical on this screen and are
+   * opposite problems -- one is working, the other is a queue that is not
+   * matching.
+   */
+  busy: { job_id: string | null; collector: string | null } | null;
 } | null;
+
+export type Peer = {
+  url: string;
+  id: string | null;
+  name: string | null;
+  reachable: boolean;
+  error: string | null;
+  devices: { total: number; online: number } | null;
+};
+
+export type Peers = {
+  self: { id: string; name: string };
+  peers: Peer[];
+  configured: number;
+};
 
 export type Device = {
   device_id: string;

@@ -8,7 +8,10 @@
 //
 // Severity follows the fleet's red-means-something rule: `error` fails the
 // nightly, `warn` is recorded in the report and the metrics but does not.
-import { chromium, devices } from "playwright";
+// Deferred rather than imported at the top: a host with no browser must still
+// be able to run every other workload, and must say so in a sentence rather
+// than failing to load. See src/browser.ts.
+import { playwright } from "../browser.js";
 import { leaseBudgetS, log, NAME, postBeacon, postResult } from "../fleet-client.js";
 import type { Job } from "../executor.js";
 import { countBySeverity, readSiteConfig, resolveSiteDir, uploadReport, type Finding } from "./shared.js";
@@ -134,6 +137,7 @@ export async function runWebAudit(job: Job) {
   const queued = new Set(queue);
   const site: Finding[] = [];
 
+  const { chromium, devices } = await playwright();
   const browser = await chromium.launch();
   try {
     const context = await browser.newContext();

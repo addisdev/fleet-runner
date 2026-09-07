@@ -15,6 +15,23 @@ import { Filters, Link, Loaded, Panel, Pill, Search, Select, Stat, agoFrom } fro
  * you click. An unnamed device shows its id, because until you name it that is
  * its name — so the same click renames either case.
  */
+/**
+ * "Busy elsewhere", for a device that belongs to more than one fleet.
+ *
+ * Without this the row reads `idle`, which is the one thing it is not -- and
+ * the operator's next move on an idle device that will not take work is to go
+ * looking for a broken queue. The other brain's address is shown rather than
+ * only its name because it is the thing you would type to go and look.
+ */
+function BusyElsewhere({ busy }: { busy: { job_id: string | null; collector: string | null } }) {
+  const where = busy.collector ?? "another collector";
+  return (
+    <span class="faint" title={`running ${busy.job_id ?? "a job"} for ${where}`}>
+      busy · {busy.collector ? <code>{busy.collector.replace(/^https?:\/\//, "")}</code> : "another brain"}
+    </span>
+  );
+}
+
 function EditableName({ device, onDone }: { device: Device; onDone: () => void }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(device.name ?? "");
@@ -194,6 +211,8 @@ function DeviceCard({ device, onDone }: { device: Device; onDone: () => void }) 
             <Link to={`/jobs/${encodeURIComponent(device.current_job)}`} class="dev-doing">
               <code>{device.current_job}</code>
             </Link>
+          ) : device.beacon?.busy ? (
+            <BusyElsewhere busy={device.beacon.busy} />
           ) : (
             <span class="faint">idle</span>
           )}
@@ -309,6 +328,8 @@ function Table({ devices, onDone }: { devices: Device[]; onDone: () => void }) {
                 <Link to={`/jobs/${encodeURIComponent(dev.current_job)}`}>
                   <code>{dev.current_job}</code>
                 </Link>
+              ) : dev.beacon?.busy ? (
+                <BusyElsewhere busy={dev.beacon.busy} />
               ) : (
                 <span class="faint">idle</span>
               )}

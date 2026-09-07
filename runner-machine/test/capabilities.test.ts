@@ -10,6 +10,7 @@ import { mkdtemp, writeFile, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { capabilitiesFrom, resolveLlamaBench, hasMlx, probeCapabilities, probeBuildKinds } from "../src/capabilities.js";
+import { ROUTES, routeFor, type CapabilityFlags } from "../src/routes.js";
 import { which } from "../src/probe.js";
 
 /** Nothing installed: the floor every other case is a delta from. */
@@ -145,4 +146,70 @@ test("probeCapabilities degrades to the synthetic-only list on a bare machine", 
     await probeCapabilities({ PATH: "", FLEET_PYTHON: "/nonexistent/python3" }),
     ["benchmark", "self-check", "llm-eval"],
   );
+});
+
+// --- the two halves agree, which is the point of the table ----------------
+//
+// Before ROUTES these were two lists in two files: a string array built by
+// `capabilitiesFrom` and an `if` chain in `agent.ts`. Nothing compared them.
+// Every check below is a way they could disagree, and each disagreement has a
+// direction that matters.
+
+test("everything this agent declares, it can also dispatch", () => {
+  // The dangerous direction. A declared capability the chain cannot dispatch
+  // takes the job off the queue from a machine that could have run it, and
+  // returns "not supported by this runner yet" — which from the dashboard is
+  // indistinguishable from a broken workload.
+  const everything = capabilitiesFrom({
+    llamaBench: true, mlx: true, gradle: true, xcodebuild: true, node: true,
+    converters: ["gguf", "coreml", "tflite"], shellAllowlist: true, llamaServer: true,
+  });
+  for (const cap of everything) {
+    // `benchmark:llama.cpp` is a label on the `benchmark` route, not a workload
+    // of its own — the collector matches a claim on the part before the colon.
+    const workload = cap.split(":")[0];
+    assert.ok(routeFor(workload), `declared ${cap} but nothing dispatches ${workload}`);
+  }
+});
+
+test("every route can declare itself", () => {
+  // The other direction: a route nothing can ever declare is dead code that
+  // looks like a feature. Each one must produce at least one capability when
+  // every probe answers yes.
+  const all: CapabilityFlags = {
+    llamaBench: true, mlx: true, gradle: true, xcodebuild: true, node: true,
+    converters: ["gguf"], shellAllowlist: true, llamaServer: true,
+  };
+  for (const route of ROUTES) {
+    assert.ok(
+      route.declares(all).length > 0,
+      `${route.workload} has a handler but no set of probe answers declares it`,
+    );
+  }
+});
+
+test("a bare machine declares only what needs nothing installed", () => {
+  // And the reverse of the reverse: with no toolchain, only the three whose
+  // code is entirely in this repository survive.
+  assert.deepEqual(capabilitiesFrom(bare), ["benchmark", "self-check", "llm-eval"]);
+  for (const cap of capabilitiesFrom(bare)) assert.ok(routeFor(cap));
+});
+
+test("a route's declared names all belong to that route", () => {
+  // Guards a copy-paste: a route whose `declares` returns another route's name
+  // would make the first check above pass while dispatching to the wrong
+  // handler for a `targets.match` that selected on the label.
+  const all: CapabilityFlags = {
+    llamaBench: true, mlx: true, gradle: true, xcodebuild: true, node: true,
+    converters: ["gguf"], shellAllowlist: true, llamaServer: true,
+  };
+  for (const route of ROUTES) {
+    for (const cap of route.declares(all)) {
+      assert.equal(
+        cap.split(":")[0],
+        route.workload,
+        `the ${route.workload} route declares ${cap}, which dispatches elsewhere`,
+      );
+    }
+  }
 });

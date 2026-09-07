@@ -102,13 +102,19 @@ failure, because a failure gets investigated.
 npm run conformance -- --device <your-device-id>
 ```
 
-Point it at your running agent and it drives it through eight clauses. Every
+Point it at your running agent and it drives it through nine clauses. Every
 one of them is something that has actually gone wrong in this fleet, on some
 platform.
 
 Conformant does not mean "implements every workload" — a watch that cannot run
 llama.cpp is a perfectly good fleet member, and a clause your capabilities put
 out of scope is **skipped** rather than failed. It means your agent is honest.
+
+Clause 9 is skipped for almost every agent, and that is right: a runner
+registered with one collector has nothing to get wrong there. See
+[Belonging to more than one fleet](concepts.md#belonging-to-more-than-one-fleet)
+if yours registers with several. The full two-brain race needs two collectors
+and is tested in `fleet/test/multibrain.test.ts` rather than here.
 
 | Clause | What it checks |
 |---|---|
@@ -120,6 +126,7 @@ out of scope is **skipped** rather than failed. It means your agent is honest.
 | 6 cancel | a cancelled job stops within one beacon interval |
 | 7 lease | a long job's lease deadline advances while you work |
 | 8 constraints | an unmeetable precondition is refused with a reason |
+| 9 multi-home | an agent that says it is busy for another brain does not then claim work here |
 
 **Clause 3 is the `recall_at1` bug as a check.** Swift's
 `convertToSnakeCase` does not split on a digit, so that metric encoded one

@@ -1,0 +1,5 @@
+node_modules/
+# The bundle. Built by `npm run build` and shipped by the release workflow;
+# committing it would mean every change to the collector shows up here as a
+# 900 KB diff of minified JavaScript.
+dist/

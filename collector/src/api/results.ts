@@ -6,7 +6,7 @@
 // can drop them. A client that ignores the flags still cannot accidentally
 // merge prefill and decode, because they are never summed into one number.
 import type { FastifyInstance } from "fastify";
-import { db } from "../db.js";
+import { db, type SqlParam } from "../db.js";
 import { AGE, beaconFields, inClause, iso, isSimulator, paging, parse } from "./shared.js";
 
 type ResultRow = {
@@ -31,7 +31,7 @@ export function registerResults(app: FastifyInstance) {
   app.get("/api/results", async (req) => {
     const q = req.query as Record<string, string | undefined>;
     const where: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
 
     if (q.job) {
       where.push("r.job_id = ?");

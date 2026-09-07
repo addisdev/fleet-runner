@@ -7,6 +7,8 @@
 // Every table the dashboard reads has exactly one write path in server.ts, so
 // each of those calls publish() after its write commits. Nothing polls.
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { DATA_DIR } from "../config.js";
+import { identity } from "../identity.js";
 
 export type FleetEvent = { type: string; [k: string]: unknown };
 
@@ -73,8 +75,11 @@ export function registerStream(app: FastifyInstance) {
     clients.add(client);
     // Retry hint for the browser's own reconnect logic, then the handshake.
     reply.raw.write("retry: 3000\n\n");
+    const me = identity(DATA_DIR);
     write(client, "hello", {
       type: "hello",
+      collector: me.id,
+      name: me.name,
       instance: SERVER_INSTANCE,
       started_at: STARTED_AT.toISOString(),
       at: new Date().toISOString(),

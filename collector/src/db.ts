@@ -1,13 +1,205 @@
-import Database from "better-sqlite3";
+/**
+ * The database: one SQLite file, opened on demand, migrated on open.
+ *
+ * ## Why `node:sqlite` and not `better-sqlite3`
+ *
+ * `better-sqlite3` was the only native addon in the whole tree, and a native
+ * addon is the difference between "one bundle that runs on any Node" and "a
+ * build per OS, per architecture, per Node ABI, with a prebuild service in the
+ * middle". It is also the reason the collector had never run on Windows --
+ * nothing in it was macOS-specific, nobody wanted to find out what the addon
+ * did over there.
+ *
+ * The surface actually used here was `prepare`, `exec`, one `pragma` and seven
+ * `transaction` wrappers, and Node's built-in module has the first two under
+ * the same names. The other two are shimmed below. That is the whole migration.
+ *
+ * ## Why the handle is not a module constant any more
+ *
+ * It used to be `export const db = new Database(...)`, which opened a file as a
+ * side effect of `import`. That made the collector impossible to embed: a
+ * desktop app that is a brain has to decide where its data lives before the
+ * database exists, and a test that starts and stops three collectors in one
+ * process cannot re-import a module to get a second one.
+ *
+ * So `db` is now an adapter that resolves the open handle **at call time**.
+ * Every existing call site (`db.prepare(...)`, `db.exec(...)`) is unchanged and
+ * still works; what changed is that `openDb()` decides which file, and
+ * `closeDb()` can put it back. A call that arrives with nothing open still
+ * works and opens the configured default, which is what `npm start` does.
+ */
+import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "./config.js";
 
-mkdirSync(DATA_DIR, { recursive: true });
+/**
+ * What may be bound to a `?` placeholder.
+ *
+ * Re-exported here so the modules that assemble a WHERE clause do not each
+ * import the SQLite driver: which driver this is stays a fact about this file.
+ * It is also stricter than the `unknown[]` those modules used to declare, which
+ * is the point -- binding an `undefined` throws at runtime in every driver, and
+ * that is now a compile error instead.
+ */
+export type SqlParam = SQLInputValue;
 
-export const db = new Database(path.join(DATA_DIR, "fleet.db"));
-db.pragma("journal_mode = WAL");
+let handle: DatabaseSync | null = null;
+let handleFile: string | null = null;
 
+/** The open database, opening the configured default if nothing is open yet. */
+export function dbHandle(): DatabaseSync {
+  return handle ?? openDb();
+}
+
+/** Which file is open, or null. The System page reports it. */
+export function dbFile(): string | null {
+  return handleFile;
+}
+
+/**
+ * Open (or reuse) the database under `dataDir` and bring its schema up to date.
+ *
+ * Calling it again with the same directory is a no-op, so a component that is
+ * not sure whether it started first can just call it. Calling it with a
+ * different directory while one is open is a programming error rather than a
+ * silent reopen: two collectors in one process would each think they owned the
+ * module-level handle, and the second one would quietly move the first one's
+ * database out from under it.
+ */
+export function openDb(dataDir: string = DATA_DIR): DatabaseSync {
+  const file = path.join(dataDir, "fleet.db");
+  if (handle) {
+    if (handleFile === file) return handle;
+    throw new Error(`a database is already open at ${handleFile}; close it before opening ${file}`);
+  }
+  mkdirSync(dataDir, { recursive: true });
+  const h = new DatabaseSync(file);
+  // WAL survives the process, so this is idempotent rather than per-open state.
+  // It is what lets the dashboard read while a runner is posting results.
+  h.exec("PRAGMA journal_mode = WAL");
+  handle = h;
+  handleFile = file;
+  try {
+    migrate(h);
+  } catch (e) {
+    // A half-migrated handle must not be left installed as the module's
+    // database: every later call would find a schema that does not match the
+    // code, which is far harder to diagnose than the migration error itself.
+    handle = null;
+    handleFile = null;
+    h.close();
+    throw e;
+  }
+  return h;
+}
+
+/** Close the database, if one is open. Safe to call twice. */
+export function closeDb(): void {
+  if (!handle) return;
+  handle.close();
+  handle = null;
+  handleFile = null;
+  depth = 0;
+}
+
+/**
+ * Transaction depth, so a transaction inside a transaction nests with a
+ * SAVEPOINT rather than committing the outer one early.
+ *
+ * Nothing nests today. It is written this way because the failure if something
+ * ever does would be silent: SQLite treats a second BEGIN as an error and a
+ * COMMIT from the inner call as committing the OUTER transaction, so a
+ * rollback that was supposed to undo everything would undo only the part after
+ * the inner call had already committed. That is a data-corruption bug found
+ * months later, and it costs five lines to make impossible.
+ */
+let depth = 0;
+
+/** Wrap `fn` so it runs inside a transaction against `handle`. */
+export function withTransaction<A extends unknown[], R>(
+  handleFor: DatabaseSync | (() => DatabaseSync),
+  fn: (...args: A) => R,
+): (...args: A) => R {
+  return (...args: A): R => {
+    const h = typeof handleFor === "function" ? handleFor() : handleFor;
+    const nested = depth > 0;
+    const savepoint = `fleet_sp_${depth}`;
+    h.exec(nested ? `SAVEPOINT ${savepoint}` : "BEGIN");
+    depth += 1;
+    try {
+      const out = fn(...args);
+      h.exec(nested ? `RELEASE ${savepoint}` : "COMMIT");
+      return out;
+    } catch (e) {
+      // A failed ROLLBACK must not mask the error that caused it.
+      try {
+        h.exec(nested ? `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}` : "ROLLBACK");
+      } catch {
+        /* the transaction is already gone; the original error is the news */
+      }
+      throw e;
+    } finally {
+      depth -= 1;
+    }
+  };
+}
+
+/**
+ * Whether an error is "those bytes are already there" -- a primary-key or
+ * unique-index violation.
+ *
+ * This lives here because it is the one thing about the driver that leaked
+ * into a route handler: `POST /jobs` answers 409 on a duplicate `job_id`, and
+ * it used to do that by comparing `e.code` against the string
+ * `SQLITE_CONSTRAINT_PRIMARYKEY`, which is `better-sqlite3` vocabulary. Node's
+ * module puts `ERR_SQLITE_ERROR` in `code` and the SQLite extended result code
+ * in `errcode`, so the old comparison silently stopped matching and a duplicate
+ * enqueue became a 500. The smoke suite caught it; a test that only checked the
+ * happy path would not have.
+ *
+ * Both extended codes count: a `job_id` collides on the primary key, and an
+ * artifact or a schedule can collide on a unique index instead.
+ */
+const SQLITE_CONSTRAINT_UNIQUE = 2067;
+const SQLITE_CONSTRAINT_PRIMARYKEY = 1555;
+
+export function isUniqueViolation(e: unknown): boolean {
+  const code = (e as { errcode?: number } | null)?.errcode;
+  return code === SQLITE_CONSTRAINT_PRIMARYKEY || code === SQLITE_CONSTRAINT_UNIQUE;
+}
+
+/**
+ * The database, as every call site already uses it.
+ *
+ * `better-sqlite3`'s object with the four methods this codebase asked of it,
+ * resolving the real handle when called rather than when imported.
+ */
+export const db = {
+  prepare(sql: string): StatementSync {
+    return dbHandle().prepare(sql);
+  },
+  exec(sql: string): void {
+    dbHandle().exec(sql);
+  },
+  /** `better-sqlite3` had a method; Node has the statement, which is the same thing. */
+  pragma(pragma: string): void {
+    dbHandle().exec(`PRAGMA ${pragma}`);
+  },
+  transaction<A extends unknown[], R>(fn: (...args: A) => R): (...args: A) => R {
+    return withTransaction(dbHandle, fn);
+  },
+};
+
+/**
+ * Bring a freshly opened database up to the current schema.
+ *
+ * Runs on every open, and every step is written to be a no-op when it has
+ * already been applied -- there is no migration table and no version number,
+ * because the collector is one SQLite file that a person owns and the
+ * alternative is a version number somebody has to remember to bump.
+ */
+function migrate(db: DatabaseSync): void {
 db.exec(`
 CREATE TABLE IF NOT EXISTS devices (
   device_id   TEXT PRIMARY KEY,
@@ -338,7 +530,7 @@ if (jobsDdl && (!jobsDdl.includes("'cancelled'") || !jobsDdl.includes("'waiting'
     "priority", "parent_job_id", "template_id",
   ].join(", ");
   db.exec("PRAGMA foreign_keys = off");
-  db.transaction(() => {
+  withTransaction(db, () => {
     db.exec(`
       CREATE TABLE jobs_migrating (
         job_id      TEXT PRIMARY KEY,
@@ -364,6 +556,12 @@ if (jobsDdl && (!jobsDdl.includes("'cancelled'") || !jobsDdl.includes("'waiting'
       DROP TABLE jobs;
       ALTER TABLE jobs_migrating RENAME TO jobs;
     `);
+    // Invoked, not merely built: withTransaction returns a wrapped function the
+    // way better-sqlite3's transaction() did, and a rebuild that is only
+    // defined is a rebuild that never runs. That failure is invisible on a
+    // fresh database -- the CREATE TABLE above already has every status -- and
+    // shows up only on somebody's existing collector, as a constraint error the
+    // first time a job is set 'waiting'.
   })();
   db.exec("PRAGMA foreign_keys = on");
 }
@@ -393,3 +591,5 @@ db.prepare(
                    attempts = MAX(attempts, 1)
    WHERE status = 'claimed' AND lease_deadline IS NULL`,
 ).run();
+
+}

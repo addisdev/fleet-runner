@@ -406,6 +406,10 @@ export function Glyph({ size = 20 }: { size?: number }) {
  *  wrong icon would be worse than none. */
 const WORKLOAD_ICON: Record<string, IconName> = {
   install: "install",
+  // The same picture as install, and deliberately: both are the host putting
+  // something onto a device. A second glyph for "install, but the address
+  // rather than the app" would be a distinction only its author could see.
+  enrol: "install",
   "ui-test": "uitest",
   "web-test": "uitest",
   benchmark: "benchmark",

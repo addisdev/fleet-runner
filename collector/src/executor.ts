@@ -5,6 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, readdi
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import {
@@ -2811,7 +2812,27 @@ async function dispatch(job: Job, loaded: Map<string, LoadedWorkload>): Promise<
   }
 }
 
-async function main() {
+/** A running host executor, and the handle that stops it. */
+export type RunningExecutor = { name: string; collector: string; stop: () => void };
+
+/**
+ * Start the host executor: restore any device a crash left configured, then
+ * claim host jobs until stopped.
+ *
+ * Like the collector and the machine agent, this used to be a `main()` called
+ * at the bottom of the file -- which is right for `npm run executor` and wrong
+ * for `fleet up`, which starts all three and has to be able to stop them.
+ *
+ * Resolves once the executor is polling, rather than when it stops. The
+ * restoration pass is awaited first and deliberately so: a phone that a crashed
+ * executor left offline or left in Arabic at the largest dynamic type looks
+ * broken rather than configured, and putting it back must happen before this
+ * host claims anything new.
+ */
+export async function startExecutor(): Promise<RunningExecutor> {
+  let stopped = false;
+  let timer: NodeJS.Timeout | undefined;
+
   log(`polling ${BASE} (flows: ${FLOWS_DIR})`);
   log(
     LOADED.size > 0
@@ -2827,31 +2848,67 @@ async function main() {
   // seen. Refreshing on a timer rather than per poll keeps presence steady
   // regardless of how long a long-poll blocks or how long a job runs.
   await reportAttached();
-  setInterval(reportAttached, 60_000).unref();
-  while (true) {
-    let job: Job | null = null;
-    try {
-      const res = await fetch(`${BASE}/executor/next-job?name=${encodeURIComponent(NAME)}`);
-      if (res.status === 204) continue;
-      if (!res.ok) throw new Error(`next-job -> ${res.status}`);
-      job = (await res.json()) as Job;
-    } catch (e) {
-      log(`poll error: ${(e as Error).message}; retrying in 10s`);
-      await new Promise((r) => setTimeout(r, 10_000));
-      continue;
-    }
+  timer = setInterval(reportAttached, 60_000);
+  timer.unref();
 
-    log(`claimed ${job.job_id} (${job.workload})`);
-    try {
-      await dispatch(job, LOADED);
-    } catch (e) {
-      await postResult({
-        job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,
-        error: (e as Error).message.slice(0, 500),
-      });
-      log(`job ${job.job_id} failed: ${(e as Error).message}`);
+  async function pollLoop(): Promise<void> {
+    while (!stopped) {
+      let job: Job | null = null;
+      try {
+        const res = await fetch(`${BASE}/executor/next-job?name=${encodeURIComponent(NAME)}`);
+        if (res.status === 204) continue;
+        if (!res.ok) throw new Error(`next-job -> ${res.status}`);
+        job = (await res.json()) as Job;
+      } catch (e) {
+        if (stopped) return;
+        log(`poll error: ${(e as Error).message}; retrying in 10s`);
+        await new Promise((r) => setTimeout(r, 10_000));
+        continue;
+      }
+
+      log(`claimed ${job.job_id} (${job.workload})`);
+      try {
+        await dispatch(job, LOADED);
+      } catch (e) {
+        await postResult({
+          job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,
+          error: (e as Error).message.slice(0, 500),
+        });
+        log(`job ${job.job_id} failed: ${(e as Error).message}`);
+      }
     }
   }
+
+  void pollLoop();
+
+  return {
+    name: NAME,
+    collector: BASE,
+    /**
+     * Stop claiming. A job already running finishes: this executor holds device
+     * locks and has journalled intent to put a phone back the way it found it,
+     * and abandoning that mid-flow is what leaves a device stranded offline.
+     */
+    stop: () => {
+      stopped = true;
+      if (timer) clearInterval(timer);
+    },
+  };
 }
 
-main();
+// Run as a program: `npm run executor`, and what `fleet executor` execs.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  startExecutor()
+    .then((executor) => {
+      for (const signal of ["SIGTERM", "SIGINT"] as const) {
+        process.once(signal, () => {
+          executor.stop();
+          process.exit(0);
+        });
+      }
+    })
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
+}

@@ -173,14 +173,20 @@ export function registerVisual(app: FastifyInstance) {
         return reply.code(400).send({ error: `${field} required` });
       }
     }
-    if (!/^[a-f0-9]{64}$/.test(b.sha256!)) {
+    // The loop above proved all four are non-empty strings, which the compiler
+    // cannot see through an indexed access. Stated once here rather than as a
+    // `!` on each of the six uses below.
+    const { suite, page, profile, sha256 } = b as Required<
+      Pick<typeof b, "suite" | "page" | "profile" | "sha256">
+    >;
+    if (!/^[a-f0-9]{64}$/.test(sha256)) {
       return reply.code(400).send({ error: "sha256 must be 64 hex chars" });
     }
     // A baseline pointing at bytes the store does not hold would fail every
     // diff forever while looking like an accepted truth — refuse it here, once,
     // rather than diagnosing it nightly.
-    if (!db.prepare("SELECT 1 FROM artifacts WHERE sha256 = ?").get(b.sha256)) {
-      return reply.code(404).send({ error: `no such artifact: ${b.sha256}` });
+    if (!db.prepare("SELECT 1 FROM artifacts WHERE sha256 = ?").get(sha256)) {
+      return reply.code(404).send({ error: `no such artifact: ${sha256}` });
     }
     db.prepare(
       `INSERT INTO baselines (suite, page, profile, sha256, accepted_at, accepted_from_job)
@@ -189,7 +195,7 @@ export function registerVisual(app: FastifyInstance) {
          sha256 = excluded.sha256,
          accepted_at = excluded.accepted_at,
          accepted_from_job = excluded.accepted_from_job`,
-    ).run(b.suite, b.page, b.profile, b.sha256, b.job_id ?? null);
+    ).run(suite, page, profile, sha256, b.job_id ?? null);
     // Accepting a shot is the moment its bytes stop being one run's output and
     // start being the thing every future run is judged against, so it is also
     // the moment it must survive artifact collection. Pinning here rather than
@@ -197,7 +203,7 @@ export function registerVisual(app: FastifyInstance) {
     // later narrowed or a pruning pass is written that never heard of it.
     db.prepare(
       "UPDATE artifacts SET pinned = 1, pin_reason = ? WHERE sha256 = ?",
-    ).run(`accepted visual baseline for ${b.suite}/${b.page} (${b.profile})`, b.sha256);
-    return reply.code(201).send({ ok: true, suite: b.suite, page: b.page, profile: b.profile, sha256: b.sha256 });
+    ).run(`accepted visual baseline for ${suite}/${page} (${profile})`, sha256);
+    return reply.code(201).send({ ok: true, suite, page, profile, sha256 });
   });
 }

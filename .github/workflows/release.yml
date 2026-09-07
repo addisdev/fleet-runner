@@ -1,0 +1,363 @@
+name: release
+
+# What a `v*` tag turns into: the archives install.sh and install.ps1 download,
+# the checksums they refuse to install without, a container image, and a GitHub
+# Release holding all of it.
+#
+# ## The order is the point
+#
+# Nothing is published until `node scripts/version.mjs check` passes and the tag
+# agrees with VERSION. That script exists because the four components once
+# claimed four unrelated versions -- 0.4.0, 0.1.0, 0.2.0 and an accidental "1.0"
+# that came from GENERATE_INFOPLIST_FILE -- and every agent sends that number as
+# `app_ver` on every registration. A release that shipped a fifth answer would
+# put the wrong number in the field you read when one device starts behaving
+# differently from the one beside it. So the gate runs first, alone, and every
+# other job needs it.
+#
+# ## What is deliberately not here
+#
+# - **No code signing and no notarisation.** There is no Developer ID
+#   certificate, no Windows signing certificate and no App Store Connect key in
+#   this repository's secrets, and a step referencing one would fail every
+#   release from the first tag onward. macOS Gatekeeper will therefore quarantine
+#   a downloaded archive; install.sh sidesteps that because curl does not set the
+#   quarantine attribute, but a browser download will be blocked, and that is a
+#   real limitation rather than an oversight.
+# - **No winget, Homebrew tap or Scoop manifest.** Each needs a repository this
+#   workflow has permission to push to, and none exists.
+# - **No npm publish.** All four packages are `"private": true`.
+#
+# ## What has not been proved
+#
+# This file has never run. There is no published release of Fleet Runner, so
+# neither installer has ever been pointed at a real one, and the container image
+# has never been built at all -- docs/platforms.md has said so since the
+# Dockerfile was written. Everything below is a first attempt with the reasoning
+# written down, not a proven pipeline.
+
+on:
+  push:
+    tags: ["v*"]
+
+# Not cancel-in-progress. Two tags pushed a minute apart is unusual; a release
+# half-uploaded because the next tag cancelled it is worse than one that waits.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Read-only by default, and widened per job to exactly what that job writes.
+# Only `publish` may write to the repository, and only `docker` may write to the
+# registry.
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: version gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      prerelease: ${{ steps.check.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        name: The tag, VERSION and every component agree
+        run: |
+          set -euo pipefail
+
+          # Every declared version against VERSION, fleet/package.json and the
+          # generated fleet/src/version.ts included. This is the same check
+          # ci.yml runs unconditionally on every push; it runs again here
+          # because a tag can be pushed at a commit ci never saw.
+          node scripts/version.mjs check
+
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$file" ]; then
+            echo "::error::tag v${tag} does not match VERSION (${file}). Run 'node scripts/version.mjs set ${tag}' and tag the commit that lands."
+            exit 1
+          fi
+
+          # A version with a pre-release suffix (0.5.0-dev, 0.6.0-rc.1) is
+          # published as a GitHub pre-release, and the Docker `latest` tag is
+          # left where it is. This is not decoration: GitHub's
+          # /releases/latest API skips pre-releases, and that endpoint is
+          # exactly what install.sh and install.ps1 ask when nobody set
+          # FLEET_VERSION. Marking it correctly is what keeps a release
+          # candidate from becoming what `curl | sh` installs.
+          case "$tag" in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+
+          {
+            echo "version=${tag}"
+            echo "prerelease=${prerelease}"
+          } | tee -a "$GITHUB_OUTPUT"
+
+  bundle:
+    name: archives
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The floor the collector needs, not the newest available: building on
+          # the oldest supported runtime is what stops a release quietly
+          # requiring a newer one than its own engines field claims.
+          node-version: "22.13"
+          cache: npm
+          cache-dependency-path: |
+            collector/package-lock.json
+            collector/dash/package-lock.json
+            fleet/package-lock.json
+
+      - name: Collector dependencies and the dashboard
+        working-directory: collector
+        run: |
+          npm ci
+          npm run dash:install
+          npm run dash:build
+
+      # The dashboard is optional to the bundle -- build.mjs copies
+      # collector/dash/dist only if it is there, and the collector serves a
+      # "run the build" page when it is not. That is the right behaviour for a
+      # developer and the wrong one for a release, which would ship silently
+      # dashboard-less. So it is asserted rather than assumed.
+      - name: The dashboard actually built
+        run: |
+          set -euo pipefail
+          test -f collector/dash/dist/index.html \
+            || { echo "::error::collector/dash/dist/index.html is missing; the bundle would ship without a dashboard"; exit 1; }
+
+      - name: Fleet CLI dependencies
+        working-directory: fleet
+        # `npm ci` rather than `npm install`, and it matters more here than in a
+        # test job: this step decides which esbuild bundles the thing people
+        # download. An install that resolved a new minor on the day would make
+        # two builds of the same tag two different artifacts, with one
+        # SHASUMS256.txt claiming to describe both.
+        run: npm ci
+
+      - name: Build the bundle
+        working-directory: fleet
+        run: node build.mjs
+
+      - name: Package one archive per platform
+        id: package
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p stage out
+
+          # Six archives carrying one program. The bundle is JavaScript:
+          # esbuild produces a single dist/ that runs anywhere Node 22.13 runs,
+          # and Playwright -- the only native dependency in the tree -- is
+          # deliberately left external. The archives differ only in their
+          # launcher (a `fleet` symlink against a `fleet.cmd` shim) and their
+          # container format. So why name them per platform at all?
+          #
+          # Because the installers construct a URL from `uname` before they know
+          # anything about the contents, and because the day this stops being
+          # true -- a bundled Node runtime under ~/.fleet/runtime is the obvious
+          # candidate -- the naming should not have to change underneath every
+          # install script that already exists in somebody's shell history.
+          for target in darwin-x64 darwin-arm64 linux-x64 linux-arm64 win32-x64 win32-arm64; do
+            name="fleet-${VERSION}-${target}"
+            mkdir -p "stage/${name}"
+            # `fleet/dist/.` rather than `fleet/dist`, so the contents land in
+            # the directory rather than a dist/ inside it. The layout matters:
+            # fleet resolves runner-web/ and dash/dist/ relative to bin/, so
+            # bin/ must stay a sibling of them.
+            cp -R fleet/dist/. "stage/${name}/"
+
+            case "$target" in
+              win32-*)
+                # No symlink on Windows: creating one needs developer mode or
+                # elevation, and neither installer asks for either. A .cmd shim
+                # is what PATHEXT makes runnable as plain `fleet`.
+                printf '@echo off\r\nnode "%%~dp0fleet.mjs" %%*\r\n' > "stage/${name}/bin/fleet.cmd"
+                (cd stage && zip -qr "../out/${name}.zip" "${name}")
+                ;;
+              *)
+                chmod +x "stage/${name}/bin/fleet.mjs"
+                # Relative, and created inside the staged directory so tar
+                # stores it as a symlink rather than a second copy. Node
+                # resolves it before setting import.meta.url, so assetRoot()
+                # still lands on the install directory.
+                ln -sf fleet.mjs "stage/${name}/bin/fleet"
+                tar -czf "out/${name}.tar.gz" -C stage "${name}"
+                ;;
+            esac
+          done
+
+          # One file covering every asset, which is what both installers fetch:
+          # they download their own archive and this, and refuse to install if
+          # the two disagree. Generated from out/ before it contains itself.
+          (cd out && sha256sum fleet-* > SHASUMS256.txt)
+          cat out/SHASUMS256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: out/
+          # Nothing here is compressible twice.
+          compression-level: 0
+          if-no-files-found: error
+
+  docker:
+    name: ghcr image
+    needs: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU so one x86 runner can produce the arm64 image as well. It is slow
+      # in general and cheap here: the Dockerfile compiles nothing, so the only
+      # emulated work is apt and `npm ci`.
+      #
+      # The alternative -- building each architecture natively on ubuntu-latest
+      # and ubuntu-24.04-arm, then joining them into a manifest list -- is
+      # faster and is what to reach for if this ever becomes slow enough to
+      # notice. It is not done, because it is three more jobs to get right for a
+      # build that has never run once.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # GITHUB_TOKEN, with the `packages: write` granted above. No invented
+      # secret: this token exists in every workflow run.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `ghcr.io/addisdev/fleet` is the whole program: fleet/Dockerfile builds
+      # the same bundle the archives carry and runs it, so `docker run
+      # ghcr.io/addisdev/fleet up --role brain,agent` is a fleet rather than
+      # only a device that joins one. The agent-only image is still
+      # runner-machine/Dockerfile and is not published here.
+      #
+      # NEITHER Dockerfile has ever been built. docs/platforms.md records that
+      # about the agent one and it is equally true of this one -- Docker was not
+      # available on the machine that wrote either. The first tag that runs this
+      # workflow is the first build.
+      # Built in a shell step rather than as an inline `${{ ... && ... || '' }}`
+      # in the tags list, because the false branch of that expression is an
+      # empty string and an empty line in a tag list is an empty tag, not an
+      # absent one.
+      - id: tags
+        name: Which tags this image gets
+        env:
+          VERSION: ${{ needs.gate.outputs.version }}
+          PRERELEASE: ${{ needs.gate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          {
+            echo "list<<TAGS"
+            echo "ghcr.io/addisdev/fleet:${VERSION}"
+            # `latest` moves only for a real release. A pre-release tag
+            # publishes its own version tag and leaves `latest` pointing at the
+            # last stable image, which is the same rule the GitHub Release gets.
+            if [ "$PRERELEASE" = "false" ]; then
+              echo "ghcr.io/addisdev/fleet:latest"
+            fi
+            echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          # The repository root, because the build stage copies collector/,
+          # runner-machine/ and fleet/ -- the bundle is all three.
+          context: .
+          file: fleet/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.list }}
+          # So the package page on GitHub links back to the commit that built it.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.gate.outputs.version }}
+
+  publish:
+    name: github release
+    # The image is a dependency on purpose. A Release that exists while the
+    # image it documents does not is the state somebody files a bug about.
+    needs: [gate, bundle, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-archives
+          path: out
+
+      # The `gh` CLI rather than a third-party release action: it is installed
+      # on every hosted runner, it takes GITHUB_TOKEN, and it is one fewer
+      # supply-chain dependency in the job that holds `contents: write`.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          PRERELEASE: ${{ needs.gate.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          notes="$(mktemp)"
+          cat > "$notes" <<'NOTES'
+          ## Install
+
+          macOS and Linux:
+
+              curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.sh | sh
+
+          Windows:
+
+              irm https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.ps1 | iex
+
+          Both require **Node 22.13 or newer** on PATH -- these archives do not
+          carry a runtime -- and both verify their download against
+          `SHASUMS256.txt` below and refuse to install if it does not match.
+
+          Then `fleet up`. `fleet doctor` says what the machine can and cannot
+          run, and why.
+
+          Every archive carries the same program -- the bundle is JavaScript,
+          and only the launcher differs. They are named per platform because the
+          install scripts build the URL before they know that.
+
+          Nothing here is code-signed. macOS will quarantine an archive
+          downloaded in a browser; the install script is not affected.
+          NOTES
+
+          # CHANGELOG.md is the source of truth for what changed and is not
+          # regenerated here. --notes-file carries the install instructions,
+          # which are about the artifacts rather than the changes.
+          printf '\n---\n\nSee [CHANGELOG.md](%s/blob/v%s/CHANGELOG.md).\n' \
+            "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" "${VERSION}" >> "$notes"
+
+          # `--prerelease=<bool>` rather than adding or omitting a bare
+          # `--prerelease`: gh's flags are cobra's, which take the `=` form, and
+          # this way the flag is passed unconditionally with no array or
+          # word-splitting to get wrong.
+          #
+          # This is the flag that keeps `curl | sh` off a release candidate: the
+          # /releases/latest API both installers read excludes pre-releases.
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
+            --notes-file "$notes" \
+            --prerelease="${PRERELEASE}" \
+            out/*

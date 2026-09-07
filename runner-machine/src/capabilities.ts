@@ -10,99 +10,23 @@
  * asked anyway — can I execute this binary, does this import work — rather
  * than anything cheaper.
  *
- * `benchmark` is unconditional because the synthetic backend is in this repo
- * and needs nothing installed. That is the point of the synthetic backend: a
- * machine with no ML toolchain at all is still a useful fleet member.
- *
- * The two `benchmark:<backend>` pairings are statements about the toolchain
- * this machine has, readable from a `targets.match` expression
- * (`capabilities ~ 'benchmark:llama.cpp'`) — they do not narrow what the queue
- * offers, because declaring `benchmark` outright already means "every backend
- * this agent was built with". `benchmark:mlx` is therefore honest about the
- * machine and NOT a claim that a workload exists: there is no MLX backend in
- * this repo yet, and an mlx-backed job is refused with an error row the way
- * the iOS runner refuses llama.cpp when its framework is missing.
- *
- * `self-check` is unconditional for the same reason `benchmark` is: it shells
- * out to whatever is installed and reports a skipped check for whatever is
- * not, so a machine that can answer none of its questions still answers "I
- * could not", which is the reading the alert engine needs.
- *
- * `build` is the one capability that is BOTH a claim and a label. The
- * `build:<kind>` entries are toolchain statements like the benchmark pairings,
- * but bare `build` is what the collector's claim path actually matches on — a
- * build job carries its kind in `params`, where `capabilityMatches` cannot
- * see it, so without the bare entry a machine with the whole toolchain
- * installed would sit there declaring three kinds and never claim a build.
+ * This module now answers only the machine's half of that: which binaries are
+ * here, which imports work. Turning those answers into the declared list lives
+ * in routes.ts, beside the dispatch table that has to honour them -- because
+ * declaring a workload and being able to run it must be one act, and here they
+ * were two.
  */
 import { which, run } from "./probe.js";
 import { KIND_BINARY } from "./buildkinds.js";
 import { convertersAvailable, probeConverters } from "./converters.js";
 import { loadAllowlist } from "./allowlist.js";
+import { capabilitiesFrom, type CapabilityFlags } from "./routes.js";
 
-export type CapabilityFlags = {
-  llamaBench: boolean;
-  mlx: boolean;
-  gradle: boolean;
-  xcodebuild: boolean;
-  node: boolean;
-  /** Which model converters resolved: gguf, coreml, tflite. */
-  converters?: string[];
-  /** Whether a non-empty shell allowlist exists on this machine. */
-  shellAllowlist?: boolean;
-  /** Whether a llama-server binary resolved, for the serve workload. */
-  llamaServer?: boolean;
-};
-
-/** The list, given the answers. Pure, so the ordering is testable. */
-export function capabilitiesFrom(flags: CapabilityFlags): string[] {
-  const caps = ["benchmark"];
-  if (flags.llamaBench) caps.push("benchmark:llama.cpp");
-  if (flags.mlx) caps.push("benchmark:mlx");
-  // Bare `build` is what the collector's claim path matches on: a job spec has
-  // no place to put a build kind that `capabilityMatches` would read — its
-  // `backend` is a closed enum of inference runtimes — so `build:gradle` alone
-  // would be a machine that can build and never claims a build. It is declared
-  // when at least one kind resolves, which is the honest statement: this
-  // machine can build something. The `build:<kind>` labels then say WHICH,
-  // readable from a targets.match expression, exactly as the benchmark
-  // pairings are.
-  const kinds: string[] = [];
-  if (flags.gradle) kinds.push("build:gradle");
-  if (flags.xcodebuild) kinds.push("build:xcode");
-  if (flags.node) kinds.push("build:npm");
-  if (kinds.length > 0) caps.push("build", ...kinds);
-  // self-check needs nothing installed: it shells out to whatever is there and
-  // reports a skipped check for whatever is not. A machine that cannot answer
-  // any of its questions still answers "I could not", which is the whole point.
-  caps.push("self-check");
-  // llm-eval needs nothing installed either. Its deterministic rules are
-  // arithmetic over strings, and the judge -- when a set has judged items -- is
-  // reached over HTTP at an endpoint the JOB names, typically one a `serve` job
-  // announced. So the capability is a statement about this agent's code, which
-  // is always true, rather than about a toolchain. A job whose set needs a
-  // judge and whose spec names no endpoint is refused with a result row saying
-  // exactly that, which is the honest failure: scoring only the deterministic
-  // subset would report a different measurement under the same name.
-  caps.push("llm-eval");
-  // Same bare-plus-specific shape as build, for the same reason: a job spec has
-  // nowhere to put an output format that the collector's capabilityMatches
-  // would read, so `convert:gguf` alone would be a machine that can convert and
-  // never claims a conversion.
-  if (flags.converters && flags.converters.length > 0) {
-    caps.push("model-convert", ...flags.converters.map((c) => `model-convert:${c}`));
-    // dataset-prep needs only Node and the image tooling the converters bring
-    // along, so it rides on the same answer rather than probing twice.
-    caps.push("dataset-prep");
-  }
-  if (flags.llamaServer) caps.push("serve");
-  // shell is declared ONLY when this machine has a non-empty allowlist. That is
-  // the trust boundary: POST /jobs is unauthenticated by design, so a machine
-  // whose owner has pinned nothing must be unable to claim a shell job at all,
-  // rather than claiming it and refusing it afterwards.
-  if (flags.shellAllowlist) caps.push("shell");
-  return caps;
-}
+// Re-exported because this is where callers and the tests have always looked
+// for them, and because "what this machine can do" is still this module's
+// subject. What moved to routes.ts is the mapping from an answer to a declared
+// string, which had to sit beside the dispatch that honours it.
+export { capabilitiesFrom, type CapabilityFlags };
 
 /**
  * Where llama-bench is, or null.

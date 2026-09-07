@@ -92,6 +92,23 @@ export type BeaconSample = {
   idle_s: number | null;
   load_1m: number | null;
   disk_free_gb: number | null;
+  /**
+   * Set only when this agent is running a job for a DIFFERENT collector.
+   *
+   * A device can register with several brains, and it is still one piece of
+   * hardware running one job at a time. This is how the brains that are not
+   * running it find out: their queue stops offering work to a device it cannot
+   * have, instead of handing over jobs that get released a moment later.
+   *
+   * `collector` is the other brain's base URL. It is deliberately not required
+   * to be resolvable by the reader -- a collector that cannot identify it still
+   * knows this device is unavailable, which is the part that matters.
+   *
+   * Additive: a collector that has never heard of this field ignores it and
+   * behaves exactly as it did before, which is what makes an agent safe to
+   * upgrade before its brains are.
+   */
+  busy?: { job_id: string; collector: string | null };
 };
 
 /**

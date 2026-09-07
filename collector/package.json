@@ -1,10 +1,10 @@
 {
   "name": "fleet-collector",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "description": "Fleet Runner collector: device registry, job queue, artifact store, results DB, dashboard.",
   "scripts": {
@@ -28,7 +28,7 @@
     "shoot:motion": "tsx scripts/shoot-motion.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^12.2.0",
+    "bonjour-service": "^1.4.4",
     "fastify": "^5.4.0",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.62.1",
@@ -36,7 +36,6 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.2.0",
     "@types/pngjs": "^6.0.5",
     "ajv": "^8.17.1",
@@ -44,7 +43,6 @@
     "typescript": "^5.9.0"
   },
   "allowScripts": {
-    "esbuild@0.28.2": true,
-    "better-sqlite3@12.11.1": true
+    "esbuild@0.28.2": true
   }
 }

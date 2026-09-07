@@ -131,7 +131,18 @@ if (!(await run(process.execPath, [TSX, "scripts/check-examples.ts"]))) failed =
 step("metric names match the schema");
 if (!(await run(process.execPath, [TSX, "scripts/check-metrics.ts"]))) failed = true;
 
-// --- 5. the collector, on its own data ----------------------------------
+// The bundled workload table and the directory walk have to name the same
+// things, or a workload works from a checkout and vanishes from a release.
+step("workload table matches the directories");
+if (!(await run(process.execPath, [TSX, "scripts/check-workloads.ts"]))) failed = true;
+
+// --- 5. the collector starts and stops on demand -------------------------
+// Before the smoke run, because if the collector cannot be started from code
+// the smoke run's failure would be a much more confusing way to learn it.
+step("start/stop lifecycle");
+if (!(await run(process.execPath, [TSX, "scripts/check-lifecycle.ts"]))) failed = true;
+
+// --- 6. the collector, on its own data ----------------------------------
 step("smoke (against a throwaway collector)");
 const dir = await mkdtemp(path.join(tmpdir(), "fleet-test-"));
 const port = await freePort();
