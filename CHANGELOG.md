@@ -100,6 +100,14 @@ Waves 4 to 8: the fleet stops being a shelf of phones.
 
 ### Fixed
 
+- **A Windows machine agent described itself as nulls.** Every Windows field
+  came from `wmic`, which is a removed feature on current Windows rather than
+  merely a deprecated one, so `model`, `soc`, `ram_mb`, `os`, `gpu` and
+  `vram_mb` all answered nothing — leaving `device_id`, `platform` and `arch`
+  as the only handles a `targets.match` expression had on a Windows machine.
+  The probes now lead with PowerShell `Get-CimInstance` and keep `wmic` as the
+  fallback for older installs. Found by the platform matrix added in this same
+  release, which is what it was added to do.
 - The tailnet allowlist matched a short node name against a fully qualified
   entry in one direction only, so an allowlist written the careful way silently
   refused the node it was written for.

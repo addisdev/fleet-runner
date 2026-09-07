@@ -9,7 +9,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describe, APP_VER, mbFromSizeString, wmicValue, platformName, processKind } from "../src/descriptor.js";
+import {
+  describe, APP_VER, mbFromSizeString, wmicValue, platformName, processKind,
+  winFactsFromCimJson, chassisIsPortable, vramMbFromAdapterRam,
+} from "../src/descriptor.js";
 import { parsePmsetBatt, speedLimitToThermal, celsiusToThermal, loadOneMinute, idleSeconds, beacon } from "../src/telemetry.js";
 import { firstMatch, finite, run, out, readText, orNull } from "../src/probe.js";
 import { defaultDeviceId, ttlFromEnv } from "../src/agent.js";
@@ -150,6 +153,78 @@ test("wmic /value output parses, and a missing key is null", () => {
   assert.equal(wmicValue(text, "AdapterRAM"), null);
   assert.equal(wmicValue(null, "Model"), null);
   assert.equal(wmicValue("Model=\r\n", "Model"), null);
+});
+
+// --- what Windows answers now --------------------------------------------
+//
+// wmic is a removed feature on current Windows, not a deprecated one, so the
+// whole Windows path answered null on windows-latest and a Windows machine
+// was addressable only by device_id, platform and arch. Get-CimInstance leads
+// now; these cover the parsing between it and the descriptor.
+
+test("the CIM script's JSON becomes facts", () => {
+  const json = JSON.stringify({
+    model: "Virtual Machine",
+    soc: "AMD EPYC 7763 64-Core Processor",
+    ram: "17179398144",
+    os: "10.0.26100",
+    gpu: "Microsoft Hyper-V Video",
+    vram: "8388608",
+    chassis: "3",
+    battery: false,
+  });
+  const f = winFactsFromCimJson(json);
+  assert.ok(f);
+  assert.equal(f.model, "Virtual Machine");
+  assert.equal(f.soc, "AMD EPYC 7763 64-Core Processor");
+  // uint64 crosses as a string so the byte count is not rounded on the way.
+  assert.equal(f.ramBytes, 17179398144);
+  assert.equal(f.version, "10.0.26100");
+  assert.equal(f.vramBytes, 8388608);
+  assert.equal(f.chassis, "3");
+  // A desktop reporting no battery is an answer, not a missing one.
+  assert.equal(f.battery, false);
+});
+
+test("an object of nulls is a miss, so wmic still gets its turn", () => {
+  // pwsh on macOS or Linux runs the script and finds no Get-CimInstance, and
+  // a Windows box with WMI broken does the same thing. Either way the fields
+  // are empty, and empty is not an answer.
+  const json = JSON.stringify({
+    model: null, soc: null, ram: "", os: null,
+    gpu: null, vram: "", chassis: "", battery: false,
+  });
+  assert.equal(winFactsFromCimJson(json), null);
+});
+
+test("output that is not the JSON we asked for is null, not a crash", () => {
+  assert.equal(winFactsFromCimJson(null), null);
+  assert.equal(winFactsFromCimJson(""), null);
+  assert.equal(winFactsFromCimJson("Get-CimInstance : The term is not recognized"), null);
+  assert.equal(winFactsFromCimJson("[1,2,3]"), null);
+});
+
+test("the portable chassis types are the SMBIOS ones", () => {
+  assert.equal(chassisIsPortable("10"), true, "10 is Notebook");
+  assert.equal(chassisIsPortable("31"), true, "31 is Convertible");
+  assert.equal(chassisIsPortable("3"), false, "3 is Desktop");
+  assert.equal(chassisIsPortable("23"), false, "23 is Rack Mount Chassis");
+  // Multiple enclosures come back joined; one portable makes it portable.
+  assert.equal(chassisIsPortable("3,10"), true);
+  assert.equal(chassisIsPortable(null), null);
+  assert.equal(chassisIsPortable(""), null);
+});
+
+test("a saturated AdapterRAM says nothing rather than 4095 MB", () => {
+  // AdapterRAM is a uint32, so every card with 4 GB or more reports the same
+  // ceiling. Passing it through would let a match expression asking for
+  // 16000 MB skip the 24 GB machine that could have run the job.
+  assert.equal(vramMbFromAdapterRam(4293918720), null);
+  assert.equal(vramMbFromAdapterRam(4294967295), null);
+  assert.equal(vramMbFromAdapterRam(2147483648), 2048);
+  assert.equal(vramMbFromAdapterRam(8388608), 8);
+  assert.equal(vramMbFromAdapterRam(0), null);
+  assert.equal(vramMbFromAdapterRam(null), null);
 });
 
 test("the device id is stable, sanitized, and hostname-derived", () => {
