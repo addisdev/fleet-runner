@@ -28,10 +28,12 @@ const step = (name: string) => console.log(`\n=== ${name}`);
 /** Run a command to completion; resolve false rather than throwing. */
 function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
   return new Promise<boolean>((resolve) => {
-    const p = spawn(onThisPlatform(cmd), args, {
+    const how = spawnFor(cmd, args);
+    const p = spawn(how.command, how.args, {
       cwd: opts.cwd ?? ROOT,
       env: { ...process.env, ...opts.env },
       stdio: "inherit",
+      shell: how.shell,
     });
     p.on("error", (e) => { console.error(`  cannot run ${cmd}: ${e.message}`); resolve(false); });
     p.on("exit", (code) => resolve(code === 0));
@@ -39,23 +41,35 @@ function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.Pro
 }
 
 /**
- * What to actually exec for a command name, on this platform.
+ * How to spawn a command name on this platform.
  *
- * On Windows `npm` is `npm.cmd`, and `spawn` without a shell will not find it:
- * `spawn npm ENOENT`. That is what the collector's first ever Windows run
- * reported -- from the dashboard build step, and only from that one, because it
- * is the only step here that shells out to something other than node.
+ * Only Windows needs anything, and it needs two things that contradict each
+ * other. The collector's first ever Windows run found both, one after the
+ * other, from the one step here that shells out to something that is not node:
  *
- * Naming the `.cmd` rather than passing `shell: true`, which would be the other
- * fix. A shell re-parses the whole command line, and this repository's own
- * checkout lives under a directory with a space in it -- so the shell route
- * trades a clear failure on one platform for a quoting bug on every platform.
+ * 1. `spawn("npm", …)` is **ENOENT**. On Windows npm is `npm.cmd`, and spawn
+ *    without a shell does not try extensions.
+ * 2. `spawn("npm.cmd", …)` is **EINVAL**. Node refuses to spawn a `.cmd` or
+ *    `.bat` without a shell at all -- that is the fix for the batch-argument
+ *    injection reported in 2024, and it is deliberate.
+ *
+ * So a shell it is, and only for that case. Not for everything: `run()` is
+ * mostly given `process.execPath` and an absolute path to a tsx entry point,
+ * and this repository's own checkout lives under a directory with a space in
+ * it. Passing those through a shell would trade a clear failure on one platform
+ * for a quoting bug on all of them.
+ *
+ * The arguments are quoted anyway. None of the ones passed here contain a
+ * space today, and relying on that is how a quoting bug arrives later.
  */
-function onThisPlatform(cmd: string): string {
-  if (process.platform !== "win32") return cmd;
-  // Only bare names. An absolute path to node is already the right thing.
-  if (cmd.includes("/") || cmd.includes("\\")) return cmd;
-  return ["npm", "npx", "yarn", "pnpm"].includes(cmd) ? `${cmd}.cmd` : cmd;
+function spawnFor(cmd: string, args: string[]): { command: string; args: string[]; shell: boolean } {
+  const bareTool = !cmd.includes("/") && !cmd.includes("\\") && ["npm", "npx", "yarn", "pnpm"].includes(cmd);
+  if (process.platform !== "win32" || !bareTool) return { command: cmd, args, shell: false };
+  return {
+    command: cmd,
+    args: args.map((a) => (/[\s"^&|<>]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)),
+    shell: true,
+  };
 }
 
 /**
