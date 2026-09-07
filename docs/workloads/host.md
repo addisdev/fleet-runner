@@ -34,7 +34,7 @@ Each driver knows its own mechanism:
 |---|---|
 | `adb` | `am start -S --es base_url <url>` — the Android runner has read this since the shelf was built |
 | `simctl` | `simctl launch` with `SIMCTL_CHILD_FLEET_URL` |
-| `devicectl` | not implemented; a real device needs the `fleetrunner://join` URL scheme, which the iOS app does not have yet |
+| `devicectl` | `devicectl device process launch --payload-url fleetrunner://join?url=…` |
 | `roku` | `POST /launch/dev?fleet_url=<url>` over ECP |
 
 ### It verifies, because all four fail silently
@@ -70,6 +70,11 @@ device was attached and no simulator was booted on the machine this was written
 on. What is tested is every path that decides *not* to enrol: the loopback
 refusal, no targets, a driver with no mechanism, and one device's failure not
 stopping the others.
+
+The Apple half is closer than that suggests: the runner reads `FLEET_URL` from
+its launch environment and handles `fleetrunner://join`, and both the iOS and
+tvOS apps were built and their `Info.plist` confirmed to register the scheme.
+What has not happened is a device being launched with either.
 
 ## `install`
 

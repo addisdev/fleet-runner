@@ -96,8 +96,10 @@
 		965A118D55FCDC99E6F0349A /* FleetAgent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetAgent.swift; sourceTree = "<group>"; };
 		A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FleetRunnerApp.swift; sourceTree = "<group>"; };
 		AB3F6F0918C2ADED9F41FA6D /* FleetRunnerTV.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = FleetRunnerTV.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B520AB65360888C02067674D /* InfoVision.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = InfoVision.plist; sourceTree = "<group>"; };
 		BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LlamaCppBackend.swift; sourceTree = "<group>"; };
 		C3122AFE32636B1FE9348CA1 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		C70FD49118A99DF0BB279598 /* InfoTV.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = InfoTV.plist; sourceTree = "<group>"; };
 		C7DFBDD257E5AD4960202BB7 /* BenchSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchSession.swift; sourceTree = "<group>"; };
 		C8C6B181BF315A65223BCFC1 /* ThermalWorkload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalWorkload.swift; sourceTree = "<group>"; };
 		D1902344387986CFE92D4225 /* FleetRunnerUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = FleetRunnerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -121,6 +123,8 @@
 				965A118D55FCDC99E6F0349A /* FleetAgent.swift */,
 				A4C158F9244D20CE6B927532 /* FleetRunnerApp.swift */,
 				C3122AFE32636B1FE9348CA1 /* Info.plist */,
+				C70FD49118A99DF0BB279598 /* InfoTV.plist */,
+				B520AB65360888C02067674D /* InfoVision.plist */,
 				BEC2D15CC8AA61AF38526ECA /* LlamaCppBackend.swift */,
 				262BD6B87A5A8B607BE14F2B /* MiniZip.swift */,
 				67ED6D6D92FC1E39451CC4B1 /* Percentile.swift */,
@@ -483,14 +487,12 @@
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = FleetRunner/Info.plist;
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_FILE = FleetRunner/InfoTV.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.5.0-dev";
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.tv;
 				SDKROOT = appletvos;
 				SWIFT_VERSION = 5.9;
@@ -512,7 +514,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.5.0-dev";
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -598,7 +600,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.5.0-dev";
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -612,14 +614,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = FleetRunner/Info.plist;
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_FILE = FleetRunner/InfoVision.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.5.0-dev";
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.vision;
 				SDKROOT = xros;
 				SWIFT_VERSION = 5.9;
@@ -653,14 +653,12 @@
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = FleetRunner/Info.plist;
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_FILE = FleetRunner/InfoTV.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.5.0-dev";
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.tv;
 				SDKROOT = appletvos;
 				SWIFT_VERSION = 5.9;
@@ -674,14 +672,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = FleetRunner/Info.plist;
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
+				INFOPLIST_FILE = FleetRunner/InfoVision.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = "0.5.0-dev";
+				MARKETING_VERSION = 0.5.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.vision;
 				SDKROOT = xros;
 				SWIFT_VERSION = 5.9;

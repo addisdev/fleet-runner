@@ -1,6 +1,6 @@
 {
   "name": "fleet-dash",
-  "version": "0.5.0-dev",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Fleet Runner dashboard SPA. Built to dash/dist and served by the collector at /dash.",

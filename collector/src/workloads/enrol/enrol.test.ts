@@ -136,8 +136,15 @@ export async function runEnrolChecks(check: Check): Promise<void> {
   }
 
   // --- a driver with no enrolment mechanism --------------------------------
+  //
+  // All four shipped drivers can enrol, so this uses a name that resolves to no
+  // driver at all. It was `devicectl` until devicectl grew a `--payload-url`
+  // launch, at which point this test started actually trying to reach a phone
+  // -- which is the right failure for a test to have and the wrong one to
+  // leave. The path being covered is `driverNamed` returning undefined, which
+  // is also what a target from a driver that was removed looks like.
   {
-    const { ctx, rows } = fakeCtx([target({ driver: "devicectl", platform: "ios", id: "some-iphone" })]);
+    const { ctx, rows } = fakeCtx([target({ driver: "nosuchdriver", platform: "ios", id: "some-iphone" })]);
     await withDevices([[]], async () => {
       await run(job({ url: "http://fleet-host.local:8788", wait_s: 1 }), ctx);
     });
@@ -153,6 +160,7 @@ export async function runEnrolChecks(check: Check): Promise<void> {
     check(
       "the stage is recorded so a reader knows which half failed",
       (perDevice?.enrol as Row | undefined)?.stage === "unsupported",
+      JSON.stringify(perDevice?.enrol),
     );
     check("and the final row is not ok either", rows.find((r) => r.final)?.ok === false);
   }

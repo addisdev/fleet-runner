@@ -53,10 +53,65 @@ struct ContentView: View {
         .foregroundStyle(Fleet.ink)
         .onAppear {
             agent.sampleNow()
+            // Enrolment without a keyboard, path one: a launch environment.
+            //
+            // `simctl launch` passes any SIMCTL_CHILD_-prefixed variable through
+            // with the prefix stripped, which is the only mechanism a simulator
+            // offers that does not involve typing into it. The host executor's
+            // `enrol` workload uses exactly this.
+            //
+            // Read on every appearance rather than once, because a re-launch
+            // with a different address is how a shelf is moved between
+            // collectors, and it has to take effect without a reinstall.
+            applyEnvironment()
             // Headless start for simctl / the host executor:
             //   simctl launch booted com.taylab.fleetrunner -autostart 1
             if UserDefaults.standard.bool(forKey: "autostart") { start() }
         }
+        // Enrolment without a keyboard, path two: a URL.
+        //
+        // `fleetrunner://join?url=…&device_id=…`, which works from four places a
+        // tvOS keyboard does not: `devicectl device process launch` against real
+        // Apple hardware, `simctl openurl`, a QR code pointed at with a phone,
+        // and a link somebody taps in Safari. An Apple TV has no camera and its
+        // on-screen keyboard is a grid driven by a remote, so this is the whole
+        // enrolment story for one.
+        .onOpenURL { url in
+            guard let joined = Self.parseJoin(url) else { return }
+            baseUrl = joined.url
+            if let id = joined.deviceId { deviceId = id }
+            // Started immediately. Somebody who sent a device a join link meant
+            // for it to join, and a television that then sits on a settings
+            // screen waiting to be told to start needs the remote this exists
+            // to avoid.
+            start()
+        }
+    }
+
+    /// The collector address from this process's environment, if it was given one.
+    private func applyEnvironment() {
+        let env = ProcessInfo.processInfo.environment
+        if let url = env["FLEET_URL"], !url.isEmpty { baseUrl = url }
+        if let id = env["FLEET_DEVICE_ID"], !id.isEmpty { deviceId = id }
+    }
+
+    /// `fleetrunner://join?url=…&device_id=…`, or nil.
+    ///
+    /// Static and separate so it can be tested without a running app, and
+    /// strict about the host: a URL that is not `join` is ignored rather than
+    /// half-applied. The scheme is one anything on the device can open, so a
+    /// malformed or unexpected link must change nothing at all.
+    static func parseJoin(_ url: URL) -> (url: String, deviceId: String?)? {
+        guard url.scheme?.lowercased() == "fleetrunner", url.host?.lowercased() == "join" else { return nil }
+        guard let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return nil }
+        guard let collector = items.first(where: { $0.name == "url" })?.value, !collector.isEmpty else { return nil }
+        // Only http and https reach a collector, and refusing anything else here
+        // means a link cannot point this runner at a scheme it would then fail
+        // on in a way that reads as a network fault.
+        guard let parsed = URL(string: collector), let scheme = parsed.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return nil }
+        let id = items.first(where: { $0.name == "device_id" })?.value
+        return (collector, id?.isEmpty == false ? id : nil)
     }
 
     // MARK: - header

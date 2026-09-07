@@ -4,22 +4,257 @@ Notable changes to Fleet Runner. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 follows [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-One version covers all four components. They ship no shared code, only a JSON
+One version covers every component. They ship no shared code, only a JSON
 protocol — and that protocol is the thing that changes, so it is the thing the
 version tracks. A release note says which components moved. The wire protocol
 itself is `"schema": 1` and stays there until something breaks compatibility,
 independently of the version below.
 
+Since 0.5.0 that is enforced rather than asserted: `VERSION` at the repository
+root is the source, `scripts/version.mjs` writes it into all seven places, and
+a CI job fails when they disagree.
+
 ## [Unreleased]
+
+## [0.5.0] -- 2026-09-07
+
+One command instead of a checkout: `fleet up`. And a device can belong to more
+than one fleet.
+
+### Added
+
+- **`fleet`, the front door.** `fleet up --role brain,agent` runs this machine's
+  components under one supervisor; `fleet join --discover` finds a brain on the
+  network and joins it; `fleet doctor` says what this machine can and cannot run
+  **and why not**; `fleet service install` keeps it up. It wraps the collector,
+  the machine agent and the host executor and reimplements none of them -- each
+  still reads its own `FLEET_*` variables and still runs started by hand.
+- **A supervisor that gives up loudly.** `KeepAlive` and `Restart=always`
+  restart a component that crashes on startup every ten seconds forever, writing
+  a stack trace into a log nobody rotates -- which from outside is
+  indistinguishable from a fleet that works. This one backs off, rotates, and
+  after five failures in quick succession stops and says which log to read. A
+  child that ran for a while first resets the counter.
+- **One bundle with no dependencies.** `node fleet/build.mjs` produces a 0.9 MB
+  `fleet.mjs` carrying the collector, the agent and the executor, beside the
+  browser runner and the dashboard in the same relative layout a checkout has --
+  so `../runner-web/index.html` resolves without any source knowing it is
+  bundled. Only Playwright stays outside: 400 MB of browser needed by four of
+  thirty workloads, now a dynamic import, so an executor without it starts fine
+  and says so.
+- **`install.sh` and `install.ps1`.** No sudo, no administrator rights, no
+  bundled runtime (Node 22.13 or newer on `PATH` is required, and the release
+  workflow builds no runtime, so the installers deliberately do not look for
+  one). Both verify the download against the release's `SHASUMS256.txt` and
+  refuse to install if it does not match, or if the checksums cannot be fetched.
+- **A release workflow.** Six archives, one `SHASUMS256.txt`, a multi-arch
+  container image and a GitHub Release, behind a version gate that runs first
+  and alone. A pre-release tag is marked as one, because the
+  `/releases/latest` API both installers read excludes pre-releases -- which is
+  what keeps `curl | sh` off a release candidate.
+- **`fleet/Dockerfile`**: the whole program containerised, not only the agent.
+  `ghcr.io/addisdev/fleet` is now a fleet rather than a device that joins one,
+  which makes `--role brain` possible in Docker at all. The agent-only image
+  stays as `runner-machine/Dockerfile`.
+- **A collector can advertise itself over mDNS**, off by default -- a collector
+  should not start announcing itself on somebody's office network because they
+  upgraded. It is link-local by construction, so a collector bound to a tailnet
+  address is not advertised across it and the deployment posture is unchanged.
+- **A device can belong to more than one fleet.** Collectors do not share a
+  database, forward jobs, replicate results or elect anything; a job enqueued on
+  brain A is A's job. All of multi-homing is on the device side and it is one
+  rule: **a device runs one job at a time, whoever asked**, enforced by three
+  mechanisms none of which is sufficient alone -- a claim gate on the agent,
+  `busy` on the beacon so other queues stop offering, and
+  `POST /jobs/:id/release` for the race the first two cannot close. `release`
+  **refunds the attempt**, because being handed a job you could not take is not
+  evidence the job is flaky; it is refused once any result row exists, and
+  refused if the caller is not the claimant, which on an unauthenticated API
+  would otherwise be a denial of service with one `curl`.
+- **`GET /api/peers`**, and `/api/peers/:id/*` proxying one peer's read API
+  server to server. A proxy rather than CORS because there is no
+  authentication, so opening the read API cross-origin would let any website in
+  the operator's browser read their whole fleet from any tab. Peers are
+  addressed by stable id rather than URL, only an allow-list of endpoints is
+  proxied, and nothing that mutates is proxied at all.
+- **Conformance clause 9**, which is skipped for almost every agent and should
+  be: a runner registered with one collector has nothing to get wrong. It checks
+  the half observable from one brain -- an agent that says it is busy elsewhere
+  and then claims work anyway.
+- **A brain switcher in the dashboard header**, rendered only when peers are
+  configured. Each peer links to *its own* dashboard rather than pulling its data
+  in, because mutations are not proxied and a screen mixing two fleets would have
+  a compose button whose target was ambiguous. An unreachable peer stays visible
+  and struck through.
+- **`runner-roku/`**: the fifth hand-written implementation of the protocol, in
+  BrightScript, because that is the only language a Roku will run. A SceneGraph
+  channel that registers, long-polls, runs, beacons and reports, enrolled by ECP
+  launch parameters rather than by an on-screen keyboard. It declares
+  `benchmark:roevp` and refuses `synthetic` with a sentence, for the reason the
+  browser runner declares `jssha`. `ram_mb`, `soc` and `arch` are null, each with
+  a reason; the memory pressure signal rides on the beacon as `mem_pressure`
+  instead of being turned into an invented number.
+- **`collector/src/drivers/roku.ts`**: the first driver that reaches devices over
+  the network rather than a cable -- SSDP `M-SEARCH` for `roku:ecp`, then
+  `GET /query/device-info`. It deliberately does not install: that needs RFC 7616
+  digest auth Node's `fetch` does not have, and `runner-roku/build.sh` does it
+  with `curl --digest`, reading the password from the Keychain over a stdin pipe
+  so it never reaches argv.
+- **`desktop/`**: a Tauri 2 menu-bar app around the `fleet` binary -- a tray
+  menu, three role switches, the dashboard in a window, and a notification when
+  a component gives up. It wraps the CLI and does not reimplement it: no second
+  supervisor, no backoff curve of its own, and it reads and writes the same
+  `~/.fleet/config.json` with the same field names `fleet config set` writes.
+- **`VERSION` at the repository root**, `scripts/version.mjs` to write it into
+  all seven places, and a CI job that is deliberately not path-filtered and
+  fails when they disagree. The components had drifted to four different
+  answers, including an accidental `1.0` on iOS that was simply what
+  `GENERATE_INFOPLIST_FILE` supplies when no target sets `MARKETING_VERSION`.
+  That number is not decoration: every agent sends it as `app_ver` on every
+  registration, so it is the field you read when one device behaves unlike the
+  one beside it.
+- **`docs/install/`** and **`docs/deploy/headless.md`**: the one-command story
+  per platform, how each device platform joins, and the per-component launchd
+  and systemd deployment that is actually running today.
 
 ### Changed
 
+- **The database is Node's own `node:sqlite`**, and there is no native code
+  anywhere in the tree. `better-sqlite3` was the only native addon, and it is
+  what made the collector a per-OS, per-architecture, per-Node-ABI install
+  rather than a copy of a directory -- and the reason it had never once run on
+  Windows. The engine floor moves to **Node 22.13**, where that module lost its
+  flag. It is also what makes `docker build --platform linux/arm64` from an x86
+  laptop produce a working Pi image.
+- **The three programs are three functions.** `listen()`/`close()` in the
+  collector, `startAgent(opts)` and `startExecutor()` returning handles that stop
+  at a loop boundary rather than mid-job. Each previously called `main()` at the
+  bottom of the file with configuration read from `process.env` while the module
+  loaded, which is right for `npm start` and the whole reason none of them could
+  be embedded. `config.ts`'s exports are live bindings now with a `configure()`
+  that reassigns them, and `configure()` refuses once the collector has started,
+  because half these values are read once and half on every request.
+- **The machine agent declares and dispatches from one table.** It had a string
+  list in `capabilities.ts` and an `if` chain in `agent.ts` -- the exact drift
+  `docs/writing-a-runner.md` warns every other runner author about, using this
+  agent as the worked example. The Kotlin and Swift agents did it properly; the
+  one the documentation points at did not.
+- **A brain has a name and an id that survive a restart**, in `collector.json`,
+  written through a temporary file and a rename. `SERVER_INSTANCE` answers "did
+  it restart", which is right for the SSE handshake and useless for "which
+  collector is this" -- a question that has to be answerable now that a device
+  can register with more than one.
+- **Playwright is asked for rather than assumed.** `browserAvailable()` launches
+  a browser rather than resolving a package, because `npm install playwright`
+  leaves you with the library and no Chromium, which resolves perfectly and
+  cannot open a page.
+- The workloads are named in `static.ts` as well as found by walking the
+  directory, because a bundle has no directory to walk and `import(someVariable)`
+  is not something a bundler can follow. `npm test` compares the two lists in
+  both directions.
+- **`collector/deploy/install-agent.sh` and
+  `runner-machine/deploy/install-agent.sh` are deprecated** in favour of
+  `fleet service install`, which writes one unit running `fleet up` rather than
+  one per component. They ship one more release and are then removed. Their
+  behaviour is unchanged, and they are kept for that release for a specific
+  reason: `fleet service install` has never been run and these have.
 - **CI no longer runs the iOS launch smoke**, only the static
   `check-backdeploy.sh`. Booting a simulator cost about seven minutes a run, and
   the launch check could not catch the back-deployment bug it was written for
   anyway: a GitHub macOS runner ships only the newest iOS runtime, which is
   precisely where such a bug does not reproduce. `launch-smoke.sh` stays in the
   repository as the tool to run by hand on a machine with older runtimes.
+
+### Fixed
+
+- **A duplicate `job_id` became a 500 instead of a 409.** `POST /jobs` compared
+  `e.code` against the string `SQLITE_CONSTRAINT_PRIMARYKEY`; Node puts
+  `ERR_SQLITE_ERROR` in `code` and the extended result code in `errcode`, so the
+  comparison silently stopped matching when the driver changed. It is
+  `isUniqueViolation` in `db.ts` now, where knowing the driver belongs. The
+  smoke suite caught it.
+- **Ten places bound a possibly-undefined value**, which throws at runtime in
+  either driver. `better-sqlite3` typed bound parameters as `any` and
+  `node:sqlite` does not, so the stricter types found them.
+- **A jobs-table rebuild was defined and never called.** The migration wrapper
+  returns a function the way `better-sqlite3`'s did, and the call was dropped in
+  the rewrite. The failure is invisible on a fresh database, because the
+  `CREATE TABLE` beside it already names every status -- only an existing
+  collector would have found it, as a constraint error the first time a
+  dependency chain set a job `waiting`.
+- **The machine agent died rather than retrying when its collector was not up
+  yet**, which under `fleet up` is every single boot, since the agent reliably
+  wins the race. It would have exited, been restarted, exited again, and hit the
+  crash-loop ceiling on a fleet that was working perfectly.
+- **`selfCommand` looked for a sibling file that only exists in a checkout**, so
+  the supervisor could not spawn its own children from a release.
+- **`FLEET_NAME` was defined in the settings and read by nothing.** Found by a
+  screenshot: two collectors on one machine both called `MacBookPro`, because
+  both took the default from the same hostname -- precisely the case
+  multi-homing creates. It overrides for the life of the process without
+  touching the identity file, and the id is never overridable, because an id
+  somebody can set is an id two brains can collide on.
+- **A device busy for another collector read `idle` on the dashboard**, which is
+  the one thing it is not, and the reading that sends somebody off to debug a
+  queue that is working perfectly. It says `busy · <the other brain's address>`
+  now, with the job id on hover.
+- **Aborting the other long-polls the instant a claim is taken is measurably
+  worse**, and the new test caught it before it shipped: a poll that has already
+  been answered has its job thrown away by the abort, with no runner and no
+  release, and it sits `claimed` until a lease sweep. The losing poll finishes
+  and hands its job back instead.
+
+### Not verified
+
+Everything in this list is written and reviewed and has not been run. It is
+collected here rather than scattered, because a reader deciding whether to trust
+this release needs the list.
+
+- **The `fleet` CLI has never run on Windows or Linux.** Not the CLI, not the
+  supervisor, not the bundle. The paths, the process handling and both service
+  backends are written and untested; `fleet.yml` declares a three-platform
+  matrix that has never executed. Everything that *has* been watched to work --
+  `fleet up` supervising a brain and an agent with a synthetic benchmark running
+  end to end through both, from a checkout and from the bundled release, clean
+  SIGTERM shutdown, mDNS discovery and `fleet join --discover` -- was on
+  macOS/arm64 and nowhere else.
+- **`fleet service install` has never been run on any platform.** Not launchd,
+  not systemd, not the Windows scheduled task. No path it writes has been watched
+  to start at login.
+- **Neither Dockerfile has ever been built**, and no image has been pushed.
+  Docker was not available on the machine that wrote them.
+- **The install scripts have never met a real GitHub release**, because none
+  exists. They were exercised against locally built archives: checksum verified,
+  a tampered archive refused, a re-install leaving config and data intact.
+- **`release.yml` has never run.** The first tag is the first run.
+- **No signing, notarisation, winget, Scoop or Homebrew.** Each is omitted with a
+  comment saying why, rather than referencing a secret that does not exist and
+  failing from the first tag. macOS will quarantine an archive downloaded in a
+  browser; `install.sh` is unaffected only because `curl` does not set the
+  attribute.
+- **The Roku channel has never been compiled, let alone run.** No Roku hardware
+  was available and no Roku emulator exists -- BrightScript's only compiler is
+  inside a television. What is checked: the digest is verified against two
+  independent references, XML well-formedness and block balance are checked
+  mechanically, and a hand review in place of a linter found six real defects,
+  four of which would have been parse errors on the firmware and on nothing
+  else. Whether a screensaver suspends, throttles or ignores a running channel is
+  unknown, and the throttled case would silently produce slow numbers. The
+  driver's SSDP parsers are tested against recorded shapes; its UDP socket path
+  is exercised by nothing.
+- **None of the desktop app's Rust has ever been compiled.** There is no Rust
+  toolchain on the machine it was written on, so `cargo check` has never run. It
+  has never run at all -- not the tray, not the settings window, not a
+  notification, not the dashboard window. Info.plist merging, the bundle resource
+  layout, signing and notarisation are all assumed rather than observed.
+  Critically, **the local-network hypothesis the app exists for is untested**:
+  whether macOS attributes a Tauri sidecar's traffic to the bundle that spawned
+  it, when `fleet up` then re-execs into grandchildren running the system `node`
+  from outside the bundle. The honest assessment is roughly even odds leaning
+  against. What *was* checked: both JSON files parse, both plists lint, `ui/app.js`
+  parses and every element id it reaches for exists, the config struct's field
+  order matches real `fleet config` output byte for byte, and the sidecar shim
+  was actually run under a Finder-like `PATH` with no Homebrew on it.
 
 ## [0.4.0] — 2026-09-06
 
@@ -294,7 +529,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/addisdev/fleet-runner/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/addisdev/fleet-runner/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/addisdev/fleet-runner/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/addisdev/fleet-runner/compare/v0.2.0...v0.3.0

@@ -75,29 +75,36 @@ export const simctlDriver: Driver = {
    * old collector still configured, which looks exactly like an enrolment that
    * worked.
    *
-   * UNVERIFIED. The environment is passed correctly -- that is simctl's
-   * documented behaviour -- but nothing in the iOS runner reads FLEET_URL yet.
-   * It reads `@AppStorage("base_url")`, which a launch environment does not
-   * touch. Until the app is taught to, this enrols nothing and the workload
-   * will report that the device never registered.
+   * The runner reads `FLEET_URL` and `FLEET_DEVICE_ID` from its environment on
+   * every appearance, so a re-launch with a different address takes effect
+   * without a reinstall -- which is how a shelf is moved between collectors.
+   *
+   * PARTLY VERIFIED. The app was built and its plist confirmed; the launch
+   * itself has never been run, because no simulator was booted on the machine
+   * this was written on.
    */
   async enrol(target: Target, opts: { url: string; deviceId?: string }): Promise<void> {
     const env: Record<string, string> = { SIMCTL_CHILD_FLEET_URL: opts.url };
     if (opts.deviceId) env.SIMCTL_CHILD_FLEET_DEVICE_ID = opts.deviceId;
     await exec(
       "xcrun",
-      ["simctl", "launch", "--terminate-running-process", target.id, RUNNER_BUNDLE_ID],
+      ["simctl", "launch", "--terminate-running-process", target.id, bundleFor(target.platform)],
       { timeout: 60_000, env: { ...process.env, ...env } },
     );
   },
 };
 
 /**
- * The iOS/tvOS runner's bundle identifier, as project.yml declares it.
+ * The runner's bundle identifier for a platform, as project.yml declares them.
  *
- * The tvOS target is `.tv` and the visionOS one `.vision`; this is the iOS one,
- * and enrolling an Apple TV simulator with it will fail to find the app. Left
- * as the single common case rather than a lookup table, because a table with
- * three untested entries is three ways to be wrong instead of one.
+ * One source tree, three products, three identifiers -- so an Apple TV
+ * simulator asked for the iOS bundle simply has no such app. Unknown platforms
+ * fall back to iOS, which is the only one that could be right.
  */
-const RUNNER_BUNDLE_ID = "com.taylab.fleetrunner";
+function bundleFor(platform: string): string {
+  return (
+    { ios: "com.taylab.fleetrunner", tvos: "com.taylab.fleetrunner.tv", visionos: "com.taylab.fleetrunner.vision" }[
+      platform
+    ] ?? "com.taylab.fleetrunner"
+  );
+}

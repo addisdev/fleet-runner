@@ -302,12 +302,12 @@ somebody else, and "this will be gone in four minutes" is the more useful fact.
 ## Adding one
 
 1. Write the agent. It registers, long-polls, runs, reports. There is no SDK
-   and no shared library, on purpose — six implementations in six languages
+   and no shared library, on purpose — five implementations in five languages
    keep the protocol honest in a way one library never could.
 2. Declare `platform`, `kind` and `capabilities` at registration. Declare only
    what the agent can actually run: a capability it cannot honour takes a job
    off the queue from a device that could have run it.
-3. Run the conformance suite: `npm run conformance -- --device <id>`. Eight
+3. Run the conformance suite: `npm run conformance -- --device <id>`. Nine
    clauses, each of them something that has actually gone wrong here. A skip is
    fine; a FAIL is a bug in the agent. See [Writing a runner](writing-a-runner.md).
 4. Add a row to the table at the top of this page, and put the honest answer in

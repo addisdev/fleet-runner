@@ -23,7 +23,7 @@ build_version=0
 # table next to a released one's. Arbitrary manifest keys are readable at
 # runtime, so the descriptor's version and the repo's version are one string in
 # one place rather than a constant in the code that drifts from the manifest.
-app_ver=0.5.0-dev
+app_ver=0.5.0
 
 # Channel art. Roku draws the focus icon in the home grid and the splash while
 # the channel boots; a manifest line pointing at a file that is not in the zip

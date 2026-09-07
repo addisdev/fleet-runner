@@ -80,6 +80,13 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Get started: getting-started.md
+  - Install:
+      - Overview: install/index.md
+      - macOS: install/macos.md
+      - Windows: install/windows.md
+      - Linux: install/linux.md
+      - Docker: install/docker.md
+      - Adding devices: install/devices.md
   - Concepts: concepts.md
   - Dashboard: dashboard.md
   - Workloads:
@@ -101,6 +108,7 @@ nav:
       - HTTP API: api.md
   - Deploy:
       - Overview: deploy/index.md
+      - Headless hosts: deploy/headless.md
       - Networking: deploy/networking.md
       - The iOS executor: deploy/ios-executor.md
       - Alerts: deploy/alerts.md
