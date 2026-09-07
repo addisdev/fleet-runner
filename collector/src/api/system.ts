@@ -2,7 +2,7 @@
 import type { FastifyInstance } from "fastify";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { db } from "../db.js";
+import { db, type SqlParam } from "../db.js";
 import {
   ARTIFACT_DIR,
   DATA_DIR,
@@ -236,7 +236,7 @@ export function registerSystem(app: FastifyInstance) {
     const q = req.query as Record<string, string | undefined>;
     const { page, per_page, offset } = paging(q);
     const where: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
     if (q.q) {
       // App name too: "which builds do I have for greenfolio-android" is the
       // question you ask once artifacts know what they are.

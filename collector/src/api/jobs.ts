@@ -1,6 +1,6 @@
 // GET /api/jobs (filtered, paginated) and GET /api/jobs/:id (detail)
 import type { FastifyInstance } from "fastify";
-import { db } from "../db.js";
+import { db, type SqlParam } from "../db.js";
 import { AGE, beaconFields, inClause, iso, paging, parse, sha256Refs } from "./shared.js";
 
 const STATUSES = new Set(["waiting", "queued", "claimed", "done", "failed", "cancelled"]);
@@ -87,7 +87,7 @@ export function registerJobs(app: FastifyInstance) {
   app.get("/api/jobs", async (req) => {
     const q = req.query as Record<string, string | undefined>;
     const where: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
 
     for (const [column, raw, allowed] of [
       ["status", q.status, STATUSES],

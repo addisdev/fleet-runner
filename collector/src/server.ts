@@ -6,7 +6,7 @@ import { rename, unlink } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
 import path from "node:path";
-import { db } from "./db.js";
+import { db, isUniqueViolation } from "./db.js";
 import { renderDash, renderBench } from "./dash.js";
 import { cronMatches, isValidCron, minuteKey } from "./cron.js";
 import { evalMatch, isValidMatch } from "./match.js";
@@ -812,8 +812,7 @@ app.post("/jobs", async (req, reply) => {
       dependsOn, depState.status, depState.status === "failed" ? depState.reason : null,
     );
   } catch (e: unknown) {
-    if ((e as { code?: string }).code === "SQLITE_CONSTRAINT_PRIMARYKEY")
-      return reply.code(409).send({ error: "job_id already exists" });
+    if (isUniqueViolation(e)) return reply.code(409).send({ error: "job_id already exists" });
     throw e;
   }
   announce({ type: "job", job_id: spec.job_id, status: depState.status, workload: spec.workload, executor: spec.executor });

@@ -15,9 +15,14 @@ each to diagnose.
 
 The reference deployment runs the collector on a spare 2016 MacBook Pro that
 does nothing else, and it is deliberately **sudo-free**: Node is a user-local
-tarball, the service is a LaunchAgent in `~/Library/LaunchAgents`, and
-`better-sqlite3` installs from a prebuild. The whole stack can be rebuilt over
-SSH with nobody at the keyboard.
+tarball and the service is a LaunchAgent in `~/Library/LaunchAgents`. The whole
+stack can be rebuilt over SSH with nobody at the keyboard.
+
+There is **no native code anywhere in the collector**. It used to need
+`better-sqlite3` and a prebuild for the running architecture; the database is
+Node's own `node:sqlite` now, so `npm install` compiles nothing and an install
+cannot fail on a toolchain the machine does not have. That is also what lets the
+collector run on Windows, which it never had.
 
 ## Binding and exposure
 

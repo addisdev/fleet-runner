@@ -17,6 +17,7 @@ import { runDeviceParserChecks } from "../src/device-parsers.test.js";
 import { runDriverChecks, runDescriptorChecks } from "../src/drivers/drivers.test.js";
 import { runZipChecks } from "../src/zip-dir.test.js";
 import { runTailnetChecks } from "../src/tailnet.test.js";
+import { runDbChecks } from "../src/db.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
@@ -2517,6 +2518,10 @@ runZipChecks(check);
 // wrongly refuses is noticed within the minute by whoever's laptop stopped
 // working; one that wrongly admits is noticed never.
 runTailnetChecks(check);
+
+// The database layer itself: transactions, the open/close lifecycle, the
+// driver's error codes, and the migration path a fresh database never takes.
+runDbChecks(check);
 
 // --- the synthetic backend's reference digest ---
 //
