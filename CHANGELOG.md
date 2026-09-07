@@ -108,6 +108,12 @@ Waves 4 to 8: the fleet stops being a shelf of phones.
   The probes now lead with PowerShell `Get-CimInstance` and keep `wmic` as the
   fallback for older installs. Found by the platform matrix added in this same
   release, which is what it was added to do.
+- A platform probe that could not read memory erased the reading Node already
+  had. `describe()` fills `ram_mb` from `os.totalmem()` and then merges the
+  platform-specific fields over it, and a plain spread let a probe's null win —
+  which is the second reason Windows reported no memory, and would still have
+  reported none on a machine where neither query surface answers. The probe
+  still wins when it answers; a miss now falls back.
 - The tailnet allowlist matched a short node name against a fully qualified
   entry in one direction only, so an allowlist written the careful way silently
   refused the node it was written for.
