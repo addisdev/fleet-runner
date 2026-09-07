@@ -86,6 +86,16 @@ jobs:
             echo "machine=$(match '^(runner-machine/|\.github/workflows/(runner-machine|ci)\.yml)')"
           } | tee -a "$GITHUB_OUTPUT"
 
+  # Not path-filtered and not conditional: the version spans every component, so
+  # a change to any one of them can break it, and a check that only runs when
+  # the collector changed would miss the Android bump that did.
+  version:
+    name: one version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/version.mjs check
+
   collector:
     needs: changes
     if: needs.changes.outputs.collector == 'true'
@@ -108,7 +118,7 @@ jobs:
 
   ci-ok:
     name: ci-ok
-    needs: [changes, collector, runner-android, runner-ios, runner-machine]
+    needs: [changes, version, collector, runner-android, runner-ios, runner-machine]
     # Without this the gate inherits the default "only if every dependency
     # succeeded", which makes a skipped suite skip the gate -- and a skipped
     # required check never reports, which is the exact bug being fixed.

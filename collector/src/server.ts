@@ -6,13 +6,16 @@ import { rename, unlink } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
 import path from "node:path";
-import { db, isUniqueViolation } from "./db.js";
+import { closeDb, db, isUniqueViolation, openDb } from "./db.js";
 import { renderDash, renderBench } from "./dash.js";
 import { cronMatches, isValidCron, minuteKey } from "./cron.js";
 import { evalMatch, isValidMatch } from "./match.js";
+import { identity } from "./identity.js";
+import { pathToFileURL } from "node:url";
 import {
   ARTIFACT_DIR,
   BIND,
+  freezeConfig,
   DATA_DIR,
   GITHUB_API,
   GITHUB_STATUS_ARMED,
@@ -41,7 +44,6 @@ import { registerRunnerWeb } from "./runner-web.js";
 import { startPowerSampler } from "./power.js";
 import { endMirror } from "./api/mirror.js";
 
-mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 /** Every fleet-state change fans out to connected dashboards and drops the
  *  overview's short cache. Called after the write commits, never inside a
@@ -1384,7 +1386,46 @@ app.post("/api/alerts/tick", async (req, reply) => {
   return { ok: true, opened: (await alertTick()).map((a) => a.id) };
 });
 
-app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" }).then(() => {
+// --- starting and stopping ---------------------------------------------
+//
+// This used to be a bare `app.listen(...)` at the bottom of the file, which
+// made the collector a script and nothing else. A brain that a desktop app
+// switches on and off, and a test that wants a collector of its own, both need
+// it to be a thing you call.
+//
+// The routes above still register at module scope, and that is deliberate: one
+// process runs one collector, the Fastify app is its route table, and turning
+// that into a factory would be a thousand lines of churn to support something
+// nobody needs. What had to become callable is the part with side effects --
+// the socket, the four timers, and the directory the artifacts go in.
+
+/** Everything `listen()` started, so `close()` can stop exactly that. */
+const running: {
+  timers: NodeJS.Timeout[];
+  extraServers: ReturnType<typeof createServer>[];
+  listening: boolean;
+} = { timers: [], extraServers: [], listening: false };
+
+/**
+ * Start the collector: bind, sweep once, and set the four timers going.
+ *
+ * Resolves once the socket is accepting, so a caller that is about to run a
+ * job against it does not have to poll `/api/health`.
+ */
+export async function listen(): Promise<{ port: number; addresses: string[]; id: string; name: string }> {
+  if (running.listening) throw new Error("this collector is already listening");
+  // After this, config.configure() refuses -- half these values are read once
+  // here and half on every request, and a late change would apply to some and
+  // not others.
+  freezeConfig();
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  // Explicit rather than left to the first query's lazy open, so a broken data
+  // directory fails here, with a stack that names it, instead of inside
+  // whichever request happened to arrive first.
+  openDb(DATA_DIR);
+  const me = identity(DATA_DIR);
+
+  await app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" });
   // Node binds one address per server, so every address after the first gets a
   // bare TCP listener whose connections are handed to the same HTTP server.
   // One Fastify app, one route table, several front doors.
@@ -1393,8 +1434,10 @@ app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" }).then(() => {
     extra.on("error", (e) => app.log.error(e, `bind ${host}:${PORT} failed`));
     extra.listen(PORT, host);
     extra.unref();
+    running.extraServers.push(extra);
   }
-  app.log.info(`fleet-collector listening on ${BIND.join(", ")}:${PORT}`);
+  running.listening = true;
+  app.log.info(`fleet-collector "${me.name}" (${me.id}) listening on ${BIND.join(", ")}:${PORT}`);
   if (BIND.includes("0.0.0.0") || BIND.includes("::")) {
     // Not an error: it is the default and it is right for a LAN-only fleet.
     // Said out loud because there is no authentication behind it, so the
@@ -1409,14 +1452,74 @@ app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" }).then(() => {
   // fleet with no metering plugs starts exactly as before. Its timers are
   // unref'd, so this never holds the process open on its own.
   startPowerSampler({ log: app.log });
-  setInterval(sweepLeases, SWEEP_MS).unref();
-  setInterval(() => {
-    schedulerTick().catch((e) => app.log.error(e, "scheduler tick failed"));
-  }, SCHEDULER_TICK_MS).unref();
+  running.timers.push(setInterval(sweepLeases, SWEEP_MS).unref());
+  running.timers.push(
+    setInterval(() => {
+      schedulerTick().catch((e) => app.log.error(e, "scheduler tick failed"));
+    }, SCHEDULER_TICK_MS).unref(),
+  );
   // Evaluated on a slower cadence than the sweep: these are conditions
   // measured in minutes, and a tighter loop would only cost the little host CPU.
   alertTick().catch((e) => app.log.error(e, "alert tick failed"));
-  setInterval(() => {
-    alertTick().catch((e) => app.log.error(e, "alert tick failed"));
-  }, ALERT_TICK_MS).unref();
-});
+  running.timers.push(
+    setInterval(() => {
+      alertTick().catch((e) => app.log.error(e, "alert tick failed"));
+    }, ALERT_TICK_MS).unref(),
+  );
+  return { port: PORT, addresses: BIND, id: me.id, name: me.name };
+}
+
+/**
+ * Stop it again: timers cleared, sockets closed, database released.
+ *
+ * The timers are the part that matters. They are `unref`'d, so they never held
+ * the process open -- but an interval that survives a `close()` keeps sweeping
+ * leases against a database somebody else has since opened, which is a fine way
+ * to corrupt a test suite.
+ *
+ * **This is shutdown, not a pause.** A Fastify instance cannot be listened on
+ * again once closed, and the app above is a module singleton, so a second
+ * `listen()` in the same process throws. That is not a gap being worked around:
+ * one process runs one collector for its lifetime, and everything that wants to
+ * turn a brain off and on again -- `fleet up`, the desktop app's role switch --
+ * does it by stopping and starting the process, which is also what gives each
+ * one its own crash domain. What `close()` buys is that stopping it is *clean*:
+ * a supervisor's SIGTERM drains the sockets and releases the database instead
+ * of having them taken away by the kernel.
+ */
+export async function close(): Promise<void> {
+  for (const t of running.timers) clearInterval(t);
+  running.timers = [];
+  for (const extra of running.extraServers) extra.close();
+  running.extraServers = [];
+  if (running.listening) {
+    await app.close();
+    running.listening = false;
+  }
+  closeDb();
+}
+
+/**
+ * Run as a program: `npm start`, and what `fleet collector` execs.
+ *
+ * Guarded so that importing this module -- which `fleet up` and the tests both
+ * do -- registers the routes without binding a socket. `pathToFileURL` rather
+ * than a string compare because this repository's own checkout lives under a
+ * directory with a space in it, and `file://.../Fleet Runner/...` is not a URL.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  listen().catch((e) => {
+    app.log.error(e, "fleet-collector failed to start");
+    process.exit(1);
+  });
+  // A supervisor stops a child with SIGTERM and expects it to go quietly.
+  // Without this the socket is dropped by the kernel and any in-flight
+  // long-poll is a broken pipe on an agent that did nothing wrong.
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      close()
+        .catch(() => {})
+        .finally(() => process.exit(0));
+    });
+  }
+}

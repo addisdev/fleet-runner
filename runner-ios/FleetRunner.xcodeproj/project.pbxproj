@@ -490,6 +490,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = "0.5.0-dev";
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.tv;
 				SDKROOT = appletvos;
 				SWIFT_VERSION = 5.9;
@@ -511,6 +512,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = "0.5.0-dev";
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -596,6 +598,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = "0.5.0-dev";
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.9;
@@ -616,6 +619,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = "0.5.0-dev";
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.vision;
 				SDKROOT = xros;
 				SWIFT_VERSION = 5.9;
@@ -656,6 +660,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = "0.5.0-dev";
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.tv;
 				SDKROOT = appletvos;
 				SWIFT_VERSION = 5.9;
@@ -676,6 +681,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MARKETING_VERSION = "0.5.0-dev";
 				PRODUCT_BUNDLE_IDENTIFIER = com.taylab.fleetrunner.vision;
 				SDKROOT = xros;
 				SWIFT_VERSION = 5.9;

@@ -18,6 +18,7 @@ import { THRESHOLDS, webhookConfigured } from "../alerts.js";
 import { guardEnabled } from "./guard.js";
 import { AGE, iso, paging, parse, sha256Refs, tableCounts } from "./shared.js";
 import { clientCount, SERVER_INSTANCE, STARTED_AT } from "./stream.js";
+import { identity } from "../identity.js";
 
 const bytesOf = (file: string) => {
   try {
@@ -55,8 +56,15 @@ function artifactDiskUsage() {
 }
 
 export function health() {
+  const me = identity(DATA_DIR);
   return {
     ok: true,
+    // Three identifiers, three questions. `collector`/`name` say WHICH brain
+    // this is and survive a restart; `instance` says whether it restarted and
+    // deliberately does not. A dashboard showing two fleets needs the first
+    // two; a client deciding whether to refetch everything needs the third.
+    collector: me.id,
+    name: me.name,
     instance: SERVER_INSTANCE,
     started_at: STARTED_AT.toISOString(),
     uptime_s: Math.floor(process.uptime()),
