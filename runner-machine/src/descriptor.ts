@@ -40,6 +40,17 @@ export async function describe(platform: NodeJS.Platform = process.platform): Pr
     : platform === "win32" ? await windows()
     : {};
   const merged = { ...base, ...specific };
+  // A platform probe that found nothing must not erase what Node already knows.
+  //
+  // `ram_mb` is the one field where the base is a real reading rather than a
+  // null placeholder — `os.totalmem()` answers on every platform Node runs on —
+  // and a plain spread let a probe's null win, so Windows reported no memory
+  // for a machine whose size was sitting in `base` the whole time. The probe
+  // still wins when it answers: `hw.memsize`, `MemTotal` and
+  // `TotalPhysicalMemory` are the readings the rest of the descriptor is built
+  // from, and staying consistent with them matters more than the last MB. A
+  // miss now falls back instead of clobbering.
+  merged.ram_mb = merged.ram_mb ?? base.ram_mb;
   // A container or a CI runner overrides whatever the chassis probes decided.
   // Those probes answer a question about hardware, and inside a container the
   // hardware belongs to somebody else: a GitHub runner reporting "desktop"
