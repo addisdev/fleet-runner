@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 
-const ROOT = "/Users/addisdev/Desktop/Fleet Runner/fleet-runner/.claude/worktrees/waves-4-8/collector";
+const ROOT = path.resolve(import.meta.dirname, "..");
 const TSX = path.join(ROOT, "node_modules/tsx/dist/cli.mjs");
 // The documentation site's image tree, not the collector's: mkdocs builds
 // with --strict and treats a link that climbs out of docs/ as broken.

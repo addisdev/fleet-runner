@@ -1,0 +1,139 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>architecture</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  How it fits together. Left to right: the agents, the protocol they all speak,
+  the collector, the dashboard. Every shape here is a component that exists
+  and has registered; nothing decorative is drawn.
+
+  Rendered by `npm run assets` in collector/ to docs/img/architecture.png.
+-->
+<div class="figure wide">
+<svg viewBox="0 0 1280 640" width="1280" height="640" role="img"
+     aria-label="Agents on the shelf, a machine runner and a browser runner all speak one JSON protocol to the collector, which holds the queue, registry, leases, artifacts, results and scheduler and serves the dashboard. A host executor on a Mac claims host jobs from the collector and drives the shelf's devices from outside.">
+
+  <!-- ─── host executor ─────────────────────────────────────────────── -->
+  <rect class="l-panel" x="48" y="48" width="492" height="86" rx="10"/>
+  <use href="#dev-laptop" x="64" y="55" width="64" height="72"/>
+  <text class="t-title" x="140" y="84">host executor</text>
+  <text class="t-mono" x="140" y="110">adb · Maestro · simctl · Playwright</text>
+  <text class="t-mono" x="524" y="84" text-anchor="end">a Mac with a cable</text>
+
+  <!-- claims host jobs: executor → collector -->
+  <path class="l-host" d="M540 78H740V148" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-amber" x="640" y="70" text-anchor="middle">claims host jobs</text>
+
+  <!-- drives from outside: executor → shelf -->
+  <path class="l-cable" d="M170 134V188" marker-end="url(#arrow-muted)"/>
+  <path class="l-cable" d="M418 134V188" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="294" y="166" text-anchor="middle">drives from outside</text>
+
+  <!-- ─── the shelf ─────────────────────────────────────────────────── -->
+  <rect class="l-structure" x="48" y="190" width="492" height="140" rx="10"/>
+  <text class="t-mono" x="64" y="212">the shelf</text>
+  <text class="t-mono" x="524" y="212" text-anchor="end">Android runner · iOS runner</text>
+
+  <g transform="translate(0 226)">
+    <use href="#dev-android" x="82"  y="0" width="64" height="72"/>
+    <use href="#dev-iphone"  x="172" y="0" width="64" height="72"/>
+    <use href="#dev-tablet"  x="262" y="0" width="64" height="72"/>
+    <use href="#dev-tv"      x="352" y="0" width="64" height="72"/>
+    <use href="#dev-watch"   x="442" y="0" width="64" height="72"/>
+    <g class="t-mono" text-anchor="middle">
+      <text x="114" y="92">android</text>
+      <text x="204" y="92">iphone</text>
+      <text x="294" y="92">tablet</text>
+      <text x="384" y="92">tv</text>
+      <text x="474" y="92">watch</text>
+    </g>
+  </g>
+
+  <!-- ─── machine runner and browser runner ─────────────────────────── -->
+  <rect class="l-structure" x="48" y="360" width="222" height="92" rx="10"/>
+  <use href="#dev-laptop" x="58" y="370" width="64" height="72"/>
+  <text class="t-title" x="128" y="396">machine runner</text>
+  <text class="t-mono" x="128" y="422">laptop · desktop</text>
+
+  <rect class="l-structure" x="318" y="360" width="222" height="92" rx="10"/>
+  <use href="#dev-browser" x="328" y="370" width="64" height="72"/>
+  <text class="t-title" x="398" y="396">browser runner</text>
+  <text class="t-mono" x="398" y="422">any tab at all</text>
+
+  <!-- ─── the protocol: one wire every agent drops onto ──────────────── -->
+  <path class="l-protocol" d="M159 452V530"/>
+  <path class="l-protocol" d="M429 452V530"/>
+  <path class="l-protocol" d="M540 260H570V530"/>
+  <path class="l-protocol" d="M100 530H740V472" marker-end="url(#arrow-amber)"/>
+  <circle cx="159" cy="530" r="4" fill="var(--amber)"/>
+  <circle cx="429" cy="530" r="4" fill="var(--amber)"/>
+  <circle cx="570" cy="530" r="4" fill="var(--amber)"/>
+  <text class="t-mono" x="726" y="494" text-anchor="end">one JSON protocol,</text>
+  <text class="t-mono" x="726" y="514" text-anchor="end">no shared code</text>
+  <text class="t-mono-amber" x="420" y="560" text-anchor="middle" style="font-size:15px">register · long-poll · claim · beacon · report</text>
+
+  <!-- ─── collector ─────────────────────────────────────────────────── -->
+  <rect x="600" y="150" width="280" height="322" rx="12" fill="var(--panel)" stroke="var(--amber)" stroke-width="1.5"/>
+  <text class="t-display" x="740" y="192" text-anchor="middle" style="font-size:28px">collector</text>
+  <text class="t-mono" x="740" y="216" text-anchor="middle">Node · Fastify · SQLite</text>
+
+  <g>
+    <rect class="l-structure" x="622" y="236" width="112" height="44" rx="7"/>
+    <text class="t-mono-light" x="678" y="263" text-anchor="middle">queue</text>
+    <rect class="l-structure" x="746" y="236" width="112" height="44" rx="7"/>
+    <text class="t-mono-light" x="802" y="263" text-anchor="middle">registry</text>
+
+    <rect class="l-structure" x="622" y="292" width="112" height="44" rx="7"/>
+    <text class="t-mono-light" x="678" y="319" text-anchor="middle">leases</text>
+    <rect class="l-structure" x="746" y="292" width="112" height="44" rx="7"/>
+    <text class="t-mono-light" x="802" y="319" text-anchor="middle">artifacts</text>
+
+    <rect class="l-structure" x="622" y="348" width="112" height="44" rx="7"/>
+    <text class="t-mono-light" x="678" y="375" text-anchor="middle">results</text>
+    <rect class="l-structure" x="746" y="348" width="112" height="44" rx="7"/>
+    <text class="t-mono-light" x="802" y="375" text-anchor="middle">scheduler</text>
+  </g>
+  <text class="t-mono" x="740" y="440" text-anchor="middle">one process, no broker</text>
+
+  <!-- collector → dashboard -->
+  <path class="l-structure" d="M880 310H938" marker-end="url(#arrow-muted)"/>
+
+  <!-- ─── dashboard ─────────────────────────────────────────────────── -->
+  <rect class="l-panel" x="940" y="190" width="292" height="240" rx="12"/>
+  <path class="l-structure" d="M940 226H1232"/>
+  <use href="#dev-android" x="946" y="192" width="30" height="34"/>
+  <text class="t-title" x="978" y="215" style="font-size:16px">dashboard</text>
+  <circle cx="1206" cy="208" r="3.5" fill="var(--green)"/>
+  <text class="t-mono" x="1216" y="213" style="font-size:13px">live</text>
+
+  <g>
+    <rect class="l-structure" x="956" y="242" width="80" height="52" rx="6"/>
+    <text class="t-display" x="966" y="268" style="font-size:20px;fill:var(--green)">2</text>
+    <text class="t-mono" x="966" y="286" style="font-size:12px;letter-spacing:.06em">ONLINE</text>
+    <rect class="l-structure" x="1046" y="242" width="80" height="52" rx="6"/>
+    <text class="t-display" x="1056" y="268" style="font-size:20px;fill:var(--amber)">1</text>
+    <text class="t-mono" x="1056" y="286" style="font-size:12px;letter-spacing:.06em">RUNNING</text>
+    <rect class="l-structure" x="1136" y="242" width="80" height="52" rx="6"/>
+    <text class="t-display" x="1146" y="268" style="font-size:20px">7</text>
+    <text class="t-mono" x="1146" y="286" style="font-size:12px;letter-spacing:.06em">DONE 24H</text>
+  </g>
+
+  <text class="t-mono" x="956" y="326" style="font-size:12px;letter-spacing:.06em">DECODE TOK/S</text>
+  <g>
+    <rect x="956" y="342" width="196" height="12" rx="3" fill="var(--amber)"/>
+    <rect x="956" y="366" width="128" height="12" rx="3" fill="var(--amber)" opacity=".75"/>
+    <rect x="956" y="390" width="96" height="12" rx="3" fill="var(--amber)" opacity=".5"/>
+  </g>
+
+  <!-- ─── legend ────────────────────────────────────────────────────── -->
+  <g>
+    <path class="l-protocol" d="M940 536h36"/>
+    <text class="t-mono" x="988" y="541">device jobs, claimed on the device</text>
+    <path class="l-host" d="M940 566h36"/>
+    <text class="t-mono" x="988" y="571">host jobs, claimed by the executor</text>
+    <path class="l-cable" d="M940 596h36"/>
+    <text class="t-mono" x="988" y="601">a cable: adb, simctl</text>
+  </g>
+</svg>
+</div>
+<script src="symbols.js"></script>

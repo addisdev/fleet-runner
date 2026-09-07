@@ -60,26 +60,7 @@ in `collector/` fail when the schema and its mirror disagree.
 
 ## How it fits together
 
-```mermaid
-flowchart LR
-    subgraph shelf["the shelf"]
-        A["Android runner"]
-        I["iOS runner"]
-    end
-    M["machine runner<br/><i>laptop or desktop</i>"]
-    subgraph host["a Mac with devices plugged in"]
-        X["host executor<br/><i>adb · Maestro · simctl · Playwright</i>"]
-    end
-    C["<b>collector</b><br/>queue · registry · leases<br/>artifacts · results · scheduler"]
-    D["dashboard"]
-
-    A -- "long-poll, claim, report" --> C
-    I -- "long-poll, claim, report" --> C
-    M -- "long-poll, claim, report" --> C
-    X -- "claims host jobs" --> C
-    X -- "drives from outside" --> shelf
-    C --- D
-```
+![How it fits together: agents on the shelf, a machine runner and a browser runner speak one JSON protocol to the collector, which holds the queue, registry, leases, artifacts, results and scheduler and serves the dashboard; a host executor on a Mac claims host jobs and drives the shelf from outside](docs/img/architecture.png)
 
 **Device jobs** are claimed by the app on the phone itself. **Host jobs** are
 claimed by an executor on a Mac and drive a device from outside, because
