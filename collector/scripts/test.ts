@@ -20,7 +20,16 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = path.join(ROOT, "node_modules/tsx/dist/cli.mjs");
-const BIN = path.join(ROOT, "node_modules/.bin");
+/**
+ * TypeScript's own entry point, not the `.bin` shim.
+ *
+ * `node_modules/.bin/tsc` is a POSIX shell script; on Windows the launcher is
+ * `tsc.cmd` beside it, so spawning the extensionless path is `ENOENT` there --
+ * and spawning the `.cmd` instead would be `EINVAL`, because Node will not run
+ * a batch file without a shell. Running the real JavaScript through node needs
+ * neither, and is what the shim does anyway.
+ */
+const TSC = path.join(ROOT, "node_modules/typescript/bin/tsc");
 
 let failed = false;
 const step = (name: string) => console.log(`\n=== ${name}`);
@@ -106,7 +115,7 @@ async function waitForHealth(base: string, proc: ChildProcess, timeoutMs = 30_00
 
 // --- 1. types -----------------------------------------------------------
 step("typecheck (collector)");
-if (!(await run(path.join(BIN, "tsc"), ["--noEmit"]))) failed = true;
+if (!(await run(process.execPath, [TSC, "--noEmit"]))) failed = true;
 
 // --- 2. dashboard -------------------------------------------------------
 // Its deps are a separate install, so a clone that has not run dash:install
