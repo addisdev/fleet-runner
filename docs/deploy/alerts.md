@@ -5,6 +5,9 @@ subject) for as long as the condition holds, resolved when it stops. A device
 offline for six hours is one row with a rising `seen_count`, not 360
 notifications — and nothing is notified twice, ever.
 
+![The Alerts screen with one open alert: a self-check job that failed after one"
+ attempt of three, with acknowledge and snooze on the row](../img/alerts.png)
+
 ## The rules
 
 | Rule | Fires when |

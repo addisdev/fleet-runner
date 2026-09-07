@@ -70,7 +70,12 @@ dependency, so nothing new is installed.
 | `img/banner.png` | 2560×1280 | `assets/banner.html` |
 | `img/social-preview.png` | 2560×1280 (2× of GitHub's 1280×640) | `assets/social-preview.html` |
 | `img/architecture.png` | 2560×1280 | `assets/architecture.html` |
-| `img/first-result.png` | | The Results screen after one synthetic benchmark on a laptop |
+| `img/lifecycle.png` | 2560×1360 | `assets/lifecycle.html` |
+| `img/protocol.png` | 2560×1120 | `assets/protocol.html` |
+| `img/workloads.png` | 2560×1200 | `assets/workloads.html` |
+| `img/platforms.png` | 2560×1400 | `assets/platforms.html` |
+| `img/first-result.png`, `alerts.png`, `visual.png` | 1440 wide | `npm run shoot:dash` |
+| `img/fanout.gif` | 1280 wide, 18 s | `npm run shoot:motion` |
 | `img/overview.png`, `devices.png`, `jobs.png`, `results.png` | | Dashboard pages, captured with Playwright against a running collector |
 | `img/runner-web.png` | | `npm run shoot:runner-web`, against a throwaway collector |
 | `runner-ios/.../AppIcon.appiconset/icon-1024.png` | 1024×1024, no alpha | `img/icon-source.svg` |
@@ -94,6 +99,44 @@ layout engine is for people who do not want to place boxes, and a diagram
 somebody will look at for ten seconds is placed boxes. Mermaid also renders in
 GitHub's own theme, which is the one thing on the page that cannot be made to
 match the rest.
+
+### The live captures
+
+`npm run shoot:dash` and `npm run shoot:motion` in `collector/` each start a
+collector on a spare port with its own data directory, start the real agents
+against it, and photograph what happens. Nothing in either is seeded:
+
+- **`first-result.png`** runs the job `getting-started.md` tells you to run,
+  byte for byte, and opens the screen it tells you to open. If that guide's
+  spec changes, the script has to change with it or the picture stops being of
+  the thing the reader just did.
+- **`alerts.png`** comes from a `self-check` that fails honestly — it asks
+  whether the agent is loaded under launchd, and an agent started by hand is
+  not. That is the same failure the live overview caught on 2026-09-05.
+- **`visual.png`** shoots this project's own built documentation site, accepts
+  those shots as the baseline, then serves the same site with a theme colour
+  changed and shoots it again. The percentages on that grid are measured from
+  pixels that really differ. The regression is colour-only on purpose: captures
+  are full-page, so anything that changes the document's height short-circuits
+  the diff to 100% with a size-changed note instead of measuring drift.
+- **`fanout.gif`** records the Overview at 4 frames a second while the machine
+  agent and two browser runners claim a fan-out and report back. Screenshots
+  rather than a video capture, so every frame is what a viewer would have seen.
+
+The spec `visual.png` uses is committed at
+`collector/examples/web-specs/fleet-docs/shots.json`. It has to live under the
+directory `playwright.config.ts` names as its `testDir`; a manifest anywhere
+else means `playwright test` finds no tests and every page reports `missing`.
+
+!!! warning "Two images this must never be pointed at"
+
+    **`results.png`** shows stored llama.cpp history from a real Android phone,
+    and **the Evals screen** shows the plant-ID accuracy rows. Neither can exist
+    in a fresh database, so a throwaway collector would replace real
+    measurements with synthetic ones. There is no Evals screenshot for exactly
+    this reason: producing one would mean seeding numbers, and a number that
+    gets believed and turns out to be invented costs more than a missing
+    picture.
 
 !!! note "Two of these were captured against different fleets, on purpose"
 

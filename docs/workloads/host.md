@@ -167,6 +167,8 @@ pages with optional `waitFor`, `mask` selectors, `fullPage` and `settle_ms`,
 plus the profiles to capture under — screenshots every page × profile, and
 uploads the PNGs.
 
+![The Visual screen: two pages across two browser profiles, every cell diverged from its accepted baseline by around one to two percent after a theme colour changed](../img/visual.png)
+
 Each capture is diffed with pixelmatch **on the executor**, because baselines
 are only comparable to pixels rendered by the same host. A page over its
 `threshold_pct` (default 0.1%) fails with `diff_pct` and a diff-image artifact.

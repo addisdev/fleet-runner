@@ -9,6 +9,8 @@ SQLite file. One thing to keep alive, one URL, no CORS.
 | **Overview** — the fleet and the queue at a glance, and what is running now | **Devices** — every phone on the shelf with battery, thermal state and what it is doing |
 | ![Jobs](img/jobs.png) | ![Results](img/results.png) |
 | **Jobs** — the queue, with a composer and cancel/retry | **Results** — benchmark trends, eval accuracy, UI-test matrices, drain curves |
+| ![Visual](img/visual.png) | ![Alerts](img/alerts.png) |
+| **Visual** — every page across every profile, diffed against its accepted baseline | **Alerts** — one row per condition for as long as it holds, with acknowledge and snooze |
 
 ## Building it
 

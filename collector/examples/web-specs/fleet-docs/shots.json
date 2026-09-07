@@ -1,0 +1,7 @@
+{
+  "profiles": ["chromium", "mobile-chrome"],
+  "pages": [
+    { "name": "home", "path": "/", "waitFor": "main" },
+    { "name": "getting-started", "path": "/getting-started/", "waitFor": "main" }
+  ]
+}
