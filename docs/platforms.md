@@ -5,6 +5,8 @@ actually been done or is only believed to work. The last column is the point of
 the page. A list of platforms a project "supports" is worth very little; a list
 that says which ones somebody has watched register is worth something.
 
+![Platform coverage by runner, with each tile marked registered, or written and building but never run on real hardware, or not run at all](img/platforms.png)
+
 ## The shelf today
 
 | Platform | Runner | How it joins | Verified |

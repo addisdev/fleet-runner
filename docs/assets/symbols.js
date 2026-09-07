@@ -60,6 +60,32 @@ const symbols = `
       <circle cx="23" cy="19" r="1.5" fill="var(--muted)"/>
       ${pulse(23, 34, 1.6)}
     </symbol>
+    <!-- A headset: Quest on the Android side, Vision Pro on the Apple side. -->
+    <symbol id="dev-headset" viewBox="0 0 64 72">
+      <path class="l-device" d="M8 28h48a4 4 0 0 1 4 4v12a6 6 0 0 1-6 6H38l-6-5-6 5H10a6 6 0 0 1-6-6V32a4 4 0 0 1 4-4z"/>
+      <path class="l-device" d="M14 28v-4a6 6 0 0 1 6-6h24a6 6 0 0 1 6 6v4"/>
+      <path class="l-pulse" transform="translate(26.5 33) scale(1)" d="M0 5.4h2.6l1.9-5.4 2.9 11 2-5.6h1.6" vector-effect="non-scaling-stroke"/>
+    </symbol>
+    <!-- A monitor: a Linux or Windows desktop. -->
+    <symbol id="dev-desktop" viewBox="0 0 64 72">
+      <rect class="l-device" x="6" y="14" width="52" height="34" rx="3"/>
+      <path class="l-device" d="M26 48v8h12v-8M20 56h24"/>
+      <path class="l-pulse" transform="translate(26.5 25.5) scale(1.6)" d="M0 5.4h2.6l1.9-5.4 2.9 11 2-5.6h1.6" vector-effect="non-scaling-stroke"/>
+    </symbol>
+    <!-- A single-board computer: a Pi, a Jetson, anything with pin headers. -->
+    <symbol id="dev-board" viewBox="0 0 64 72">
+      <rect class="l-device" x="6" y="20" width="52" height="34" rx="3"/>
+      <path class="l-device" d="M12 20v-4h28v4"/>
+      <circle cx="12" cy="48" r="1.6" fill="var(--muted)"/>
+      <circle cx="52" cy="26" r="1.6" fill="var(--muted)"/>
+      <path class="l-pulse" transform="translate(26.5 31.5) scale(1.6)" d="M0 5.4h2.6l1.9-5.4 2.9 11 2-5.6h1.6" vector-effect="non-scaling-stroke"/>
+    </symbol>
+    <!-- A container: anything with Docker. -->
+    <symbol id="dev-container" viewBox="0 0 64 72">
+      <path class="l-device" d="M32 12l22 11v22L32 56 10 45V23z"/>
+      <path class="l-device" d="M10 23l22 11 22-11M32 34v22"/>
+      <path class="l-pulse" transform="translate(26.5 22) scale(1.2)" d="M0 5.4h2.6l1.9-5.4 2.9 11 2-5.6h1.6" vector-effect="non-scaling-stroke"/>
+    </symbol>
     <!-- Arrowheads in the two line colours. -->
     <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0 0L10 5L0 10z" fill="var(--amber)"/>

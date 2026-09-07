@@ -1,0 +1,74 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>lifecycle</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  What happens to a job. The straight track across the top is the good case;
+  everything below it is the collector refusing to lose work — a lapsed lease
+  goes back to the queue, a preemption hands its attempt back, and an exhausted
+  job fails rather than requeueing forever.
+
+  Rendered by `npm run assets` in collector/ to docs/img/lifecycle.png.
+-->
+<div class="figure" style="width:1280px;height:680px">
+<svg viewBox="0 0 1280 680" width="1280" height="680" role="img"
+     aria-label="A job goes waiting, queued, claimed and running, then done. A beacon renews the lease and answers preempt. A lapsed lease is swept back to queued and burns an attempt; a preempted job goes back to queued with its attempt handed back; a job that reports ok false, or lapses on its last attempt, ends failed.">
+
+  <!-- ─── the beacon band, over the running state ───────────────────── -->
+  <text class="t-mono-amber" x="746" y="104" text-anchor="middle">beacon · renews the lease · answers preempt</text>
+  <path class="l-protocol" d="M630 140V124H862V140"/>
+  <g stroke="var(--amber)" stroke-width="2">
+    <path d="M672 124v10"/><path d="M714 124v10"/><path d="M756 124v10"/>
+    <path d="M798 124v10"/><path d="M840 124v10"/>
+  </g>
+
+  <!-- ─── the straight track ────────────────────────────────────────── -->
+  <rect class="l-panel" x="48" y="176" width="210" height="76" rx="10"/>
+  <text class="t-title" x="66" y="210">waiting</text>
+  <text class="t-mono" x="66" y="234">depends_on unfinished</text>
+
+  <rect class="l-panel" x="338" y="176" width="210" height="76" rx="10"/>
+  <text class="t-title" x="356" y="210">queued</text>
+  <text class="t-mono" x="356" y="234">offered on every poll</text>
+
+  <rect x="628" y="176" width="234" height="76" rx="10" fill="var(--panel)" stroke="var(--amber)" stroke-width="1.5"/>
+  <text class="t-title" x="646" y="210">claimed · running</text>
+  <text class="t-mono" x="646" y="234">lease_deadline ticking</text>
+
+  <rect class="l-panel" x="938" y="176" width="210" height="76" rx="10"/>
+  <text class="t-title" x="956" y="210">done</text>
+  <text class="t-mono" x="956" y="234">final: true, ok: true</text>
+
+  <path class="l-protocol" d="M258 214H330" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="294" y="196" text-anchor="middle">promoted</text>
+  <path class="l-protocol" d="M548 214H620" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="584" y="196" text-anchor="middle">claimed</text>
+  <path class="l-protocol" d="M862 206H930" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="896" y="188" text-anchor="middle">closed</text>
+
+  <!-- ─── back to the queue: the two ways work is not lost ──────────── -->
+  <path class="l-protocol" d="M760 252V322H443V260" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="600" y="312" text-anchor="middle">lease lapsed · swept · attempts + 1</text>
+
+  <path class="l-protocol" d="M820 252V392H373V260" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="596" y="382" text-anchor="middle">preempted · the attempt is handed back</text>
+
+  <!-- ─── failed ────────────────────────────────────────────────────── -->
+  <rect class="l-panel" x="938" y="400" width="210" height="76" rx="10"/>
+  <text class="t-title" x="956" y="434">failed</text>
+  <text class="t-mono" x="956" y="458">last_error says why</text>
+
+  <path class="l-protocol" d="M862 238H900V438H930" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="916" y="330">ok: false,</text>
+  <text class="t-mono" x="916" y="352">or the last</text>
+  <text class="t-mono" x="916" y="374">attempt lapses</text>
+
+  <!-- ─── what the picture does not draw ────────────────────────────── -->
+  <path class="l-structure" d="M48 522H1232"/>
+  <text class="t-mono" x="48" y="556">Defaults are a 600 s lease and 3 attempts. The sweep runs every 15 s and on startup.</text>
+  <text class="t-mono" x="48" y="582">A dependency that fails, fails everything waiting on it, the whole way down the chain.</text>
+  <text class="t-mono" x="48" y="608">Nothing is ever killed. Cancelling sets the row to cancelled, and the next beacon answers</text>
+  <text class="t-mono" x="48" y="634">lease_renewed: false — work in flight finishes, nothing new starts.</text>
+</svg>
+</div>
+<script src="symbols.js"></script>
