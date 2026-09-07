@@ -64,6 +64,11 @@ const SITES = [
   // constant in the page rather than anything derived.
   { file: "collector/runner-web/index.html", re: /(const APP_VER = ")([^"]+)(")/ },
   { file: "runner-android/app/build.gradle.kts", re: /(versionName = ")([^"]+)(")/ },
+  // Roku's own `major/minor/build_version` are three integers and cannot express
+  // a pre-release suffix, so the channel carries the fleet's version in a custom
+  // manifest key -- which is what it reports as `app_ver` and therefore the one
+  // that has to stay in step.
+  { file: "runner-roku/manifest", re: /(app_ver=)([^\n]+)()/ },
   // Three Apple targets share one source tree and each needs its own
   // MARKETING_VERSION; the pattern is global below.
   { file: "runner-ios/project.yml", re: /(MARKETING_VERSION: ")([^"]+)(")/g },

@@ -14,6 +14,7 @@
 import { parseAdbDevices } from "./adb.js";
 import { bootedFrom } from "./simctl.js";
 import { targetsFrom } from "./devicectl.js";
+import { parseSsdpLocation, parseDeviceInfo, rokuTargetId, mSearchDatagram } from "./roku.js";
 import { dedupe, listAllTargets, driverNamed, DRIVERS } from "./index.js";
 import { applePlatform, simulatorPlatform, physicalApple, type IosDeviceInfo } from "../targets.js";
 import { devicePlatform, deviceKind } from "../api/shared.js";
@@ -101,6 +102,72 @@ export function runDriverChecks(check: Check) {
     JSON.stringify(dcTargets),
   );
   check("devicectl: every target names its driver", dcTargets.every((t) => t.driver === "devicectl"));
+
+  // --- roku -----------------------------------------------------------------
+  // The only driver here with no hardware behind it at all: no Roku was
+  // available, so these recorded shapes are the ONLY thing that exercises the
+  // parsing. Two of them are the failures that would otherwise be invisible —
+  // a header spelled in a different case, and a device that answered the
+  // broadcast but not the follow-up.
+  const ssdp = [
+    "HTTP/1.1 200 OK",
+    "Cache-Control: max-age=3600",
+    "ST: roku:ecp",
+    "Location: http://192.168.1.44:8060/",
+    "USN: uuid:roku:ecp:P0A070000007",
+    "",
+  ].join("\r\n");
+  check("roku: LOCATION yields ip and port", parseSsdpLocation(ssdp)?.ip === "192.168.1.44");
+  check("roku: the ECP port is read, not assumed", parseSsdpLocation(ssdp)?.port === 8060);
+  check(
+    "roku: a header spelled LOCATION is the same header",
+    parseSsdpLocation(ssdp.replace("Location:", "LOCATION:"))?.ip === "192.168.1.44",
+  );
+  check(
+    "roku: an SSDP reply from something else is not a Roku",
+    parseSsdpLocation("HTTP/1.1 200 OK\r\nST: upnp:rootdevice\r\n\r\n") === null,
+  );
+  check(
+    "roku: a LOCATION that is not an http url is refused, not half-parsed",
+    parseSsdpLocation("Location: not-a-url\r\n") === null,
+  );
+  check("roku: the M-SEARCH datagram ends with a blank line", mSearchDatagram().toString().endsWith("\r\n\r\n"));
+  check("roku: the M-SEARCH datagram names roku:ecp", mSearchDatagram().toString().includes("ST: roku:ecp"));
+
+  const DEVICE_INFO = `<device-info>
+  <udn>29a80cd9-1234-5678-9abc-def012345678</udn>
+  <serial-number>P0A070000007</serial-number>
+  <device-id>S0A070000007</device-id>
+  <model-name>Roku Ultra</model-name>
+  <model-number>4660X</model-number>
+  <device-type>STB</device-type>
+  <software-version>13.0.0</software-version>
+  <developer-enabled>false</developer-enabled>
+</device-info>`;
+  const info = parseDeviceInfo(DEVICE_INFO, { ip: "192.168.1.44", port: 8060 });
+  check("roku: the serial is read", info.serial === "P0A070000007", String(info.serial));
+  check("roku: model-name and model-number are different fields", info.modelName === "Roku Ultra" && info.modelNumber === "4660X");
+  check("roku: device-type carries Roku's own form factor word", info.deviceType === "STB");
+  // "false" is truthy in JavaScript, and this field decides whether the
+  // executor believes it could install anything onto the device.
+  check("roku: developer-enabled false is false, not truthy", info.developerEnabled === false);
+  check(
+    "roku: developer-enabled true is true",
+    parseDeviceInfo(DEVICE_INFO.replace(">false<", ">true<"), { ip: "1.2.3.4", port: 8060 }).developerEnabled === true,
+  );
+  check("roku: a target id is the serial, which does not move", rokuTargetId(info) === "roku-P0A070000007");
+  // A Roku that answered the broadcast and then timed out on device-info is
+  // still a Roku. Its id says it is addressed by a DHCP lease rather than by a
+  // serial, because that name can silently become a different device's.
+  check(
+    "roku: a device with no serial falls back to a clearly-marked address id",
+    rokuTargetId({ ip: "192.168.1.44", port: 8060 }) === "roku-ip-192-168-1-44",
+  );
+  check("roku: the driver is registered", driverNamed("roku")?.name === "roku");
+  check(
+    "roku: the driver declares no install, rather than a broken one",
+    driverNamed("roku")?.install === undefined,
+  );
 
   // --- dedupe ---------------------------------------------------------------
   // The ordering rule: simctl before devicectl, so the copy that survives is

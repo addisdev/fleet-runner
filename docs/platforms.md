@@ -28,6 +28,13 @@ that says which ones somebody has watched register is worth something.
 | **Raspberry Pi, Jetson, Steam Deck** | `runner-machine` | `install-agent.sh`, or the Docker image | **no** — but arm64 Linux in CI reports a nearly complete descriptor, so a board should register cleanly. No board has |
 | **Anything with Docker** | `runner-machine` | `docker run` | **no** — the Dockerfile has never been built; Docker was not available on the machine that wrote it |
 
+## What Wave 6 added
+
+| Platform | Runner | How it joins | Verified |
+|---|---|---|---|
+| **Roku player, Roku TV** | `runner-roku` | `build.sh --install <ip>`, then an ECP launch | **no** -- and less verified than anything above it. No Roku was available and no Roku emulator exists, so the channel has never been *compiled*, let alone run: BrightScript's only compiler is inside a television. See [Roku: the one that could not be compiled](#roku-the-one-that-could-not-be-compiled) |
+| **Roku, from the executor** | `collector/src/drivers/roku.ts` | SSDP discovery on the LAN | **partly** -- the SSDP and device-info parsers are checked against recorded response shapes in `drivers.test.ts`; the UDP socket path is exercised by nothing, and no Roku has answered it |
+
 ## Android: one APK, every shape
 
 The Android agent is a foreground service and a text field. Nothing in it needs
@@ -119,6 +126,101 @@ the collector's 25-second long poll, because a job handed to a tab that went
 hidden in that window would be measured through the throttle. It registers with
 a TTL, so a tab that is *closed* leaves the shelf instead of sitting there
 forever as an offline device nobody can find.
+
+## Roku: the one that could not be compiled
+
+A Roku is the cheapest always-on ARM box in most houses, it is mains-powered,
+and it never moves. On paper it is an ideal shelf device.
+[`runner-roku/`](https://github.com/addisdev/fleet-runner/tree/main/runner-roku)
+is a SceneGraph channel that speaks the protocol: it registers, long-polls,
+runs the fold, beacons and reports.
+
+**None of it has been run, and none of it has been compiled.** Roku has never
+shipped an emulator and BrightScript exists only on the device, so there is no
+`bsc`, no linter and no parse step available anywhere off a television. Every
+other "no" in the tables above is a runner that at least builds. This one is a
+careful hand review and nothing more, and the first syntax error in it will be
+discovered by a sideload page. That is worth stating plainly here rather than
+only in its README, because this page exists so that a row's last column can be
+trusted.
+
+### It names its backend `roevp`, for the browser's reason
+
+BrightScript has no hash of its own. The only one on the platform is
+`roEVPDigest` -- a native OpenSSL object -- called once per round from an
+interpreted `for` loop, and at 4 KiB a round the native hash is a small part of
+the work. The rest is the interpreter dispatching a method call, allocating the
+returned hex string, parsing it back into a byte array, and copying 32 bytes
+with another interpreted loop.
+
+So the rate measures BrightScript's dispatch as much as it measures the SoC,
+which is the same shape of problem as `crypto.subtle` being asynchronous, and it
+gets the same answer:
+
+| Backend | What it measures | Comparable with |
+|---|---|---|
+| `synthetic` | SHA-256 throughput, natively | every native runner |
+| `jssha` | a browser JS engine's throughput | other browsers |
+| `roevp` | one native hash per interpreted round, so mostly the BrightScript interpreter | other Rokus |
+
+All three fold the identical block through identical rounds and all three report
+`synthetic_digest`, so correctness is shared across every one of them and only
+the clock differs. A job asking a Roku for `backend: "synthetic"` is refused
+with a sentence rather than served a `roevp` number under that name.
+
+### Three descriptor fields are null, and that is the interesting part
+
+`soc`, `arch` and `ram_mb` are all null. Roku exposes no CPU model and no core
+count; it has shipped both MIPS and ARM devices and no API says which one you
+are on; and its only memory API is `GetGeneralMemoryLevel()`, which answers
+`"normal"`, `"low"` or `"critical"`.
+
+That last one is the refusal worth naming. It would have been easy to map three
+words onto a number, and `ram_mb` is one of the two fields `targets.match` is
+most often written against -- so an invented `1024` would not sit harmlessly in a
+descriptor, it would decide which jobs reach the device and then appear in
+tables beside numbers that were measured. The pressure signal instead rides on
+every beacon as `mem_pressure`, which is a free-form string in the result schema
+and the honest home for it.
+
+Battery reads 100 and charging reads true, the same accommodation tvOS needed
+and for the same reason: a Roku is mains-powered, so `require_charging` is
+genuinely satisfied rather than being unmeasurable.
+
+### Two things a Roku owner should know before trusting a number
+
+**It only runs in the foreground.** Roku suspends a channel when the user
+presses Home -- there is no background execution model for a channel and no way
+to ask for one. A Roku on this fleet is a Roku dedicated to it, or one that
+joins between programmes. It registers without a `ttl_s` for that reason: a
+suspended channel is an offline device, not a departed one.
+
+**Whether the screensaver suspends it is not known.** Roku's documentation does
+not say whether a channel with no video playing keeps executing behind the
+screensaver, is suspended, or is left running and throttled. All three are
+plausible, and the third would quietly produce slow benchmark numbers with
+nothing anywhere to say why. Nobody has watched a Roku long enough to find out.
+The test, for whoever has one, is whether the beacons keep arriving after the
+screensaver appears.
+
+### Discovery is the first driver that is not a cable
+
+`collector/src/drivers/roku.ts` is the first driver in the registry that reaches
+devices over the network: an SSDP `M-SEARCH` for `roku:ecp`, then
+`GET http://<ip>:8060/query/device-info`. adb, simctl and devicectl all answer
+"what is plugged into this Mac?"; this one answers "what Rokus are on this LAN?"
+
+The difference shows up in the shape. SSDP has no end-of-list, so discovery is a
+fixed listening window rather than a command that returns -- which means a Roku
+that was asleep or dropped a datagram is simply absent from one pass and present
+in the next, and there is no way to tell that from there being no more Rokus.
+
+It deliberately does **not** install. That needs HTTP digest auth, which Node's
+`fetch` does not do, and hand-writing RFC 7616 against no hardware would produce
+something that looks finished and fails the first time somebody has a Roku.
+`runner-roku/build.sh` installs with `curl --digest` instead, reading the
+developer password from the executor host's Keychain -- never from a job spec,
+which is unauthenticated and rendered on the dashboard.
 
 ## What a cloud runner actually reports
 

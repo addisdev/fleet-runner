@@ -1,0 +1,54 @@
+# Fleet Runner -- Roku channel manifest.
+#
+# Roku dictates this file's name, its location (the archive root) and its
+# key=value shape. It is not a design choice and there is no alternative to it:
+# a zip without a `manifest` at the top level is rejected by the sideload page
+# with "Failed to parse manifest", which reads like a syntax error in this file
+# and is usually a zip built one directory too high. build.sh zips from inside
+# runner-roku/ for exactly that reason.
+
+title=Fleet Runner
+
+# Roku has no single version string. The three numbers below are what the
+# device reads, and they must be integers -- "0.5.0-dev" here is a parse error.
+major_version=0
+minor_version=5
+build_version=0
+
+# The version the agent actually reports as `app_ver`.
+#
+# A custom key, read back with roAppInfo().GetValue("app_ver"), because the
+# three integers above cannot carry "-dev" and a runner that reports "0.5.0"
+# from a development sideload would put an unreleased build's numbers in a
+# table next to a released one's. Arbitrary manifest keys are readable at
+# runtime, so the descriptor's version and the repo's version are one string in
+# one place rather than a constant in the code that drifts from the manifest.
+app_ver=0.5.0-dev
+
+# Channel art. Roku draws the focus icon in the home grid and the splash while
+# the channel boots; a manifest line pointing at a file that is not in the zip
+# installs fine and leaves a blank tile, which reads as a broken install.
+#
+# The files in images/ are flat colour at the sizes Roku specifies. They are
+# placeholders and are not a design -- but they are the RIGHT SIZES, which is
+# the part that matters: Roku scales anything else and a 1x1 icon stretched to
+# 290x218 is how a sideload looks broken.
+mm_icon_focus_hd=pkg:/images/icon_focus_hd.png
+mm_icon_focus_sd=pkg:/images/icon_focus_sd.png
+splash_screen_hd=pkg:/images/splash_hd.png
+splash_screen_fhd=pkg:/images/splash_fhd.png
+splash_screen_sd=pkg:/images/splash_sd.png
+splash_color=#0B0D10
+splash_min_time=0
+
+# Render at 1080p and let Roku downscale on a 720p device, rather than the
+# reverse. This channel is four lines of text; the cost is nil and a 4K Roku
+# rendering an upscaled 720p UI looks like a bug.
+ui_resolutions=fhd
+
+# ECP may launch this channel with parameters, which is the whole enrolment
+# story: `curl -d '' "http://<roku>:8060/launch/dev?fleet_url=...&device_id=..."`
+# hands main(args) those keys. Without this the channel launches with an empty
+# args and the only way to set a collector URL is the on-screen keyboard, which
+# on a TV remote is a genuinely hostile way to type "http://fleet-host.local:8788".
+supports_input_launch=1

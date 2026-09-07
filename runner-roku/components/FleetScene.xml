@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  The screen. A column of labels sized for a television, plus an on-screen
+  keyboard behind the OK button for the case where nobody can reach this Roku
+  over ECP.
+
+  This is a ten-foot UI, so the type is large and the layout is a single left
+  column rather than the two-column panel the browser runner uses: a Roku is
+  read across a room, usually by somebody who wants one fact ("is it working?")
+  and occasionally a second ("what is its device_id?"). Everything else the
+  fleet knows about this device is on the collector's dashboard, which is a
+  better place to read it from than a TV.
+
+  The 96px inset is Roku's title-safe margin. A television overscans, and a
+  status line at x=0 is a status line the owner of a ten-year-old plasma cannot
+  read at all.
+-->
+<component name="FleetScene" extends="Scene">
+  <interface>
+    <!--
+      Set by Main() before the screen is shown. An observer starts the agent,
+      so a channel launched over ECP with a fleet_url registers without anybody
+      touching the remote.
+    -->
+    <field id="launchArgs" type="assocarray" onChange="onLaunchArgs" />
+  </interface>
+
+  <script type="text/brightscript" uri="pkg:/components/FleetScene.brs" />
+
+  <children>
+    <Rectangle id="bg" width="1920" height="1080" color="0x0B0D10FF">
+      <LayoutGroup translation="[96,96]" layoutDirection="vert" itemSpacings="[18]">
+        <Label id="title" text="Fleet Runner">
+          <Font role="font" uri="font:BoldSystemFontFile" size="64" />
+        </Label>
+        <Label id="status" text="starting" color="0x6F9DFFFF">
+          <Font role="font" uri="font:SystemFontFile" size="40" />
+        </Label>
+        <Label id="detail" text="" color="0x9AA3AFFF" width="1728" wrap="true" maxLines="3">
+          <Font role="font" uri="font:SystemFontFile" size="30" />
+        </Label>
+        <Label id="deviceLine" text="" color="0xE6E8ECFF">
+          <Font role="font" uri="font:SystemFontFile" size="30" />
+        </Label>
+        <Label id="urlLine" text="" color="0xE6E8ECFF">
+          <Font role="font" uri="font:SystemFontFile" size="30" />
+        </Label>
+        <Label id="digestLine" text="" color="0x9AA3AFFF">
+          <Font role="font" uri="font:SystemFontFile" size="26" />
+        </Label>
+        <!--
+          The fallback path, and only that. Typing a URL on a remote is awful;
+          it is here so a Roku on a LAN with nothing to curl from is still
+          enrollable, and the hint says what the better route is.
+        -->
+        <Label id="hint" text="" color="0x9AA3AFFF" width="1728" wrap="true" maxLines="3">
+          <Font role="font" uri="font:SystemFontFile" size="26" />
+        </Label>
+      </LayoutGroup>
+    </Rectangle>
+  </children>
+</component>
