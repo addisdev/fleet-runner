@@ -24,24 +24,7 @@ no cloud.
 
 ## How it fits together
 
-```mermaid
-flowchart LR
-    subgraph shelf["the shelf"]
-        A["Android runner<br/><i>foreground service</i>"]
-        I["iOS runner<br/><i>SwiftUI app</i>"]
-    end
-    subgraph host["a Mac with the devices plugged in"]
-        X["host executor<br/><i>adb · Maestro · simctl · Playwright</i>"]
-    end
-    C["<b>collector</b><br/>queue · registry · leases<br/>artifacts · results · scheduler"]
-    D["dashboard<br/><i>Preact, same process</i>"]
-
-    A -- "long-poll, claim, report" --> C
-    I -- "long-poll, claim, report" --> C
-    X -- "claims host jobs" --> C
-    X -- "drives from outside" --> shelf
-    C --- D
-```
+![How it fits together: agents on the shelf, a machine runner and a browser runner speak one JSON protocol to the collector, which holds the queue, registry, leases, artifacts, results and scheduler and serves the dashboard; a host executor on a Mac claims host jobs and drives the shelf from outside](../docs/img/architecture.png)
 
 Two kinds of job. **Device jobs** are claimed by the runner app on the phone
 itself — benchmarks, batch inference, vision evals. **Host jobs** are claimed
