@@ -24,6 +24,13 @@
  * `instance` stays where it was, in api/stream.ts, because it belongs to the
  * stream that uses it. This module owns the two that outlive the process.
  *
+ * `FLEET_NAME` overrides the name for the life of the process without touching
+ * the file. That matters for the case this whole feature exists for: two brains
+ * on one machine take their default name from the same hostname, so a
+ * multi-brain dashboard would show two rows both called "MacBookPro" and no way
+ * to tell which is which. The id is never overridable, because an id somebody
+ * can set is an id two brains can collide on.
+ *
  * The id is tied to the **data directory** rather than to the machine, because
  * the data directory is what a collector actually is. Copy it to a new machine
  * and it is the same brain with the same history; run a second collector on one
@@ -34,6 +41,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import path from "node:path";
+import { NAME } from "./config.js";
 
 export type Identity = {
   /** 16 hex characters. Never changes once written. */
@@ -60,7 +68,8 @@ export function defaultName(host: string = hostname()): string {
  * Not cached: it is two syscalls on a file of eighty bytes, and caching it
  * would mean a rename from the dashboard did not take effect until a restart.
  */
-export function identity(dataDir: string): Identity {
+export function identity(dataDir: string, override: string | null = NAME): Identity {
+  const named = (id: Identity): Identity => (override ? { ...id, name: override } : id);
   const file = path.join(dataDir, FILE);
   if (existsSync(file)) {
     try {
@@ -70,11 +79,11 @@ export function identity(dataDir: string): Identity {
       // one is treated as absent rather than repaired in place, so the
       // rewrite below is the only path that ever writes an id.
       if (typeof parsed.id === "string" && /^[0-9a-f]{16}$/.test(parsed.id)) {
-        return {
+        return named({
           id: parsed.id,
           name: typeof parsed.name === "string" && parsed.name ? parsed.name : defaultName(),
           created_at: typeof parsed.created_at === "string" ? parsed.created_at : new Date().toISOString(),
-        };
+        });
       }
     } catch {
       // A truncated or hand-edited file is not a reason to refuse to start.
@@ -88,7 +97,7 @@ export function identity(dataDir: string): Identity {
     created_at: new Date().toISOString(),
   };
   write(dataDir, fresh);
-  return fresh;
+  return named(fresh);
 }
 
 /** Rename this brain. The id is untouched, on purpose. */

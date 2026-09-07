@@ -743,3 +743,40 @@ main .panel:nth-of-type(n + 6) { animation-delay: 160ms; }
   .live.connecting i { animation: none; }
   .spinner { animation: none; }
 }
+
+/* --- the brain switcher -------------------------------------------------
+ *
+ * Only rendered when peers are configured, so these rules apply to nobody who
+ * runs one fleet -- which is almost everybody. Kept small and quiet in the
+ * header for the same reason: it is a way to get to the other dashboard, not a
+ * feature that should announce itself.
+ */
+.brains {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: 0.75rem;
+  font-size: 0.75rem;
+}
+.brain-self {
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: var(--accent-dim, rgba(227, 164, 74, 0.15));
+  color: var(--accent, #e3a44a);
+  font-variant-numeric: tabular-nums;
+}
+.brain-peer {
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  border: 1px solid var(--line, #2a2f36);
+  color: var(--fg-dim, #9aa4b0);
+  text-decoration: none;
+}
+.brain-peer:hover { border-color: var(--accent, #e3a44a); }
+/* A peer that is down stays visible rather than disappearing: a brain that has
+ * vanished from the list looks like one nobody configured, and the two need
+ * different fixes. */
+.brain-peer.down {
+  opacity: 0.55;
+  text-decoration: line-through;
+}

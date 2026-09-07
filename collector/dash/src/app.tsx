@@ -1,4 +1,5 @@
 import { useKeyboard, SHORTCUTS } from "./keys.js";
+import { useApi, type Peers } from "./api.js";
 import { TokenBanner } from "./TokenBanner.js";
 import { useLiveState } from "./live.js";
 import { match, useRoute } from "./router.js";
@@ -128,6 +129,46 @@ function Help({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * Which brain this is, and the others it knows about.
+ *
+ * Absent entirely when no peers are configured, which is the overwhelmingly
+ * common case -- one fleet, one dashboard, and a name in the header would be
+ * chrome answering a question nobody asked.
+ *
+ * The links navigate to the OTHER brain's own dashboard rather than pulling its
+ * data into this one. That is deliberate and is the same rule the peers proxy
+ * follows: mutations are not proxied, so a screen that mixed two fleets would
+ * have a compose button whose target was ambiguous. One origin, one owner of
+ * that queue.
+ */
+function BrainSwitcher() {
+  const { data } = useApi<Peers>("peers", [], 30_000);
+  if (!data || data.peers.length === 0) return null;
+  return (
+    <span class="brains">
+      <span class="brain-self" title={data.self.id}>
+        {data.self.name}
+      </span>
+      {data.peers.map((p) => (
+        <a
+          key={p.url}
+          href={`${p.url}/dash`}
+          class={p.reachable ? "brain-peer" : "brain-peer down"}
+          title={
+            p.reachable
+              ? `${p.devices ? `${p.devices.online} of ${p.devices.total} devices online` : "up"} — opens ${p.url}`
+              : `unreachable: ${p.error ?? "no answer"}`
+          }
+        >
+          {p.name ?? p.url.replace(/^https?:\/\//, "")}
+          {p.reachable && p.devices ? <span class="faint"> {p.devices.online}</span> : null}
+        </a>
+      ))}
+    </span>
+  );
+}
+
 export function App() {
   const { help, setHelp } = useKeyboard();
 
@@ -140,6 +181,7 @@ export function App() {
             Fleet Runner <span>collector</span>
           </span>
         </span>
+        <BrainSwitcher />
         <nav class="nav">
           {NAV.map(([to, label]) => {
             const icon = NAV_ICON[to];
