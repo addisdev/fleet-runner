@@ -4,6 +4,8 @@ How the queue thinks. Everything here is the collector's behaviour rather than
 any one runner's, and it is what you need before writing a job spec that does
 something more interesting than the one in [Get started](getting-started.md).
 
+![The life of a job: waiting until its dependencies close, queued, claimed and running under a lease that beacons renew, then done — with a lapsed lease swept back to the queue, a preemption handing its attempt back, and ok: false or a last lapsed attempt ending in failed](img/lifecycle.png)
+
 ## Two kinds of job
 
 **Device jobs** (`"executor": "device"`) are claimed by the agent running on the

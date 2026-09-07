@@ -1,0 +1,105 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>workloads</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  Everything the fleet knows how to run, grouped by who claims it. The columns
+  are the three executors; the routing is on declared capabilities, so this is
+  a picture of what the agents in this repository say they can do rather than
+  a list the collector hardcodes.
+
+  Rendered by `npm run assets` in collector/ to docs/img/workloads.png.
+-->
+<div class="figure" style="width:1280px;height:600px">
+<svg viewBox="0 0 1280 600" width="1280" height="600" role="img"
+     aria-label="Twenty-eight workloads in three columns. On the device: benchmark, thermal, batch, pipeline, vision-eval, speech-eval, embed-eval, vantage. On a host: install, ui-test, cold-start, app-soak, a11y-audit, locale-shots, web-test, web-shots, web-audit, web-unfurl, drain, soak, archive, digest. On a machine: build, model-convert, dataset-prep, serve, shell, self-check.">
+
+  <text class="t-mono" x="48" y="62">28 workloads. Which agent claims one is decided by the capabilities it declared, not by anything hardcoded.</text>
+
+  <path class="l-structure" d="M350 96V536"/>
+  <path class="l-structure" d="M974 96V536"/>
+
+  <!-- ─── on the device ─────────────────────────────────────────────── -->
+  <text class="t-title" x="48" y="126">on the device</text>
+  <text class="t-mono" x="48" y="150">the agent on the phone itself</text>
+  <g>
+    <rect class="l-structure" x="48" y="176" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="200" style="font-size:15px">benchmark</text>
+    <circle cx="310" cy="194" r="4" fill="var(--amber)"/>
+    <rect class="l-structure" x="48" y="220" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="244" style="font-size:15px">thermal</text>
+    <rect class="l-structure" x="48" y="264" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="288" style="font-size:15px">batch</text>
+    <rect class="l-structure" x="48" y="308" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="332" style="font-size:15px">pipeline</text>
+    <rect class="l-structure" x="48" y="352" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="376" style="font-size:15px">vision-eval</text>
+    <rect class="l-structure" x="48" y="396" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="420" style="font-size:15px">speech-eval</text>
+    <rect class="l-structure" x="48" y="440" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="464" style="font-size:15px">embed-eval</text>
+    <rect class="l-structure" x="48" y="484" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="62" y="508" style="font-size:15px">vantage</text>
+    <circle cx="310" cy="502" r="4" fill="var(--amber)"/>
+  </g>
+
+  <!-- ─── on a host ─────────────────────────────────────────────────── -->
+  <text class="t-title" x="372" y="126">on a host</text>
+  <text class="t-mono" x="372" y="150">an executor on a Mac with a cable</text>
+  <g>
+    <rect class="l-structure" x="372" y="176" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="386" y="200" style="font-size:15px">install</text>
+    <rect class="l-structure" x="372" y="220" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="386" y="244" style="font-size:15px">ui-test</text>
+    <rect class="l-structure" x="372" y="264" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="386" y="288" style="font-size:15px">cold-start</text>
+    <rect class="l-structure" x="372" y="308" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="386" y="332" style="font-size:15px">app-soak</text>
+    <rect class="l-structure" x="372" y="352" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="386" y="376" style="font-size:15px">a11y-audit</text>
+    <rect class="l-structure" x="372" y="396" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="386" y="420" style="font-size:15px">locale-shots</text>
+    <rect class="l-structure" x="372" y="440" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="386" y="464" style="font-size:15px">drain</text>
+
+    <rect class="l-structure" x="672" y="176" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="686" y="200" style="font-size:15px">web-test</text>
+    <rect class="l-structure" x="672" y="220" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="686" y="244" style="font-size:15px">web-shots</text>
+    <rect class="l-structure" x="672" y="264" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="686" y="288" style="font-size:15px">web-audit</text>
+    <rect class="l-structure" x="672" y="308" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="686" y="332" style="font-size:15px">web-unfurl</text>
+    <rect class="l-structure" x="672" y="352" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="686" y="376" style="font-size:15px">soak</text>
+    <rect class="l-structure" x="672" y="396" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="686" y="420" style="font-size:15px">archive</text>
+    <rect class="l-structure" x="672" y="440" width="280" height="36" rx="7"/>
+    <text class="t-mono-light" x="686" y="464" style="font-size:15px">digest</text>
+  </g>
+
+  <!-- ─── on a machine ──────────────────────────────────────────────── -->
+  <text class="t-title" x="996" y="126">on a machine</text>
+  <text class="t-mono" x="996" y="150">the desktop agent</text>
+  <g>
+    <rect class="l-structure" x="996" y="176" width="236" height="36" rx="7"/>
+    <text class="t-mono-light" x="1010" y="200" style="font-size:15px">build</text>
+    <rect class="l-structure" x="996" y="220" width="236" height="36" rx="7"/>
+    <text class="t-mono-light" x="1010" y="244" style="font-size:15px">model-convert</text>
+    <rect class="l-structure" x="996" y="264" width="236" height="36" rx="7"/>
+    <text class="t-mono-light" x="1010" y="288" style="font-size:15px">dataset-prep</text>
+    <rect class="l-structure" x="996" y="308" width="236" height="36" rx="7"/>
+    <text class="t-mono-light" x="1010" y="332" style="font-size:15px">serve</text>
+    <rect class="l-structure" x="996" y="352" width="236" height="36" rx="7"/>
+    <text class="t-mono-light" x="1010" y="376" style="font-size:15px">shell</text>
+    <rect class="l-structure" x="996" y="396" width="236" height="36" rx="7"/>
+    <text class="t-mono-light" x="1010" y="420" style="font-size:15px">self-check</text>
+    <circle cx="1214" cy="414" r="4" fill="var(--amber)"/>
+  </g>
+
+  <!-- ─── the shared ones ───────────────────────────────────────────── -->
+  <circle cx="54" cy="560" r="4" fill="var(--amber)"/>
+  <text class="t-mono" x="70" y="565">also claimable elsewhere — benchmark and vantage run on a machine too, and self-check on a host</text>
+</svg>
+</div>
+<script src="symbols.js"></script>

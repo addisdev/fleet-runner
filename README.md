@@ -85,6 +85,16 @@ A runner also says what it can run. The queue routes on those declared
 capabilities rather than on a label someone applied, so adding a workload is
 something a runner can do without the collector shipping a release.
 
+## What it can run
+
+![Twenty-eight workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
+
+Twenty-eight workloads, and the column a workload sits in is the answer to
+"who can physically do this". A benchmark runs inside the app on the phone. An
+install needs a cable and a Mac. A build needs a checkout and a toolchain.
+Each has [its own page](https://addisdev.github.io/fleet-runner/workloads/),
+saying what it measures and what it refuses to guess.
+
 Four hand-written implementations of one protocol stay honest because there is
 a test for it. `npm run conformance -- --device <id>` drives a running agent
 through eight clauses — every one of them something that has actually gone

@@ -12,23 +12,7 @@ and those files are the authority; this page is the narrative version.
 
 ## The loop
 
-```mermaid
-sequenceDiagram
-    participant A as agent
-    participant C as collector
-    A->>C: POST /devices/register
-    loop forever
-        A->>C: GET /devices/{id}/next-job
-        Note over C: long-poll, ~25 s
-        C-->>A: 204 no content
-        A->>C: GET /devices/{id}/next-job
-        C-->>A: 200 job spec
-        A->>C: POST /results (kind: beacon, job_id)
-        C-->>A: lease_renewed, preempt
-        A->>C: POST /results (kind: result, iter: 1..n)
-        A->>C: POST /results (final: true, ok: true)
-    end
-```
+![The protocol in five calls: register, then long-poll for a job and get 204 no content held about 25 seconds, poll again and get 200 with the job spec and a running lease, beacon and be answered with lease_renewed and preempt, then post result rows and a final row that closes the job](img/protocol.png)
 
 ## 1. Register
 

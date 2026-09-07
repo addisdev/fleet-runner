@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>protocol</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  The whole protocol, left to right. What the agent sends is above its rail,
+  what the collector answers is below its own. Five calls; there is no sixth.
+
+  Rendered by `npm run assets` in collector/ to docs/img/protocol.png.
+-->
+<div class="figure" style="width:1280px;height:560px">
+<svg viewBox="0 0 1280 560" width="1280" height="560" role="img"
+     aria-label="The agent registers, then long-polls for a job and gets 204 no content held about 25 seconds, then polls again and gets 200 with the job spec and a running lease, then beacons and is answered with lease_renewed and preempt, then posts result rows iter 1 to n and a final row. Five HTTP calls, JSON both ways.">
+
+  <!-- the loop that everything after registration sits inside -->
+  <path class="l-structure" d="M372 106V90H1240V106"/>
+  <text class="t-mono" x="806" y="78" text-anchor="middle">for as long as the agent is running</text>
+
+  <!-- ─── the two rails ─────────────────────────────────────────────── -->
+  <text class="t-title" x="48" y="186" style="font-size:18px">agent</text>
+  <path class="l-structure" d="M150 200H1240"/>
+  <text class="t-title" x="48" y="436" style="font-size:18px">collector</text>
+  <path class="l-structure" d="M150 450H1240"/>
+
+  <!-- ─── 1. register ───────────────────────────────────────────────── -->
+  <text class="t-mono-light" x="250" y="146" text-anchor="middle">POST</text>
+  <text class="t-mono-light" x="250" y="168" text-anchor="middle">/devices/register</text>
+  <path class="l-protocol" d="M222 208V442" marker-end="url(#arrow-amber)"/>
+  <path class="l-structure" d="M278 442V208" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="250" y="486" text-anchor="middle">200 — you are</text>
+  <text class="t-mono" x="250" y="508" text-anchor="middle">on the shelf</text>
+
+  <!-- ─── 2. the long poll that finds nothing ───────────────────────── -->
+  <text class="t-mono-light" x="470" y="146" text-anchor="middle">GET</text>
+  <text class="t-mono-light" x="470" y="168" text-anchor="middle">…/next-job</text>
+  <path class="l-protocol" d="M442 208V442" marker-end="url(#arrow-amber)"/>
+  <path class="l-structure" d="M498 442V208" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="470" y="486" text-anchor="middle">204 — nothing to do</text>
+  <text class="t-mono" x="470" y="508" text-anchor="middle">held ~25 s, call again</text>
+
+  <!-- ─── 3. the long poll that finds work ──────────────────────────── -->
+  <text class="t-mono-light" x="690" y="146" text-anchor="middle">GET</text>
+  <text class="t-mono-light" x="690" y="168" text-anchor="middle">…/next-job</text>
+  <path class="l-protocol" d="M662 208V442" marker-end="url(#arrow-amber)"/>
+  <path class="l-protocol" d="M718 442V208" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-amber" x="690" y="486" text-anchor="middle">200 — the job spec</text>
+  <text class="t-mono" x="690" y="508" text-anchor="middle">claimed, lease running</text>
+
+  <!-- ─── 4. beacon ─────────────────────────────────────────────────── -->
+  <text class="t-mono-light" x="910" y="146" text-anchor="middle">POST /results</text>
+  <text class="t-mono-light" x="910" y="168" text-anchor="middle">kind: beacon</text>
+  <path class="l-protocol" d="M882 208V442" marker-end="url(#arrow-amber)"/>
+  <path class="l-structure" d="M938 442V208" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="910" y="486" text-anchor="middle">lease_renewed</text>
+  <text class="t-mono" x="910" y="508" text-anchor="middle">preempt</text>
+
+  <!-- ─── 5. results ────────────────────────────────────────────────── -->
+  <text class="t-mono-light" x="1130" y="146" text-anchor="middle">POST /results</text>
+  <text class="t-mono-light" x="1130" y="168" text-anchor="middle">kind: result</text>
+  <path class="l-protocol" d="M1102 208V442" marker-end="url(#arrow-amber)"/>
+  <path class="l-protocol" d="M1158 208V442" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="1130" y="486" text-anchor="middle">iter 1..n, then</text>
+  <text class="t-mono-amber" x="1130" y="508" text-anchor="middle">final: true closes it</text>
+
+  <!-- ─── what it is not ────────────────────────────────────────────── -->
+  <text class="t-mono" x="48" y="256">Five calls,</text>
+  <text class="t-mono" x="48" y="278">JSON both ways.</text>
+  <text class="t-mono" x="48" y="316">No websockets,</text>
+  <text class="t-mono" x="48" y="338">no push channel,</text>
+  <text class="t-mono" x="48" y="360">no broker, no SDK.</text>
+</svg>
+</div>
+<script src="symbols.js"></script>
