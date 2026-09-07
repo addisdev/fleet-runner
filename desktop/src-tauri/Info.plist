@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The macOS keys that the whole reason for this app hangs on.
+
+  `docs/deploy/networking.md` records the evening this project lost to it: on
+  macOS 26 local-network access is granted per application, a process started by
+  launchd has no grant and no way to ask for one, and the symptom is
+  `EHOSTUNREACH` from the same Node binary that reaches the collector perfectly
+  from Terminal. The deployed workaround is an SSH tunnel so the executor only
+  ever talks to loopback, which is not gated.
+
+  An app bundle CAN ask. That is the bet this app is: give the fleet a real
+  bundle identity, let macOS put a dialog in front of a human, and the tunnel
+  stops being load-bearing.
+
+  WHAT IS UNVERIFIED, and it is the whole bet: the thing that opens the sockets
+  is not this bundle, it is `fleet`, spawned as a Tauri sidecar -- a separate
+  posix process whose executable happens to live inside Fleet.app/Contents/
+  MacOS/. Whether macOS attributes its local-network traffic to this bundle's
+  grant or treats it as an unattributed process (the launchd case again, with
+  extra steps) has NOT been tested. See desktop/README.md, "The bet".
+
+  Tauri's bundler merges this file into the generated Info.plist on macOS.
+  Confirm that on the first build -- `plutil -p Fleet.app/Contents/Info.plist`
+  -- because a key that is silently dropped looks exactly like a key that is
+  present and ignored.
+-->
+<plist version="1.0">
+<dict>
+  <!-- Shown verbatim in the permission dialog. Say what breaks without it,
+       because "Fleet would like to find devices on your local network" tells a
+       person nothing about whether saying no costs them anything. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Fleet needs the local network to reach collectors and runner devices on this LAN. Without it, only a collector on this same machine will work.</string>
+
+  <!-- Bonjour browsing is a separate gate from raw local-network access, and
+       an app that is granted the network but has not declared the service type
+       still finds nothing. `_fleet._tcp` is what collector/src/discovery.ts
+       advertises and browses for; both directions are declared because this
+       machine may be a brain, a runner, or -- the case the config's role list
+       exists for -- both at once. -->
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_fleet._tcp</string>
+  </array>
+
+  <!-- The dashboard window loads http://127.0.0.1:<port>/dash in a WKWebView.
+       Loopback is exempt from App Transport Security already; this key is for
+       the case the settings window points the agent at `http://brain.local:8788`
+       and somebody opens that instead. Without it WKWebView refuses the plain
+       -HTTP load and reports it as an ordinary network failure. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsLocalNetworking</key>
+    <true/>
+  </dict>
+
+  <!-- A menu-bar app with no Dock tile and no menu bar of its own. Set here as
+       well as via ActivationPolicy::Accessory at runtime: the runtime call
+       happens after the app has already been placed, so on its own it produces
+       a Dock icon that appears and then vanishes. -->
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>

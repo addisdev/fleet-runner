@@ -89,7 +89,16 @@ if (problems.length) {
 // CI a stale mirror fails, so what is committed is what the schema says.
 const mirror = JSON.stringify({ schema: 1, metrics: declared.sort() }, null, 2) + "\n";
 const before = (() => { try { return readFileSync(MIRROR, "utf8"); } catch { return ""; } })();
-if (before !== mirror) {
+// Compared as content, not as bytes. Git checks out with CRLF on Windows by
+// default, so a file this script wrote with LF and then read back does not
+// match itself -- and the run reports the mirror as stale, on every Windows
+// machine, forever, with a message telling you to commit a file that is already
+// correct. The collector's first ever Windows run said exactly that.
+//
+// The question this check asks is which metric names are declared. Line endings
+// are not part of the answer.
+const sameContent = (a: string, b: string) => a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
+if (!sameContent(before, mirror)) {
   writeFileSync(MIRROR, mirror);
   if (process.env.CI) {
     console.error(

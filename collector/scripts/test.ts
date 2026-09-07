@@ -20,7 +20,16 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TSX = path.join(ROOT, "node_modules/tsx/dist/cli.mjs");
-const BIN = path.join(ROOT, "node_modules/.bin");
+/**
+ * TypeScript's own entry point, not the `.bin` shim.
+ *
+ * `node_modules/.bin/tsc` is a POSIX shell script; on Windows the launcher is
+ * `tsc.cmd` beside it, so spawning the extensionless path is `ENOENT` there --
+ * and spawning the `.cmd` instead would be `EINVAL`, because Node will not run
+ * a batch file without a shell. Running the real JavaScript through node needs
+ * neither, and is what the shim does anyway.
+ */
+const TSC = path.join(ROOT, "node_modules/typescript/bin/tsc");
 
 let failed = false;
 const step = (name: string) => console.log(`\n=== ${name}`);
@@ -28,10 +37,48 @@ const step = (name: string) => console.log(`\n=== ${name}`);
 /** Run a command to completion; resolve false rather than throwing. */
 function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
   return new Promise<boolean>((resolve) => {
-    const p = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env: { ...process.env, ...opts.env }, stdio: "inherit" });
+    const how = spawnFor(cmd, args);
+    const p = spawn(how.command, how.args, {
+      cwd: opts.cwd ?? ROOT,
+      env: { ...process.env, ...opts.env },
+      stdio: "inherit",
+      shell: how.shell,
+    });
     p.on("error", (e) => { console.error(`  cannot run ${cmd}: ${e.message}`); resolve(false); });
     p.on("exit", (code) => resolve(code === 0));
   });
+}
+
+/**
+ * How to spawn a command name on this platform.
+ *
+ * Only Windows needs anything, and it needs two things that contradict each
+ * other. The collector's first ever Windows run found both, one after the
+ * other, from the one step here that shells out to something that is not node:
+ *
+ * 1. `spawn("npm", …)` is **ENOENT**. On Windows npm is `npm.cmd`, and spawn
+ *    without a shell does not try extensions.
+ * 2. `spawn("npm.cmd", …)` is **EINVAL**. Node refuses to spawn a `.cmd` or
+ *    `.bat` without a shell at all -- that is the fix for the batch-argument
+ *    injection reported in 2024, and it is deliberate.
+ *
+ * So a shell it is, and only for that case. Not for everything: `run()` is
+ * mostly given `process.execPath` and an absolute path to a tsx entry point,
+ * and this repository's own checkout lives under a directory with a space in
+ * it. Passing those through a shell would trade a clear failure on one platform
+ * for a quoting bug on all of them.
+ *
+ * The arguments are quoted anyway. None of the ones passed here contain a
+ * space today, and relying on that is how a quoting bug arrives later.
+ */
+function spawnFor(cmd: string, args: string[]): { command: string; args: string[]; shell: boolean } {
+  const bareTool = !cmd.includes("/") && !cmd.includes("\\") && ["npm", "npx", "yarn", "pnpm"].includes(cmd);
+  if (process.platform !== "win32" || !bareTool) return { command: cmd, args, shell: false };
+  return {
+    command: cmd,
+    args: args.map((a) => (/[\s"^&|<>]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a)),
+    shell: true,
+  };
 }
 
 /**
@@ -68,7 +115,7 @@ async function waitForHealth(base: string, proc: ChildProcess, timeoutMs = 30_00
 
 // --- 1. types -----------------------------------------------------------
 step("typecheck (collector)");
-if (!(await run(path.join(BIN, "tsc"), ["--noEmit"]))) failed = true;
+if (!(await run(process.execPath, [TSC, "--noEmit"]))) failed = true;
 
 // --- 2. dashboard -------------------------------------------------------
 // Its deps are a separate install, so a clone that has not run dash:install
@@ -131,7 +178,18 @@ if (!(await run(process.execPath, [TSX, "scripts/check-examples.ts"]))) failed =
 step("metric names match the schema");
 if (!(await run(process.execPath, [TSX, "scripts/check-metrics.ts"]))) failed = true;
 
-// --- 5. the collector, on its own data ----------------------------------
+// The bundled workload table and the directory walk have to name the same
+// things, or a workload works from a checkout and vanishes from a release.
+step("workload table matches the directories");
+if (!(await run(process.execPath, [TSX, "scripts/check-workloads.ts"]))) failed = true;
+
+// --- 5. the collector starts and stops on demand -------------------------
+// Before the smoke run, because if the collector cannot be started from code
+// the smoke run's failure would be a much more confusing way to learn it.
+step("start/stop lifecycle");
+if (!(await run(process.execPath, [TSX, "scripts/check-lifecycle.ts"]))) failed = true;
+
+// --- 6. the collector, on its own data ----------------------------------
 step("smoke (against a throwaway collector)");
 const dir = await mkdtemp(path.join(tmpdir(), "fleet-test-"));
 const port = await freePort();
@@ -172,8 +230,37 @@ try {
   failed = true;
   console.error(`  ${(e as Error).message}`);
 } finally {
-  server?.kill("SIGTERM");
-  await rm(dir, { recursive: true, force: true });
+  // Wait for the collector to actually go before deleting its data directory.
+  //
+  // On Windows a killed process keeps its file handles until it exits, so the
+  // old `kill(); rm()` pair raced and failed with `EBUSY: resource busy or
+  // locked, unlink ...fleet.db` -- after the whole suite had passed, which is
+  // the worst possible place for a harness bug to live. POSIX unlinks a file
+  // that is still open perfectly happily, so this never showed up anywhere
+  // else, and the collector's first ever Windows run is what found it.
+  const child = server;
+  if (child && child.exitCode === null) {
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    child.kill("SIGTERM");
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 10_000))]);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }
+  // And retry the removal anyway. Windows can hold a handle for a moment past
+  // the process's own exit -- an antivirus scanner reading the file it just saw
+  // closed is the usual culprit -- and failing here would fail a suite that has
+  // already passed.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+      break;
+    } catch (e) {
+      if (attempt >= 5) {
+        console.error(`  could not remove ${dir}: ${(e as Error).message}`);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
 }
 
 console.log(failed ? "\nFAILED" : "\nALL PASS");

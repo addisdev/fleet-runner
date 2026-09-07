@@ -1,4 +1,28 @@
 #!/bin/bash
+# DEPRECATED. Use `fleet service install` instead.
+#
+#   fleet service install --role brain,executor
+#
+# This script installs one LaunchAgent per component, and the reference
+# deployment has five of them: the collector, the executor, the iOS executor,
+# the tunnel and the alert receiver. `fleet service install` writes ONE unit
+# running `fleet up`, so switching the brain off is `fleet config set roles ...`
+# rather than a `launchctl` invocation somebody has to look up -- and the
+# supervisor's crash-loop detection applies, which launchd's KeepAlive has no
+# equivalent for and which otherwise restarts a broken collector every ten
+# seconds forever.
+#
+# **This script ships one more release and is then removed.** It is kept for
+# that one release for a specific reason: `fleet service install` has never been
+# run on any platform, and this has. Until the new path has been watched to
+# start at login, deleting the one with mileage on it would be trading a working
+# deployment for a reviewed one. See docs/deploy/headless.md.
+#
+# Nothing about its behaviour has changed. If you are already running these
+# plists, they keep working.
+#
+# ---
+#
 # Fill in a LaunchAgent template from this machine and load it.
 #
 #   deploy/install-agent.sh com.addisdev.fleet-collector.plist

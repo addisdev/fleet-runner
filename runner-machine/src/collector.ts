@@ -43,14 +43,45 @@ export class CollectorClient {
     await this.post("/devices/register", body);
   }
 
-  /** Long-polls for work; null when the poll expired with no job (HTTP 204). */
-  async nextJob(deviceId: string): Promise<JobSpec | null> {
+  /**
+   * Long-polls for work; null when the poll expired with no job (HTTP 204).
+   *
+   * `signal` is how a multi-homed agent stops asking. When one brain answers
+   * with a job, every other brain's poll has to be abandoned at once -- waiting
+   * out the remaining twenty-odd seconds would leave a window in which a second
+   * brain hands over a job this agent has no intention of running. The browser
+   * runner already does exactly this when its tab goes hidden.
+   */
+  async nextJob(deviceId: string, signal?: AbortSignal): Promise<JobSpec | null> {
     const res = await fetch(`${this.base}/devices/${encodeURIComponent(deviceId)}/next-job`, {
-      signal: AbortSignal.timeout(POLL_TIMEOUT_MS),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(POLL_TIMEOUT_MS)]) : AbortSignal.timeout(POLL_TIMEOUT_MS),
     });
     if (res.status === 204) return null;
     if (!res.ok) throw new CollectorError(res.status, "next-job");
     return (await res.json()) as JobSpec;
+  }
+
+  /**
+   * Hand a claimed job straight back, before running any of it.
+   *
+   * Used by the claim gate: two brains can both answer `200` in the instant
+   * before this agent's other polls are aborted, and the loser's job must go
+   * back on its queue rather than sit `claimed` until a lease sweep finds it --
+   * ten minutes later by default, four hours for a `drain`, and having burned
+   * an attempt on the way.
+   *
+   * Best-effort by design. A collector too old to have the endpoint answers
+   * 404, and the correct behaviour then is the old one: say nothing and let the
+   * sweep do it. Throwing here would mean an agent that could not talk to last
+   * month's brain.
+   */
+  async releaseJob(jobId: string, deviceId: string): Promise<boolean> {
+    try {
+      await this.post(`/jobs/${encodeURIComponent(jobId)}/release`, { device_id: deviceId });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async postResult(row: ResultPost): Promise<void> {

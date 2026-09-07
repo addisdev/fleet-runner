@@ -16,6 +16,7 @@ spec, and which agent claims it is decided by
 | [`speech-eval`](device.md#speech-eval) | device | Word error rate and real-time factor for on-device transcription |
 | [`embed-eval`](device.md#embed-eval) | device | Recall-at-k and throughput for on-device embeddings |
 | [`vantage`](device.md#vantage) | device, machine | DNS, connect, TLS and TTFB to your own sites, from where each agent actually sits |
+| [`enrol`](host.md#enrol) | host | Point every attached device's runner at a collector, without anybody typing |
 | [`install`](host.md#install) | host | One artifact onto every attached device |
 | [`ui-test`](host.md#ui-test) | host | Maestro flows or an XCUITest bundle per device |
 | [`cold-start`](host.md#cold-start) | host | Launch from cold, warm and hot; p50 and p95 per state |

@@ -131,6 +131,24 @@ export function beaconFields(sample: Record<string, unknown> | null) {
     mem_method: typeof b.mem_method === "string" ? b.mem_method : null,
     process_alive: typeof b.process_alive === "boolean" ? b.process_alive : null,
     job_id: typeof sample.job_id === "string" ? sample.job_id : null,
+    /**
+     * Set when this device is running a job for a DIFFERENT collector.
+     *
+     * Surfaced rather than left in the raw beacon because it is the answer to a
+     * question the Devices screen otherwise cannot answer at all: a multi-homed
+     * device that is busy elsewhere looks, from here, exactly like an idle
+     * device that nothing is offering work to. Those are opposite problems.
+     */
+    busy: busyFields(b),
+  };
+}
+
+function busyFields(b: Record<string, unknown>): { job_id: string | null; collector: string | null } | null {
+  const busy = b.busy as { job_id?: unknown; collector?: unknown } | undefined;
+  if (!busy || typeof busy !== "object") return null;
+  return {
+    job_id: typeof busy.job_id === "string" ? busy.job_id : null,
+    collector: typeof busy.collector === "string" ? busy.collector : null,
   };
 }
 

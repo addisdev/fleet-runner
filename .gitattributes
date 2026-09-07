@@ -1,0 +1,33 @@
+# Line endings, decided here rather than by whoever cloned the repository.
+#
+# This matters more than it looks now that CI runs on Windows as well as Linux
+# and macOS. Git's default on Windows checks out CRLF, which quietly breaks two
+# kinds of file in this tree:
+#
+#   - Anything compared against generated content. `scripts/check-metrics.ts`
+#     writes schemas/metrics.json with LF and reads it back; under CRLF it never
+#     matches itself and reports a correct file as stale, on every Windows
+#     machine, forever.
+#   - Anything with a shebang. A shell script checked out with CRLF fails on a
+#     POSIX host with a `bad interpreter` error naming a line that looks fine.
+#
+# `text=auto eol=lf` normalises to LF in the repository and checks out LF
+# everywhere. The two Windows-only files are the deliberate exceptions: a `.cmd`
+# or `.ps1` with LF endings is not reliably executed by cmd.exe.
+* text=auto eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary, so git never tries to translate anything inside them.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.apk binary
+*.zip binary
+*.gguf binary
+*.tflite binary
+*.mlmodelc binary

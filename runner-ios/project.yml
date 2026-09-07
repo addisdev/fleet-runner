@@ -9,7 +9,15 @@ targets:
   FleetRunner:
     type: application
     platform: iOS
-    sources: [FleetRunner]
+    sources:
+      - path: FleetRunner
+        excludes:
+          # The other targets' Info.plists. Each of these is a *source* under
+          # FleetRunner/, so without excluding them a target both copies them as
+          # resources and processes its own -- "Multiple commands produce
+          # .../Info.plist", which is a hard build failure and was one.
+          - InfoTV.plist
+          - InfoVision.plist
     # No llama.xcframework here, deliberately. The framework is 850 MB and
     # gitignored, and Xcode treats a declared-but-missing XCFramework as a hard
     # error ("There is no XCFramework found at ..."), not as something to skip
@@ -25,6 +33,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner
+        MARKETING_VERSION: "0.5.0"
         GENERATE_INFOPLIST_FILE: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -39,6 +48,21 @@ targets:
         NSAppTransportSecurity:
           # The collector speaks plain HTTP inside the Tailscale mesh / localhost.
           NSAllowsLocalNetworking: true
+        # From the build setting, not a literal. An explicit Info.plist takes
+        # priority over MARKETING_VERSION, so without this line the app reports
+        # `app_ver: "1.0"` on every registration -- which is exactly the drift
+        # scripts/version.mjs was written to stop, reintroduced by the plist that
+        # the URL scheme required.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleURLTypes:
+          # `fleetrunner://join?url=...&device_id=...` -- how a device with no
+          # keyboard worth using is told which collector to talk to. An Apple TV
+          # has no camera for a QR code and its on-screen keyboard is a grid
+          # driven by a remote, so for one of those this is the whole enrolment
+          # story. Opened by `devicectl device process launch`, by `simctl
+          # openurl`, from a QR code on another device, or from a tapped link.
+          - CFBundleURLName: com.taylab.fleetrunner.join
+            CFBundleURLSchemes: [fleetrunner]
 
 
   # --- the other screens -----------------------------------------------------
@@ -73,16 +97,43 @@ targets:
       - path: FleetRunner
         excludes:
           - WebShotsWorkload.swift
+          # The other targets' Info.plists. Each of these is a *source* under
+          # FleetRunner/, so without excluding them a target both copies them as
+          # resources and processes its own -- "Multiple commands produce
+          # .../Info.plist", which is a hard build failure and was one.
+          - Info.plist
+          - InfoVision.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner.tv
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        MARKETING_VERSION: "0.5.0"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "3"
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: NO
 
+    info:
+      path: FleetRunner/InfoTV.plist
+      properties:
+        # GENERATE_INFOPLIST_FILE cannot express an array, and the URL scheme is
+        # one -- so this target gets a real plist rather than generated keys.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # From the build setting, not a literal. An explicit Info.plist takes
+        # priority over MARKETING_VERSION, so without this line the app reports
+        # `app_ver: "1.0"` on every registration -- which is exactly the drift
+        # scripts/version.mjs was written to stop, reintroduced by the plist that
+        # the URL scheme required.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleURLTypes:
+          # `fleetrunner://join?url=...&device_id=...` -- how a device with no
+          # keyboard worth using is told which collector to talk to. An Apple TV
+          # has no camera for a QR code and its on-screen keyboard is a grid
+          # driven by a remote, so for one of those this is the whole enrolment
+          # story. Opened by `devicectl device process launch`, by `simctl
+          # openurl`, from a QR code on another device, or from a tapped link.
+          - CFBundleURLName: com.taylab.fleetrunner.join
+            CFBundleURLSchemes: [fleetrunner]
   # NEVER COMPILED. Stated plainly because everything else in this repository
   # that claims to build has been built.
   #
@@ -101,16 +152,45 @@ targets:
   FleetRunnerVision:
     type: application
     platform: visionOS
-    sources: [FleetRunner]
+    sources:
+      - path: FleetRunner
+        excludes:
+          # The other targets' Info.plists. Each of these is a *source* under
+          # FleetRunner/, so without excluding them a target both copies them as
+          # resources and processes its own -- "Multiple commands produce
+          # .../Info.plist", which is a hard build failure and was one.
+          - Info.plist
+          - InfoTV.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetrunner.vision
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+        MARKETING_VERSION: "0.5.0"
         SWIFT_VERSION: "5.9"
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: NO
 
+    info:
+      path: FleetRunner/InfoVision.plist
+      properties:
+        # GENERATE_INFOPLIST_FILE cannot express an array, and the URL scheme is
+        # one -- so this target gets a real plist rather than generated keys.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        # From the build setting, not a literal. An explicit Info.plist takes
+        # priority over MARKETING_VERSION, so without this line the app reports
+        # `app_ver: "1.0"` on every registration -- which is exactly the drift
+        # scripts/version.mjs was written to stop, reintroduced by the plist that
+        # the URL scheme required.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleURLTypes:
+          # `fleetrunner://join?url=...&device_id=...` -- how a device with no
+          # keyboard worth using is told which collector to talk to. An Apple TV
+          # has no camera for a QR code and its on-screen keyboard is a grid
+          # driven by a remote, so for one of those this is the whole enrolment
+          # story. Opened by `devicectl device process launch`, by `simctl
+          # openurl`, from a QR code on another device, or from a tapped link.
+          - CFBundleURLName: com.taylab.fleetrunner.join
+            CFBundleURLSchemes: [fleetrunner]
   FleetRunnerUITests:
     type: bundle.ui-testing
     platform: iOS

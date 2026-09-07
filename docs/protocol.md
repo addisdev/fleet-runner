@@ -150,9 +150,68 @@ for it:
    [Preemption](concepts.md#preemption). Ignoring the field is fine — it is
    additive, and not stopping is the old behaviour.
 
+### `busy`, if you belong to more than one fleet
+
+An agent may register with several collectors. It is still one piece of
+hardware and it runs one job at a time, so the brains that are **not** running
+its job have to be told, or their queues keep offering work to a device they
+cannot have.
+
+```json
+{
+  "schema": 1, "kind": "beacon", "device_id": "pixel-4a",
+  "beacon": { "battery_pct": 82, "charging": true,
+              "busy": { "job_id": "bench-1", "collector": "http://study-mac:8788" } }
+}
+```
+
+Send it **only to the collectors that are not running the job.** To the one
+that is, the beacon's own `job_id` is already the whole story, and repeating it
+as `busy` would be an agent describing a claim back to the brain that granted
+it.
+
+A collector that sees a fresh `busy` naming somebody else stops offering that
+device work. A stale beacon does not block — past three minutes the claim is no
+longer evidence of anything, and trusting it would mean a device that took one
+job elsewhere and was then unplugged never claimed anything again.
+
+`collector` is the other brain's address, and a reader is not required to be
+able to resolve it. Knowing the device is unavailable is the part that matters.
+
+Ignoring the field entirely is fine and is the old behaviour. See
+[Belonging to more than one fleet](concepts.md#belonging-to-more-than-one-fleet)
+for the rest of the contract, including the part you cannot skip.
+
 **Beacon more often than the lease TTL.** A `drain` job with a 4-hour TTL still
 beacons every minute; a benchmark with a 600 s TTL must not go 10 minutes
 silent.
+
+### Handing a job straight back
+
+```
+POST /jobs/{job_id}/release      { "device_id": "pixel-4a" }
+```
+
+Only if you registered with more than one collector, and only before you have
+run any of the job.
+
+Two brains can both answer your long poll with a job in the same instant. You
+can take one of them; the other is now `claimed` by a socket you are not
+reading, and left alone it sits there until a lease sweep finds it — ten
+minutes later by default, four hours for a `drain`, and having spent an
+attempt on the way. Three such races retire a job that never misbehaved.
+
+So say so. The job goes back to `queued`, **the attempt is handed back**, and
+anything may claim it immediately.
+
+- Refused with 409 once any result row exists for the job. That is the line
+  between handing a job back and abandoning it half-done: if you have reported
+  an iteration, close the job properly instead.
+- Refused with 409 if `device_id` is not the claimant.
+- A collector too old to have this endpoint answers 404. **Treat that as
+  ordinary**, not as an error — the sweep is the old behaviour and it still
+  works. An agent that failed here would be an agent that cannot talk to last
+  month's brain.
 
 ## 4. Report results
 

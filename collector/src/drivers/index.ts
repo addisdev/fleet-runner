@@ -7,10 +7,19 @@
  * that survives is the one that knows it is a simulator — the other says
  * `kind: "device"`, which would put an emulated GPU's numbers in a table of
  * real silicon.
+ *
+ * `roku` is last, and not because of dedupe -- nothing else on this list can
+ * see a Roku and there is no duplicate to resolve. It is the only driver whose
+ * discovery costs a fixed wall-clock wait rather than a command that returns
+ * when it is done: SSDP has no end-of-list, so it listens for a window and
+ * reports whatever answered inside it. `listAllTargets` runs the drivers
+ * concurrently, so that wait overlaps the others rather than adding to them,
+ * and the position in this array is cosmetic.
  */
 import { adbDriver } from "./adb.js";
 import { simctlDriver } from "./simctl.js";
 import { devicectlDriver } from "./devicectl.js";
+import { rokuDriver } from "./roku.js";
 import type { Driver } from "./types.js";
 import type { Target } from "../workloads/types.js";
 
@@ -18,10 +27,11 @@ export type { Driver } from "./types.js";
 export { adbDriver } from "./adb.js";
 export { simctlDriver } from "./simctl.js";
 export { devicectlDriver, devicectlDevices } from "./devicectl.js";
+export { rokuDriver, rokuDevices, rokuTargetId, parseSsdpLocation, parseDeviceInfo, xmlTag } from "./roku.js";
 export { bootedSimulators } from "./simctl.js";
 export { adbDevices } from "./adb.js";
 
-export const DRIVERS: Driver[] = [adbDriver, simctlDriver, devicectlDriver];
+export const DRIVERS: Driver[] = [adbDriver, simctlDriver, devicectlDriver, rokuDriver];
 
 export function driverNamed(name: string | undefined): Driver | undefined {
   return DRIVERS.find((d) => d.name === name);

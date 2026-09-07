@@ -1,0 +1,28 @@
+{
+  "name": "fleet-cli",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "description": "Fleet Runner's front door: one command that runs a brain, a runner, or both.",
+  "bin": {
+    "fleet": "./dist/cli.mjs"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit && node --import tsx --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.2.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

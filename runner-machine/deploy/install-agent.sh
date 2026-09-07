@@ -1,4 +1,29 @@
 #!/bin/bash
+# DEPRECATED. Use `fleet service install` instead.
+#
+#   fleet join http://fleet-host.local:8788
+#   fleet service install --role agent
+#
+# This script installs a per-component unit -- a LaunchAgent on macOS, a systemd
+# user unit on Linux -- pointed at this package's own entry point. `fleet service
+# install` writes ONE unit running `fleet up`, which is the same thing for a
+# machine that is only a runner and a much better thing for a machine that is
+# also a brain: one unit, one config file, and the supervisor's crash-loop
+# detection rather than a KeepAlive that restarts a broken agent every ten
+# seconds forever.
+#
+# **This script ships one more release and is then removed.** It is kept for
+# that one release for a specific reason: `fleet service install` has never been
+# run on any platform -- not launchd, not systemd, not the Windows scheduled
+# task -- and this has. Until the new path has been watched to start at login,
+# deleting the one with mileage on it would be trading a working deployment for
+# a reviewed one. See docs/deploy/headless.md.
+#
+# Nothing about its behaviour has changed. If you are already running these
+# units, they keep working.
+#
+# ---
+#
 # Fill in a service template from this machine and load it.
 #
 #   deploy/install-agent.sh com.addisdev.fleet-runner-machine.plist   # macOS

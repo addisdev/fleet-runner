@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  The agent, on its own thread.
+
+  A Task node is the only way a SceneGraph channel gets a thread that is allowed
+  to block, and this one blocks constantly: a 25-second long poll, then minutes
+  of hashing. Doing either on the render thread stops the channel drawing and
+  stops it answering the remote, and Roku's watchdog eventually kills it. So
+  everything below the wire is here, and the scene only reads fields off it.
+
+  The fields are the seam between the two threads. SceneGraph copies a field
+  value across threads on write, so the task writes `status`/`detail` and the
+  scene observes them; nothing is shared and there is no lock to get wrong.
+  Strings and integers only, for that reason - passing a node or a large
+  assocarray across is a copy on every write, and this one writes on every poll.
+
+  (Single hyphens rather than the double ones used everywhere else in this
+  repository: XML forbids "- -" written together inside a comment, and Roku's
+  parser enforces it. The channel does not install and the sideload page says
+  only that the component failed to load.)
+-->
+<component name="AgentTask" extends="Task">
+  <interface>
+    <!-- Set by the scene before control is set to RUN. -->
+    <field id="fleetUrl" type="string" value="" />
+    <!--
+      Read/write. The scene may supply one from a launch parameter or the
+      registry; if it is empty the task derives one and writes it back, so the
+      screen can show the id the collector actually knows this device by.
+    -->
+    <field id="deviceId" type="string" value="" />
+
+    <!-- What the scene renders. -->
+    <field id="status" type="string" value="starting" />
+    <field id="detail" type="string" value="" />
+    <!-- The synthetic attestation, shown on screen so it is checkable with no collector. -->
+    <field id="digest" type="string" value="" />
+    <field id="jobsRun" type="integer" value="0" />
+  </interface>
+
+  <!--
+    The backend is a second script on the same component rather than a separate
+    node. It is pure arithmetic with no interface and no children, so a node
+    would buy nothing and cost a thread hop per call.
+  -->
+  <script type="text/brightscript" uri="pkg:/components/AgentTask.brs" />
+  <script type="text/brightscript" uri="pkg:/components/SyntheticBackend.brs" />
+</component>

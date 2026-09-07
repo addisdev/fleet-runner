@@ -29,6 +29,7 @@ running whether or not anyone has a token in a browser.
 | `POST /jobs` | Enqueue. 409 on duplicate `job_id`; the reply's `status` says whether it queued or is `waiting` on `depends_on` |
 | `GET /jobs/:id` | Status, including `attempts`, `lease_deadline` and `last_error` |
 | `POST /jobs/sweep` | Force a lease sweep now; returns what was requeued and failed |
+| `POST /jobs/:id/release` | The claimant hands a job back before starting it. Returns it to `queued` and **refunds the attempt**; 409 once any result exists. See [the protocol](protocol.md#handing-a-job-straight-back) |
 | `POST /locks/acquire` · `POST /locks/release` | Host-executor device locks for `targets.exclusive`; device claims lock implicitly |
 | `POST /events/:topic` | Publish a pipeline event; returns its id |
 | `GET /events/:topic/poll?after=` | Long-poll the next event past the cursor; 204 on expiry |
@@ -65,6 +66,8 @@ Every endpoint is `GET` and side-effect free.
 | `GET /api/executors` | Host-executor liveness, derived from their long-poll traffic |
 | `GET /api/enroll` | Addresses a device can reach this collector on, the newest runner build, who is enrolled |
 | `GET /api/alerts?state=` | Current alerts |
+| `GET /api/peers` | Other brains this one knows about, with liveness and device counts |
+| `GET /api/peers/:id/*` | One peer's read API, fetched server to server. GET only, and only the endpoints on an allow-list |
 | `GET /api/status-reports` | The commit-status audit trail, posted or not |
 | `GET /api/stream` | SSE |
 
@@ -95,6 +98,24 @@ Topics: `job`, `device`, `beacon`, `result`, `lock`, `schedule`, `artifact`,
 | `POST /api/artifacts/:sha/pin` | Pin with a **reason** — a pin with no reason is one nobody will dare remove |
 | `POST /api/system/sweep` · `/scheduler-tick` · `/retention` | Force a pass; retention dry-runs unless `dry_run: false` |
 | `POST /api/alerts/:id/ack` · `/snooze` · `POST /api/alerts/tick` | Quiet one alert, or force an evaluation |
+
+### Peers are read, and read through this collector
+
+`GET /api/peers/:id/*` proxies rather than letting the browser call the other
+brain directly, and that is a security decision rather than a convenience.
+There is no authentication: opening the read API cross-origin would let any
+website in the operator's browser read their whole fleet from any tab. The
+proxy keeps one origin, one token, and one place that decides what may be
+asked for — an **allow-list** of endpoints, because the failure of a deny-list
+is that the next endpoint somebody adds is exposed by default.
+
+Peers are addressed by their stable id, not by URL, so a link cannot be turned
+into a request to an arbitrary host by editing the address bar. The id selects
+from the configured list; it does not address.
+
+Nothing is proxied that mutates. Enqueueing on another brain means switching to
+it, which navigates to that brain's own dashboard — one origin, one owner of
+that queue, and no question about which fleet a button just acted on.
 
 ### Cancelling does not reach into the device
 

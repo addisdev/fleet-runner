@@ -13,14 +13,30 @@ in front of it.
 
 ## Start here
 
+```
+fleet up
+```
+
+A collector and a machine agent, supervised, on the machine you are typing on.
+There is **no published release yet**, so getting `fleet` means building from a
+checkout -- [Install](install/index.md) is honest per platform about which of
+them anybody has actually run.
+
 <div class="grid cards" markdown>
+
+-   __[Install](install/index.md)__
+
+    ---
+
+    `fleet` onto macOS, Windows, Linux or Docker, and how a phone, a
+    television, a Roku or a browser joins.
 
 -   __[Get started](getting-started.md)__
 
     ---
 
-    A collector and a laptop agent, a real job, and a result you can look at.
-    Fifteen minutes, Node and nothing else.
+    `fleet up`, a real job, and a result you can look at.
+    Node 22.13 and nothing else.
 
 -   __[Concepts](concepts.md)__
 
@@ -53,7 +69,7 @@ in front of it.
 
     ---
 
-    Where the services live, running them under launchd or systemd, and the
+    Where the services live, keeping them up with `fleet service`, and the
     networking that bites.
 
 </div>
@@ -81,12 +97,31 @@ describes what that does and does not cover. Do not put it on the internet.
 
 ## Where things live
 
-The code is one repository with four components that ship independently and
-share no code, only the protocol:
+The code is one repository with seven components that ship independently and
+share no code, only the protocol.
+
+One brain --
 [`collector/`](https://github.com/addisdev/fleet-runner/tree/main/collector),
-[`runner-android/`](https://github.com/addisdev/fleet-runner/tree/main/runner-android),
-[`runner-ios/`](https://github.com/addisdev/fleet-runner/tree/main/runner-ios) and
-[`runner-machine/`](https://github.com/addisdev/fleet-runner/tree/main/runner-machine).
+which also holds the host executor and the browser runner it serves at
+`/runner`.
+
+Five runners, in five languages, sharing not one line:
+[`runner-android/`](https://github.com/addisdev/fleet-runner/tree/main/runner-android)
+(Kotlin),
+[`runner-ios/`](https://github.com/addisdev/fleet-runner/tree/main/runner-ios)
+(Swift),
+[`runner-machine/`](https://github.com/addisdev/fleet-runner/tree/main/runner-machine)
+(TypeScript),
+[`collector/runner-web/`](https://github.com/addisdev/fleet-runner/tree/main/collector/runner-web)
+(JavaScript) and
+[`runner-roku/`](https://github.com/addisdev/fleet-runner/tree/main/runner-roku)
+(BrightScript, and never compiled -- see [platforms](platforms.md)).
+
+And two front doors:
+[`fleet/`](https://github.com/addisdev/fleet-runner/tree/main/fleet), the CLI
+behind `fleet up`, and
+[`desktop/`](https://github.com/addisdev/fleet-runner/tree/main/desktop), a
+menu-bar app around it whose Rust has never been compiled.
 
 [The history section](history/index.md) keeps the original architecture plan and
 the design journals as they were written. They are not maintained, and they are

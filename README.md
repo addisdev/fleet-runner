@@ -31,13 +31,34 @@ claims its own child job. Above: a laptop and two browser runners on a collector
 that did not exist a minute earlier. Nothing there is staged — it is the
 shipping agents against a real collector, recorded a frame every 250 ms.
 
+## Run it
+
+```
+fleet up
+```
+
+That is a collector (the brain: registry, queue, results, dashboard) and a
+machine agent (this laptop, as a device on the fleet), each in its own process,
+both supervised. No configuration file to write, no broker, no cloud service.
+`fleet doctor` says what the machine can and cannot run, and why not.
+
+> **There is no published release yet, so `curl … | sh` does not work.** The
+> install scripts are written and have been exercised against locally built
+> archives, and they have never met a real GitHub release because there is not
+> one. Until then, build from a checkout -- three `npm install`s and
+> `node fleet/build.mjs`, which is
+> **[docs/install/](https://addisdev.github.io/fleet-runner/install/)**, per
+> platform, with an honest column about which of them anybody has actually run.
+> The answer is macOS/arm64.
+
 ## Documentation
 
 **[addisdev.github.io/fleet-runner](https://addisdev.github.io/fleet-runner/)**
 
 | | |
 |---|---|
-| **[Get started in 15 minutes](https://addisdev.github.io/fleet-runner/getting-started/)** | A collector and a laptop agent, a real job, and a result on the dashboard. Needs Node and nothing else — no Xcode, no NDK, no phone. |
+| **[Install](https://addisdev.github.io/fleet-runner/install/)** | Getting `fleet` onto macOS, Windows, Linux or Docker, and getting a phone, a television, a Roku or a browser to join it. |
+| **[Get started](https://addisdev.github.io/fleet-runner/getting-started/)** | `fleet up`, a real job, and a result on the dashboard. Needs Node 22.13 and nothing else -- no Xcode, no NDK, no phone. |
 | **[Wire in your own app](https://addisdev.github.io/fleet-runner/integration/)** | Publish builds on merge, run a nightly on your own devices, and block a pull request on the verdict. |
 | **[The protocol](https://addisdev.github.io/fleet-runner/protocol/)** | Register, long-poll, claim, beacon, report. Enough to write a runner in a language none of these are in. |
 
@@ -51,9 +72,9 @@ installing an APK or tapping through a UI test is not something an app can do
 to itself.
 
 "Phone" is no longer the whole story. An agent declares what platform it runs
-and what shape it is, so the same four projects cover Android phones, tablets,
+and what shape it is, so these five runners cover Android phones, tablets,
 TV sticks, headsets and watches; iPhone, iPad and Apple TV; macOS, Linux and
-Windows machines; and any browser at all. Which of those have actually been
+Windows machines; Roku players and Roku TVs; and any browser at all. Which of those have actually been
 watched to register, and which are only believed to work, is
 **[docs/platforms.md](docs/platforms.md)** — with an honest column, because a
 list of platforms a project "supports" is worth very little.
@@ -80,17 +101,35 @@ saying what it measures and what it refuses to guess.
 
 ## What is in here
 
-Four projects in one repository. They ship independently and share no code —
-only a JSON protocol — but they are versioned together, because the protocol is
-the thing that breaks and a change to it touches three of them at once.
+Seven projects in one repository, in three groups: **one brain**, **five
+runners** that speak its protocol and share no code with each other or with it,
+and **two front doors** onto the whole thing. They ship independently but they
+are versioned together, because the protocol is the thing that breaks and a
+change to it touches three of them at once.
+
+**The brain**
 
 | | What it is |
 |---|---|
-| **[collector/](collector)** | The brain. Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. |
-| **[runner-android/](runner-android)** | The Android agent. A foreground service on anything back to Android 7, with llama.cpp (NDK/JNI) and LiteRT backends. |
-| **[runner-ios/](runner-ios)** | The iOS agent. SwiftUI, with llama.cpp and Core ML backends, speaking the same JSON protocol without sharing a line of code. |
-| **[runner-machine/](runner-machine)** | The desktop agent. A Node process that makes a laptop or desktop a fleet device, so a phone's tok/s and a laptop's land in the same table. |
-| **[collector/runner-web/](collector/runner-web)** | The browser agent. One HTML file the collector serves at `/runner`: opening it enrols the browser that opened it. A smart TV, a console, a Chromebook — anything with no way to install a signed app. |
+| **[collector/](collector)** | Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. It also holds the host executor, which drives phones from outside over adb, simctl and devicectl. |
+
+**The runners** -- five hand-written implementations of one protocol, in five
+languages, sharing not one line
+
+| | What it is |
+|---|---|
+| **[runner-android/](runner-android)** | Kotlin. A foreground service on anything back to Android 7, with llama.cpp (NDK/JNI) and LiteRT backends. One APK covers phones, tablets, TV sticks, headsets and watches. |
+| **[runner-ios/](runner-ios)** | Swift. SwiftUI, with llama.cpp and Core ML backends. The same sources build the tvOS and visionOS targets -- two conditions rather than a fork. |
+| **[runner-machine/](runner-machine)** | TypeScript. A Node process that makes a laptop, desktop, board or NAS a fleet device, so a phone's tok/s and a laptop's land in the same table. |
+| **[collector/runner-web/](collector/runner-web)** | JavaScript, one HTML file the collector serves at `/runner`: opening it enrols the browser that opened it. A smart TV, a console, a Chromebook -- anything with no way to install a signed app. |
+| **[runner-roku/](runner-roku)** | BrightScript, because it is the only language a Roku will run. A SceneGraph channel, so a streaming player or a Roku TV is a fleet device. It has never been run on a Roku, and it has never been *compiled* -- there is no emulator -- so read its README before you read a number from it. |
+
+**The front doors**
+
+| | What it is |
+|---|---|
+| **[fleet/](fleet)** | The CLI. `fleet up` runs this machine's components under a supervisor that backs off and gives up loudly rather than restarting a broken component forever; `fleet doctor` says what the machine can run and why not; `fleet service install` keeps it up. It wraps the three programs above and reimplements none of them. |
+| **[desktop/](desktop)** | A Tauri menu-bar app around that CLI: a tray menu, role switches, the dashboard in a window, and a notification when a component gives up. It exists to test one hypothesis about macOS local-network permissions, and **none of its Rust has ever been compiled** -- read its README before believing anything in it. |
 
 Each directory has its own README, its own tests and its own CI job, filtered by
 path so a change to a phone runner does not build the dashboard.
@@ -109,9 +148,9 @@ reproduce that report's numbers today.
 One repository makes such a change one reviewable diff, and lets `npm test`
 in `collector/` fail when the schema and its mirror disagree.
 
-Four hand-written implementations of one protocol stay honest because there is
+Five hand-written implementations of one protocol stay honest because there is
 a test for it. `npm run conformance -- --device <id>` drives a running agent
-through eight clauses — every one of them something that has actually gone
+through nine clauses — every one of them something that has actually gone
 wrong here — including recomputing the synthetic backend's block digest from
 the written specification, so "identical token for token" is checkable rather
 than asserted.

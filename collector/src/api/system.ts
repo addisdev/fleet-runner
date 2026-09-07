@@ -2,7 +2,7 @@
 import type { FastifyInstance } from "fastify";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { db } from "../db.js";
+import { db, type SqlParam } from "../db.js";
 import {
   ARTIFACT_DIR,
   DATA_DIR,
@@ -18,6 +18,7 @@ import { THRESHOLDS, webhookConfigured } from "../alerts.js";
 import { guardEnabled } from "./guard.js";
 import { AGE, iso, paging, parse, sha256Refs, tableCounts } from "./shared.js";
 import { clientCount, SERVER_INSTANCE, STARTED_AT } from "./stream.js";
+import { identity } from "../identity.js";
 
 const bytesOf = (file: string) => {
   try {
@@ -55,8 +56,15 @@ function artifactDiskUsage() {
 }
 
 export function health() {
+  const me = identity(DATA_DIR);
   return {
     ok: true,
+    // Three identifiers, three questions. `collector`/`name` say WHICH brain
+    // this is and survive a restart; `instance` says whether it restarted and
+    // deliberately does not. A dashboard showing two fleets needs the first
+    // two; a client deciding whether to refetch everything needs the third.
+    collector: me.id,
+    name: me.name,
     instance: SERVER_INSTANCE,
     started_at: STARTED_AT.toISOString(),
     uptime_s: Math.floor(process.uptime()),
@@ -236,7 +244,7 @@ export function registerSystem(app: FastifyInstance) {
     const q = req.query as Record<string, string | undefined>;
     const { page, per_page, offset } = paging(q);
     const where: string[] = [];
-    const params: unknown[] = [];
+    const params: SqlParam[] = [];
     if (q.q) {
       // App name too: "which builds do I have for greenfolio-android" is the
       // question you ask once artifacts know what they are.

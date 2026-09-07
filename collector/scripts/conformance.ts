@@ -240,6 +240,8 @@ type Device = {
   platform: string;
   kind: string | null;
   status: string;
+  /** Flattened from the last beacon; `busy` is what clause 9 reads. */
+  beacon: { busy?: { job_id?: string; collector?: string } | null } | null;
 };
 
 /** 1. It registered, and said enough about itself to be scheduled. */
@@ -513,6 +515,72 @@ async function clauseConstraints(dev: Device): Promise<void> {
   await cancelQuietly(id);
 }
 
+/**
+ * Clause 9: an agent that belongs to more than one fleet behaves.
+ *
+ * This clause is unusual and deliberately so: it is **skipped for the great
+ * majority of agents**, because an agent registered with one collector has
+ * nothing to get wrong here. Multi-homing is opt-in and most runners will never
+ * do it -- a Roku channel, a browser tab and a phone on a shelf are all
+ * single-brain by nature.
+ *
+ * What it can check from one collector is the half that is observable from one
+ * collector, which turns out to be the important half: does this agent tell
+ * this brain when it is working for another one, and does it hand back a job it
+ * cannot take. The full race -- two brains, two jobs, one device -- needs two
+ * collectors and lives in fleet/test/multibrain.test.ts.
+ *
+ * A single-brain agent that never sends `busy` is CONFORMANT. The failure this
+ * looks for is the opposite: an agent that says it is busy elsewhere and then
+ * claims work anyway, which would mean two jobs on one piece of hardware and
+ * two numbers that are both wrong.
+ */
+async function clauseMultiHome(dev: Device): Promise<void> {
+  const C = "9 multi-home";
+  const busy = dev.beacon?.busy as { job_id?: string; collector?: string } | null | undefined;
+  if (!busy) {
+    skip(
+      C,
+      "busy honoured",
+      "this agent is not currently working for another collector, which is the ordinary case",
+    );
+  } else {
+    // It told us it is busy. The rule is that it must not then take work here.
+    const id = jobId("multihome");
+    await enqueue({
+      job_id: id, workload: "benchmark", backend: "synthetic",
+      params: { prompt_tokens: 32, gen_tokens: 8, warmup_iters: 0, measure_iters: 1 },
+    });
+    // One long-poll interval is enough: if this agent were going to claim it, it
+    // would have by now.
+    const j = await waitForJob(id, (row) => row.status !== "queued", 40).catch(() => null);
+    check(
+      C,
+      "an agent busy for another brain does not claim work here",
+      j === null || j.status === "queued",
+      `it said it was busy with ${busy.job_id ?? "?"} on ${busy.collector ?? "an unnamed collector"} and then claimed this job anyway`,
+    );
+    await cancelQuietly(id);
+  }
+
+  // And the endpoint the race needs, which is the collector's side rather than
+  // the agent's -- checked here because an agent author reading a FAIL needs to
+  // know whether the brain they are testing against even has it.
+  const probe = await fetch(`${BASE}/jobs/definitely-not-a-job/release`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ device_id: DEVICE }),
+  });
+  if (probe.status === 404) {
+    // Ambiguous by construction: a collector without the endpoint 404s, and so
+    // does one that has it and cannot find the job. Both are fine; what matters
+    // is that neither is an error an agent should treat as fatal.
+    pass(C, "the collector answers a release for an unknown job with 404, as an agent must tolerate");
+  } else {
+    check(C, "a release for an unknown job is refused cleanly", probe.status < 500, `status=${probe.status}`);
+  }
+}
+
 // --- run --------------------------------------------------------------------
 
 async function main() {
@@ -537,6 +605,7 @@ async function main() {
   await clauseCancellation(dev);
   await clauseLease(dev);
   await clauseConstraints(dev);
+  await clauseMultiHome(dev);
 
   console.log(results.join("\n"));
   console.log(

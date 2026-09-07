@@ -63,4 +63,48 @@ export const simctlDriver: Driver = {
   async install(target: Target, file: string): Promise<void> {
     await exec("xcrun", ["simctl", "install", target.id, file], { timeout: 120_000 });
   },
+  /**
+   * Launch the runner with the collector's address in its environment.
+   *
+   * `simctl launch` passes any `SIMCTL_CHILD_`-prefixed variable through to the
+   * launched process with the prefix stripped, which is the only mechanism a
+   * simulator offers that does not involve typing into it.
+   *
+   * `--terminate-running-process` for the same reason adb needs `-S`: a runner
+   * that is already up would otherwise be brought to the foreground with its
+   * old collector still configured, which looks exactly like an enrolment that
+   * worked.
+   *
+   * The runner reads `FLEET_URL` and `FLEET_DEVICE_ID` from its environment on
+   * every appearance, so a re-launch with a different address takes effect
+   * without a reinstall -- which is how a shelf is moved between collectors.
+   *
+   * PARTLY VERIFIED. The app was built and its plist confirmed; the launch
+   * itself has never been run, because no simulator was booted on the machine
+   * this was written on.
+   */
+  async enrol(target: Target, opts: { url: string; deviceId?: string }): Promise<void> {
+    const env: Record<string, string> = { SIMCTL_CHILD_FLEET_URL: opts.url };
+    if (opts.deviceId) env.SIMCTL_CHILD_FLEET_DEVICE_ID = opts.deviceId;
+    await exec(
+      "xcrun",
+      ["simctl", "launch", "--terminate-running-process", target.id, bundleFor(target.platform)],
+      { timeout: 60_000, env: { ...process.env, ...env } },
+    );
+  },
 };
+
+/**
+ * The runner's bundle identifier for a platform, as project.yml declares them.
+ *
+ * One source tree, three products, three identifiers -- so an Apple TV
+ * simulator asked for the iOS bundle simply has no such app. Unknown platforms
+ * fall back to iOS, which is the only one that could be right.
+ */
+function bundleFor(platform: string): string {
+  return (
+    { ios: "com.taylab.fleetrunner", tvos: "com.taylab.fleetrunner.tv", visionos: "com.taylab.fleetrunner.vision" }[
+      platform
+    ] ?? "com.taylab.fleetrunner"
+  );
+}

@@ -21,6 +21,7 @@
  *    weeks without ever being handed a web-test.
  */
 import { readdirSync, readFileSync } from "node:fs";
+import { bundledRun } from "./static.js";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { WorkloadManifest, WorkloadRun } from "./types.js";
@@ -112,6 +113,14 @@ export function discoverWorkloads(
  * to resolve.
  */
 export async function loadRun(w: LoadedWorkload): Promise<WorkloadRun> {
+  // The bundle's copy first, when there is one. In a checkout the two are the
+  // same module and this only saves a path resolution; in a bundled executor
+  // there is no `w.entry` on disk to import at all, and this is the only path
+  // that works. Preferring it in both places means the bundled route is the one
+  // that gets exercised every day rather than only in a release.
+  const bundled = await bundledRun(w.manifest.name);
+  if (bundled) return bundled;
+
   const mod = (await import(pathToFileURL(w.entry).href)) as { run?: unknown };
   if (typeof mod.run !== "function") {
     throw new Error(`workload "${w.manifest.name}" does not export a run function from ${w.entry}`);

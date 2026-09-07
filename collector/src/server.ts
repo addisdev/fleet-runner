@@ -6,13 +6,19 @@ import { rename, unlink } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
 import path from "node:path";
-import { db } from "./db.js";
+import { closeDb, db, isUniqueViolation, openDb } from "./db.js";
 import { renderDash, renderBench } from "./dash.js";
 import { cronMatches, isValidCron, minuteKey } from "./cron.js";
 import { evalMatch, isValidMatch } from "./match.js";
+import { identity } from "./identity.js";
+import { APP_VERSION } from "./version.js";
+import { advertise, type Advertised } from "./discovery.js";
+import { pathToFileURL } from "node:url";
 import {
   ARTIFACT_DIR,
   BIND,
+  DISCOVERY,
+  freezeConfig,
   DATA_DIR,
   GITHUB_API,
   GITHUB_STATUS_ARMED,
@@ -41,7 +47,6 @@ import { registerRunnerWeb } from "./runner-web.js";
 import { startPowerSampler } from "./power.js";
 import { endMirror } from "./api/mirror.js";
 
-mkdirSync(ARTIFACT_DIR, { recursive: true });
 
 /** Every fleet-state change fans out to connected dashboards and drops the
  *  overview's short cache. Called after the write commits, never inside a
@@ -49,6 +54,20 @@ mkdirSync(ARTIFACT_DIR, { recursive: true });
 function announce(event: { type: string; [k: string]: unknown }) {
   invalidateOverview();
   publish(event);
+}
+
+/**
+ * This collector's stable id, read once.
+ *
+ * The claim path needs it on every claim in order to tell "busy for me" from
+ * "busy for somebody else", and `identity()` is a file read. Resolved lazily
+ * rather than at module load because the data directory is not decided until
+ * `configure()` has run.
+ */
+let collectorId: string | null = null;
+function myCollectorId(): string {
+  if (collectorId === null) collectorId = identity(DATA_DIR).id;
+  return collectorId;
 }
 
 const LONG_POLL_S = 25;
@@ -175,6 +194,9 @@ const WORKLOADS = new Set([
   "llm-eval",
   // Wave 7: the app under test, from angles a pass/fail suite does not cover.
   "size-report", "upgrade-test",
+  // The brain reaching the device, for every screen with no keyboard worth
+  // using. See src/workloads/enrol/.
+  "enrol",
 ]);
 
 function touchDevice(deviceId: string) {
@@ -305,6 +327,51 @@ export function constraintsSatisfied(
   return true;
 }
 
+/**
+ * Whether this device is currently running a job for a *different* collector.
+ *
+ * A device can register with several brains -- that is the whole point of
+ * multi-homing -- but it is one piece of hardware and it runs one job at a
+ * time. The agent enforces that on its side with a claim gate; this is the
+ * other half, and it exists so the queue does not have to find out by handing
+ * over a job and having it handed straight back.
+ *
+ * The signal rides on the beacon rather than on a new endpoint, for the same
+ * reason `preempt` and `lease_renewed` do: the agent is already beaconing every
+ * sixty seconds to every brain it knows, and a device that has gone silent is
+ * a device whose claims about itself have expired anyway.
+ *
+ * Three things are deliberate:
+ *
+ * - **A stale beacon does not block.** Past BEACON_TRUST_S the claim is no
+ *   longer evidence of anything, and the failure mode of trusting it would be a
+ *   device that took one job from another brain, was unplugged, and then never
+ *   claimed anything here again.
+ * - **Our own id never blocks.** If the busy claim names this collector, it is
+ *   this collector's own job and the lease machinery already governs it.
+ *   Treating it as "busy elsewhere" would mean a device could never claim a
+ *   second job from the brain it is already working for.
+ * - **A busy claim with no collector named blocks anyway.** An agent that says
+ *   it is busy and cannot say for whom is still busy, and the conservative
+ *   reading costs a claim the device would have bounced.
+ */
+function busyElsewhere(
+  beacon: Record<string, unknown> | null,
+  beaconAgeS: number | null,
+  myCollectorId: string,
+): { job_id: string | null; collector: string | null } | null {
+  if (beaconAgeS !== null && beaconAgeS > BEACON_TRUST_S) return null;
+  const sample = (beacon?.beacon ?? beacon) as Record<string, unknown> | null | undefined;
+  const busy = sample?.busy as { job_id?: unknown; collector?: unknown } | undefined;
+  if (!busy || typeof busy !== "object") return null;
+  const collector = typeof busy.collector === "string" ? busy.collector : null;
+  if (collector !== null && collector === myCollectorId) return null;
+  return {
+    job_id: typeof busy.job_id === "string" ? busy.job_id : null,
+    collector,
+  };
+}
+
 /** Everything about a claimant a job spec can be judged against: the pools and
  *  capabilities it works under, the descriptor a `targets.match` expression
  *  reads, and the last beacon the collector-side constraints are measured
@@ -395,6 +462,12 @@ const claimTx = db.transaction((executor: "device" | "host", claimant: string): 
     if (locked) return null;
   }
   const ctx = claimantContext(executor, claimant);
+  // And a device already working for another brain is not available to this
+  // one. Checked here rather than after the match expression on purpose: this
+  // is a fact about the hardware, not a narrowing of which jobs suit it, and a
+  // job that "matched but was not offered" is easier to reason about than one
+  // that was offered and bounced.
+  if (executor === "device" && busyElsewhere(ctx.beacon, ctx.beaconAgeS, myCollectorId()) !== null) return null;
   // Priority first, then age. A job promoted from the dashboard jumps the queue
   // without anyone falsifying its created_at.
   const rows = db
@@ -812,8 +885,7 @@ app.post("/jobs", async (req, reply) => {
       dependsOn, depState.status, depState.status === "failed" ? depState.reason : null,
     );
   } catch (e: unknown) {
-    if ((e as { code?: string }).code === "SQLITE_CONSTRAINT_PRIMARYKEY")
-      return reply.code(409).send({ error: "job_id already exists" });
+    if (isUniqueViolation(e)) return reply.code(409).send({ error: "job_id already exists" });
     throw e;
   }
   announce({ type: "job", job_id: spec.job_id, status: depState.status, workload: spec.workload, executor: spec.executor });
@@ -822,6 +894,75 @@ app.post("/jobs", async (req, reply) => {
 
 // Runs on a timer too; exposed so an operator (or the smoke test) can force a
 // pass instead of waiting out the interval.
+/**
+ * Hand a claimed job back, before doing any of it.
+ *
+ * This is what makes multi-homing safe, and it exists because of a race that
+ * cannot be closed on the agent's side alone.
+ *
+ * An agent registered with two brains long-polls both. Brain A answers `200`
+ * with a job; the agent takes it and aborts its poll to brain B. But B may
+ * already have answered `200` in the microseconds before the abort landed, and
+ * that job is now claimed by a socket nobody is reading. Left alone it sits in
+ * `claimed` until the lease sweep finds it, which is ten minutes by default and
+ * four hours for a `drain` -- and it comes back having burned an attempt, so
+ * three such races retire the job permanently.
+ *
+ * So the agent says so instead. A release is not a failure and not a
+ * cancellation:
+ *
+ * - the job goes back to `queued`, immediately claimable by anything
+ * - **`attempts` is decremented**, because being handed a job you could not
+ *   take is not evidence that the job is flaky, and counting it would exhaust
+ *   `max_attempts` on a job that never once misbehaved -- the same reasoning
+ *   preemption already uses
+ * - `last_error` records that it happened, so a job that keeps being released
+ *   is visible rather than merely slow
+ *
+ * Refused once any result row exists for the job, which is the line between
+ * "handed back" and "abandoned half-done": a runner that has already reported
+ * an iteration must close the job properly rather than pretend it never had it.
+ *
+ * Additive, like everything else in this protocol version. An agent that never
+ * calls it behaves exactly as agents did before, and pays the lease sweep for
+ * the race instead.
+ */
+const releaseTx = db.transaction((jobId: string, claimant: string | null) => {
+  const job = db
+    .prepare("SELECT status, claimed_by, attempts FROM jobs WHERE job_id = ?")
+    .get(jobId) as { status: string; claimed_by: string | null; attempts: number } | undefined;
+  if (!job) return { ok: false as const, why: "no such job" };
+  if (job.status !== "claimed") return { ok: false as const, why: `job is ${job.status}, not claimed` };
+  // Only the holder may hand it back. Without this any caller could return
+  // another agent's running job to the queue, which on an unauthenticated API
+  // is a denial of service with one curl.
+  if (claimant !== null && job.claimed_by !== null && job.claimed_by !== claimant) {
+    return { ok: false as const, why: `job is claimed by ${job.claimed_by}` };
+  }
+  const reported = db.prepare("SELECT 1 FROM results WHERE job_id = ? LIMIT 1").get(jobId);
+  if (reported) return { ok: false as const, why: "results have already been posted for this job" };
+
+  db.prepare(
+    `UPDATE jobs SET status = 'queued', claimed_by = NULL, claimed_at = NULL,
+                     lease_deadline = NULL, attempts = MAX(attempts - 1, 0),
+                     last_error = 'released by ' || ? || ' before starting'
+     WHERE job_id = ?`,
+  ).run(job.claimed_by ?? "the claimant", jobId);
+  db.prepare("DELETE FROM device_locks WHERE job_id = ?").run(jobId);
+  return { ok: true as const, was: job.claimed_by };
+});
+
+app.post("/jobs/:id/release", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const body = (req.body ?? {}) as { device_id?: string };
+  const out = releaseTx(id, typeof body.device_id === "string" ? body.device_id : null);
+  if (!out.ok) {
+    return reply.code(out.why === "no such job" ? 404 : 409).send({ error: out.why });
+  }
+  announce({ type: "job", job_id: id, status: "queued", released_by: out.was });
+  return { ok: true, job_id: id, status: "queued" };
+});
+
 app.post("/jobs/sweep", async () => {
   const swept = sweepLeases();
   return {
@@ -1385,7 +1526,57 @@ app.post("/api/alerts/tick", async (req, reply) => {
   return { ok: true, opened: (await alertTick()).map((a) => a.id) };
 });
 
-app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" }).then(() => {
+// --- starting and stopping ---------------------------------------------
+//
+// This used to be a bare `app.listen(...)` at the bottom of the file, which
+// made the collector a script and nothing else. A brain that a desktop app
+// switches on and off, and a test that wants a collector of its own, both need
+// it to be a thing you call.
+//
+// The routes above still register at module scope, and that is deliberate: one
+// process runs one collector, the Fastify app is its route table, and turning
+// that into a factory would be a thousand lines of churn to support something
+// nobody needs. What had to become callable is the part with side effects --
+// the socket, the four timers, and the directory the artifacts go in.
+
+/** Everything `listen()` started, so `close()` can stop exactly that. */
+const running: {
+  timers: NodeJS.Timeout[];
+  extraServers: ReturnType<typeof createServer>[];
+  listening: boolean;
+  advertisement: Advertised | null;
+} = { timers: [], extraServers: [], listening: false, advertisement: null };
+
+/**
+ * Start the collector: bind, sweep once, and set the four timers going.
+ *
+ * Resolves once the socket is accepting, so a caller that is about to run a
+ * job against it does not have to poll `/api/health`.
+ */
+export async function listen(): Promise<{ port: number; addresses: string[]; id: string; name: string }> {
+  if (running.listening) throw new Error("this collector is already listening");
+  // After this, config.configure() refuses -- half these values are read once
+  // here and half on every request, and a late change would apply to some and
+  // not others.
+  freezeConfig();
+  mkdirSync(ARTIFACT_DIR, { recursive: true });
+  // Explicit rather than left to the first query's lazy open, so a broken data
+  // directory fails here, with a stack that names it, instead of inside
+  // whichever request happened to arrive first.
+  openDb(DATA_DIR);
+  const me = identity(DATA_DIR);
+
+  try {
+    await app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" });
+  } catch (e) {
+    // A collector that could not take its port must not keep its database open.
+    // On POSIX that is a leaked handle nobody notices; on Windows the file
+    // cannot then be deleted at all, which is how this was found -- the
+    // lifecycle check's own temp directory would not go away after it
+    // deliberately provoked a second `listen()`.
+    closeDb();
+    throw e;
+  }
   // Node binds one address per server, so every address after the first gets a
   // bare TCP listener whose connections are handed to the same HTTP server.
   // One Fastify app, one route table, several front doors.
@@ -1394,8 +1585,10 @@ app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" }).then(() => {
     extra.on("error", (e) => app.log.error(e, `bind ${host}:${PORT} failed`));
     extra.listen(PORT, host);
     extra.unref();
+    running.extraServers.push(extra);
   }
-  app.log.info(`fleet-collector listening on ${BIND.join(", ")}:${PORT}`);
+  running.listening = true;
+  app.log.info(`fleet-collector "${me.name}" (${me.id}) listening on ${BIND.join(", ")}:${PORT}`);
   if (BIND.includes("0.0.0.0") || BIND.includes("::")) {
     // Not an error: it is the default and it is right for a LAN-only fleet.
     // Said out loud because there is no authentication behind it, so the
@@ -1405,19 +1598,106 @@ app.listen({ port: PORT, host: BIND[0] ?? "0.0.0.0" }).then(() => {
         "set FLEET_BIND to loopback plus your tailnet address if agents roam",
     );
   }
+  // Announce this brain on the local link, when asked to. Off by default: a
+  // collector should not start advertising itself on somebody's office network
+  // because they upgraded, and the whole security posture here is that the
+  // network is the access control -- so what it announces to is a decision.
+  if (DISCOVERY) {
+    try {
+      running.advertisement = advertise({
+        id: me.id,
+        name: me.name,
+        port: PORT,
+        version: APP_VERSION,
+        log: (m) => app.log.info(m),
+      });
+    } catch (e) {
+      // A host with no multicast, or a socket the OS refused. Discovery is a
+      // convenience; a collector that would not start without it would be a
+      // collector that stops working on a network somebody locked down.
+      app.log.warn(`mDNS advertising is unavailable (${(e as Error).message}); agents will need the URL`);
+    }
+  }
+
   sweepLeases(); // catch claims that lapsed while the collector was down
   // Only samples pools whose power.json entry declares how to read watts, so a
   // fleet with no metering plugs starts exactly as before. Its timers are
   // unref'd, so this never holds the process open on its own.
   startPowerSampler({ log: app.log });
-  setInterval(sweepLeases, SWEEP_MS).unref();
-  setInterval(() => {
-    schedulerTick().catch((e) => app.log.error(e, "scheduler tick failed"));
-  }, SCHEDULER_TICK_MS).unref();
+  running.timers.push(setInterval(sweepLeases, SWEEP_MS).unref());
+  running.timers.push(
+    setInterval(() => {
+      schedulerTick().catch((e) => app.log.error(e, "scheduler tick failed"));
+    }, SCHEDULER_TICK_MS).unref(),
+  );
   // Evaluated on a slower cadence than the sweep: these are conditions
   // measured in minutes, and a tighter loop would only cost the little host CPU.
   alertTick().catch((e) => app.log.error(e, "alert tick failed"));
-  setInterval(() => {
-    alertTick().catch((e) => app.log.error(e, "alert tick failed"));
-  }, ALERT_TICK_MS).unref();
-});
+  running.timers.push(
+    setInterval(() => {
+      alertTick().catch((e) => app.log.error(e, "alert tick failed"));
+    }, ALERT_TICK_MS).unref(),
+  );
+  return { port: PORT, addresses: BIND, id: me.id, name: me.name };
+}
+
+/**
+ * Stop it again: timers cleared, sockets closed, database released.
+ *
+ * The timers are the part that matters. They are `unref`'d, so they never held
+ * the process open -- but an interval that survives a `close()` keeps sweeping
+ * leases against a database somebody else has since opened, which is a fine way
+ * to corrupt a test suite.
+ *
+ * **This is shutdown, not a pause.** A Fastify instance cannot be listened on
+ * again once closed, and the app above is a module singleton, so a second
+ * `listen()` in the same process throws. That is not a gap being worked around:
+ * one process runs one collector for its lifetime, and everything that wants to
+ * turn a brain off and on again -- `fleet up`, the desktop app's role switch --
+ * does it by stopping and starting the process, which is also what gives each
+ * one its own crash domain. What `close()` buys is that stopping it is *clean*:
+ * a supervisor's SIGTERM drains the sockets and releases the database instead
+ * of having them taken away by the kernel.
+ */
+export async function close(): Promise<void> {
+  // First, so that a browser running elsewhere drops this brain now rather than
+  // listing one that stopped minutes ago.
+  if (running.advertisement) {
+    await running.advertisement.stop().catch(() => {});
+    running.advertisement = null;
+  }
+  for (const t of running.timers) clearInterval(t);
+  running.timers = [];
+  for (const extra of running.extraServers) extra.close();
+  running.extraServers = [];
+  if (running.listening) {
+    await app.close();
+    running.listening = false;
+  }
+  closeDb();
+}
+
+/**
+ * Run as a program: `npm start`, and what `fleet collector` execs.
+ *
+ * Guarded so that importing this module -- which `fleet up` and the tests both
+ * do -- registers the routes without binding a socket. `pathToFileURL` rather
+ * than a string compare because this repository's own checkout lives under a
+ * directory with a space in it, and `file://.../Fleet Runner/...` is not a URL.
+ */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  listen().catch((e) => {
+    app.log.error(e, "fleet-collector failed to start");
+    process.exit(1);
+  });
+  // A supervisor stops a child with SIGTERM and expects it to go quietly.
+  // Without this the socket is dropped by the kernel and any in-flight
+  // long-poll is a broken pipe on an agent that did nothing wrong.
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      close()
+        .catch(() => {})
+        .finally(() => process.exit(0));
+    });
+  }
+}

@@ -27,7 +27,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 2
-        versionName = "0.2.0"
+        versionName = "0.5.0"
 
         ndk {
             // The fleet's LLM-capable devices are all arm64; 32-bit devices
