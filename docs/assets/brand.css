@@ -1,0 +1,87 @@
+/* The brand, as CSS, for every figure in this directory.
+   The numbers are docs/brand.md's; if the two disagree, brand.md is wrong.
+
+   A figure is an HTML file whose root element is .figure. It declares its own
+   size and its own charcoal ground, so the rendered image can be dropped on a
+   surface this repository does not control — GitHub in either theme, a slide,
+   a portfolio page — and still be legible. collector/scripts/render-assets.ts
+   screenshots that element at 2×. */
+
+:root {
+  --charcoal: #1C2025;
+  --panel: #242930;
+  --line: #3A414B;
+  --muted: #8A939D;
+  --text: #E8EAED;
+  --amber: #E3A44A;
+  --amber-dim: #8A6E3F;
+  --green: #4CAF50;
+
+  --display: "Bricolage Grotesque", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --mono: "IBM Plex Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+/* Self-hosted so the render is the same on every machine. Both families are
+   SIL OFL 1.1; the copies and their licences are in fonts/. */
+@font-face {
+  font-family: "Bricolage Grotesque";
+  font-weight: 600 700;
+  font-display: block;
+  src: url("fonts/BricolageGrotesque.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Sans";
+  font-weight: 400 500;
+  font-display: block;
+  src: url("fonts/IBMPlexSans.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 400;
+  font-display: block;
+  src: url("fonts/IBMPlexMono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-weight: 500;
+  font-display: block;
+  src: url("fonts/IBMPlexMono-500.woff2") format("woff2");
+}
+
+html, body { margin: 0; background: #0b0d10; }
+body { padding: 40px; }
+
+.figure {
+  position: relative;
+  background: var(--charcoal);
+  color: var(--text);
+  font-family: var(--body);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+/* The README and the social card are both this size at 1×. */
+.figure.wide { width: 1280px; height: 640px; }
+
+.figure svg { display: block; }
+.figure svg text { font-variant-numeric: tabular-nums; }
+
+/* Text roles inside inline SVG. Nothing in a figure is smaller than 14px,
+   because GitHub shows the README column at about a third of the rendered
+   width and 14px at 2× is the floor for reading it there. */
+.t-display { font-family: var(--display); font-weight: 700; fill: var(--text); }
+.t-title   { font-family: var(--display); font-weight: 600; fill: var(--text); font-size: 20px; }
+.t-body    { font-family: var(--body); fill: var(--muted); font-size: 15px; }
+.t-mono    { font-family: var(--mono); fill: var(--muted); font-size: 14px; }
+.t-mono-amber { font-family: var(--mono); fill: var(--amber); font-size: 14px; }
+.t-mono-light { font-family: var(--mono); fill: var(--text); font-size: 14px; }
+
+/* Line roles. */
+.l-structure { fill: none; stroke: var(--line); stroke-width: 1.5; }
+.l-panel     { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
+.l-protocol  { fill: none; stroke: var(--amber); stroke-width: 2; }
+.l-host      { fill: none; stroke: var(--amber); stroke-width: 2; stroke-dasharray: 6 6; }
+.l-cable     { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 3 5; }
+.l-device    { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.l-pulse     { fill: none; stroke: var(--amber); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
