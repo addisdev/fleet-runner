@@ -28,10 +28,34 @@ const step = (name: string) => console.log(`\n=== ${name}`);
 /** Run a command to completion; resolve false rather than throwing. */
 function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
   return new Promise<boolean>((resolve) => {
-    const p = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env: { ...process.env, ...opts.env }, stdio: "inherit" });
+    const p = spawn(onThisPlatform(cmd), args, {
+      cwd: opts.cwd ?? ROOT,
+      env: { ...process.env, ...opts.env },
+      stdio: "inherit",
+    });
     p.on("error", (e) => { console.error(`  cannot run ${cmd}: ${e.message}`); resolve(false); });
     p.on("exit", (code) => resolve(code === 0));
   });
+}
+
+/**
+ * What to actually exec for a command name, on this platform.
+ *
+ * On Windows `npm` is `npm.cmd`, and `spawn` without a shell will not find it:
+ * `spawn npm ENOENT`. That is what the collector's first ever Windows run
+ * reported -- from the dashboard build step, and only from that one, because it
+ * is the only step here that shells out to something other than node.
+ *
+ * Naming the `.cmd` rather than passing `shell: true`, which would be the other
+ * fix. A shell re-parses the whole command line, and this repository's own
+ * checkout lives under a directory with a space in it -- so the shell route
+ * trades a clear failure on one platform for a quoting bug on every platform.
+ */
+function onThisPlatform(cmd: string): string {
+  if (process.platform !== "win32") return cmd;
+  // Only bare names. An absolute path to node is already the right thing.
+  if (cmd.includes("/") || cmd.includes("\\")) return cmd;
+  return ["npm", "npx", "yarn", "pnpm"].includes(cmd) ? `${cmd}.cmd` : cmd;
 }
 
 /**
