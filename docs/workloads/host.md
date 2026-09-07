@@ -7,6 +7,70 @@ through a UI test is not something an app can do to itself.
 The executor runs wherever the devices are physically attached. See
 [Deploy](../deploy/index.md) for where it lives and what it needs on `PATH`.
 
+## `enrol`
+
+Tell every attached device which collector to talk to, without anybody typing
+an address.
+
+```json
+{ "workload": "enrol", "executor": "host",
+  "params": { "url": "http://fleet-host.local:8788" } }
+```
+
+The enrolment screen has always said the hard part is typing an address on a
+touch keyboard without a typo. A QR code answers that for a phone, because a
+phone has a camera. It answers nothing for a television, which has neither a
+camera nor a keyboard worth using, and a Roku remote has no text entry beyond an
+on-screen grid.
+
+There are two ways out: the device finds the brain, or the brain reaches the
+device. [Discovery](../deploy/index.md) is the first. This is the second, and it
+is the one that still works when multicast is blocked — which is guest wifi,
+most offices, and every Docker bridge network.
+
+Each driver knows its own mechanism:
+
+| Driver | How |
+|---|---|
+| `adb` | `am start -S --es base_url <url>` — the Android runner has read this since the shelf was built |
+| `simctl` | `simctl launch` with `SIMCTL_CHILD_FLEET_URL` |
+| `devicectl` | not implemented; a real device needs the `fleetrunner://join` URL scheme, which the iOS app does not have yet |
+| `roku` | `POST /launch/dev?fleet_url=<url>` over ECP |
+
+### It verifies, because all four fail silently
+
+This is the whole reason the workload is more than a shell script. Every one of
+those mechanisms reports success for a device that did not enrol: `am start`
+exits 0 and prints `Error type 3` when the package is not installed; a `simctl
+launch` succeeds against an app that ignores its environment; an ECP launch
+returns 200 for a channel that then cannot reach the address it was handed.
+
+So a device's result row is **"it registered with that collector within the
+window"**, or the reason it did not — and the reason names which half failed,
+the launch or the registration after it. Ninety seconds by default,
+`params.wait_s` to change it.
+
+Registration is detected by watching for a device id that was not in the
+registry before. Not by name: the runner chooses its own id and nothing outside
+the device can predict it — a Roku's is `GetChannelClientId()`, a per-publisher
+value ECP does not expose. The cost is that an unrelated device registering
+during the window would be credited to this enrolment, which on a shelf being
+deliberately enrolled is a fair trade for a check that works at all.
+
+!!! warning "A loopback address is refused"
+
+    Omitting `params.url` uses the collector this executor claims from, which is
+    usually right. If that is `127.0.0.1`, the job fails immediately rather than
+    enrolling a shelf onto an address no other device can reach — a failure that
+    otherwise looks like a network problem for days. Pass the LAN or tailnet
+    address explicitly.
+
+**Status: the launch path has never been run against a device.** No Android
+device was attached and no simulator was booted on the machine this was written
+on. What is tested is every path that decides *not* to enrol: the loopback
+refusal, no targets, a driver with no mechanism, and one device's failure not
+stopping the others.
+
 ## `install`
 
 One artifact onto every attached device — `adb install` on Android,

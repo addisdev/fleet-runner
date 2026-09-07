@@ -67,4 +67,37 @@ export const adbDriver: Driver = {
   async install(target: Target, file: string): Promise<void> {
     await exec(ADB, ["-s", target.id, "install", "-r", file], { timeout: 120_000 });
   },
+  /**
+   * Launch the runner with the collector's address as an intent extra.
+   *
+   * This is the only one of the four enrolment paths that needed no new code
+   * anywhere: `MainActivity` has read `--es base_url` since the shelf was
+   * built, so that a whole shelf could be moved to a new collector without
+   * rebuilding the app. What was missing was something on the host that sent
+   * it.
+   *
+   * `-S` stops the app first. An activity that is already running gets
+   * `onNewIntent` rather than `onCreate`, and the runner reads its extras in
+   * `onCreate` -- so without this, re-pointing a device that is already running
+   * would appear to do nothing at all.
+   */
+  async enrol(target: Target, opts: { url: string; deviceId?: string }): Promise<void> {
+    const args = [
+      "-s", target.id, "shell", "am", "start", "-S",
+      "-n", `${RUNNER_PACKAGE}/${RUNNER_ACTIVITY}`,
+      "--es", "base_url", opts.url,
+    ];
+    if (opts.deviceId) args.push("--es", "device_id", opts.deviceId);
+    const { stdout } = await exec(ADB, args, { timeout: 30_000 });
+    // `am start` exits 0 and prints `Error type 3` when the activity does not
+    // exist, which is what a device with no runner installed looks like. A
+    // silent success there would enrol nothing and report that it had.
+    if (/Error type|does not exist|Activity class .* does not exist/i.test(stdout)) {
+      throw new Error(`the runner is not installed on ${target.id} (${stdout.trim().split("\n")[0]})`);
+    }
+  },
 };
+
+/** The runner's package and activity, as the Android project declares them. */
+const RUNNER_PACKAGE = "com.taylab.fleetrunner";
+const RUNNER_ACTIVITY = ".MainActivity";

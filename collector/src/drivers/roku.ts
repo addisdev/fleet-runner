@@ -328,6 +328,26 @@ export async function rokuDevices(timeoutMs = DISCOVERY_MS): Promise<RokuDevice[
   return Promise.all(endpoints.map((e) => fetchDeviceInfo(e, timeoutMs)));
 }
 
+/**
+ * The address to reach a target on, re-resolved by discovery.
+ *
+ * The target id cannot be relied on for this. A Roku that reported a serial is
+ * `roku-<serial>`, which carries no address at all -- deliberately, because a
+ * serial is stable across a DHCP lease and an address is not. So enrolling one
+ * means asking the network again, which costs one M-SEARCH and is the correct
+ * answer rather than a workaround: a device whose address changed between
+ * discovery and enrolment is exactly the case a cached address gets wrong.
+ */
+async function targetHost(target: Target): Promise<string> {
+  const found = (await rokuDevices()).find((d) => rokuTargetId(d) === target.id);
+  if (found) return found.ip;
+  // The id-derived fallback, which is right for a device that never reported a
+  // serial and is all there is for one that has gone quiet.
+  const fromId = /^roku-ip-(\d+)-(\d+)-(\d+)-(\d+)$/.exec(target.id);
+  if (fromId) return `${fromId[1]}.${fromId[2]}.${fromId[3]}.${fromId[4]}`;
+  throw new Error(`cannot find ${target.id} on this network any more`);
+}
+
 export const rokuDriver: Driver = {
   name: "roku",
   describes: "Roku players and Roku TVs on this network, over SSDP and ECP (discovery only -- no install)",
@@ -354,4 +374,47 @@ export const rokuDriver: Driver = {
   // does not do, and writing that with no hardware to test it against would
   // produce something that looks finished and is not.
   // `runner-roku/build.sh --install <ip>` does it with `curl --digest`.
+
+  /**
+   * Launch the dev channel with the collector's address as a query parameter.
+   *
+   * ECP takes no authentication -- `POST /launch/dev` on port 8060 is open to
+   * anything on the network, which is Roku's design and not this project's --
+   * so this is one unauthenticated POST. The channel reads the parameters in
+   * `main(args)` and writes them to its registry, which is why it never needs
+   * the on-screen keyboard.
+   *
+   * `dev` is the sideloaded channel's fixed id; a Roku holds exactly one.
+   *
+   * UNVERIFIED, like everything else about the Roku path: no hardware here, and
+   * no emulator exists. The request shape is from Roku's ECP documentation and
+   * matches what `runner-roku/source/main.brs` reads.
+   */
+  async enrol(target: Target, opts: { url: string; deviceId?: string }): Promise<void> {
+    const host = await targetHost(target);
+    const params = new URLSearchParams({ fleet_url: opts.url });
+    if (opts.deviceId) params.set("device_id", opts.deviceId);
+    // Home first. A channel that is already in the foreground is not re-launched
+    // by ECP, so without this, re-pointing a running channel does nothing --
+    // the same trap adb's `-S` and simctl's `--terminate-running-process` avoid.
+    await fetch(`http://${host}:8060/keypress/Home`, {
+      method: "POST",
+      signal: AbortSignal.timeout(5_000),
+    }).catch(() => {
+      // Best-effort. A Roku that will not take a keypress will not take a
+      // launch either, and the launch below is where that gets reported.
+    });
+    const res = await fetch(`http://${host}:8060/launch/dev?${params.toString()}`, {
+      method: "POST",
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      // 404 here is the specific and common case: no dev channel is sideloaded.
+      throw new Error(
+        res.status === 404
+          ? `no dev channel on ${host}: sideload it first with runner-roku/build.sh --install ${host}`
+          : `ECP launch failed on ${host}: HTTP ${res.status}`,
+      );
+    }
+  },
 };

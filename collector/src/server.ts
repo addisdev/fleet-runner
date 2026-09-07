@@ -194,6 +194,9 @@ const WORKLOADS = new Set([
   "llm-eval",
   // Wave 7: the app under test, from angles a pass/fail suite does not cover.
   "size-report", "upgrade-test",
+  // The brain reaching the device, for every screen with no keyboard worth
+  // using. See src/workloads/enrol/.
+  "enrol",
 ]);
 
 function touchDevice(deviceId: string) {

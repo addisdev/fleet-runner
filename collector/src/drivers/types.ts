@@ -58,4 +58,23 @@ export type Driver = {
    * `file` is a path on this host: an APK, or an unpacked .app bundle.
    */
   install?(target: Target, file: string): Promise<void>;
+  /**
+   * Point an already-installed runner at a collector, without anybody typing.
+   *
+   * The enrolment screen has always said the hard part is typing an address on
+   * a touch keyboard without a typo. A QR code solves that for a phone, because
+   * a phone has a camera. It solves nothing for a television, which has neither
+   * a camera nor a keyboard worth using, and a Roku remote has no text entry
+   * beyond an on-screen grid.
+   *
+   * So the brain reaches the device instead. Every platform already has a way
+   * to hand a launching app a parameter -- an intent extra, an environment
+   * variable, a URL scheme, a query string -- and this is that, per driver.
+   *
+   * Absent on a driver that has no such mechanism, which is a real case rather
+   * than an oversight. `enrol` reports "this driver cannot" as a result row per
+   * device, which is the honest answer and tells the operator to use the QR
+   * code instead.
+   */
+  enrol?(target: Target, opts: { url: string; deviceId?: string }): Promise<void>;
 };

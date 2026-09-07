@@ -1,0 +1,27 @@
+{
+  "name": "enrol",
+  "capability": "devices",
+  "executor": "host",
+  "description": "Point every attached device's runner at a collector, without anybody typing an address.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "The collector address to enrol devices onto. Omitted means the collector this executor is claiming from, which is almost always what you want."
+      },
+      "device_id_prefix": {
+        "type": "string",
+        "description": "Give each device an id of `<prefix>-<target id>` instead of letting the runner choose. Rarely wanted: a runner's own id is stable across reinstalls and this is not."
+      },
+      "wait_s": {
+        "type": "number",
+        "description": "How long to wait for each device to appear in the registry before calling the enrolment failed. Default 90."
+      }
+    }
+  },
+  "example": {
+    "params": { "url": "http://fleet-host.local:8788" }
+  }
+}

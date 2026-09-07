@@ -63,4 +63,41 @@ export const simctlDriver: Driver = {
   async install(target: Target, file: string): Promise<void> {
     await exec("xcrun", ["simctl", "install", target.id, file], { timeout: 120_000 });
   },
+  /**
+   * Launch the runner with the collector's address in its environment.
+   *
+   * `simctl launch` passes any `SIMCTL_CHILD_`-prefixed variable through to the
+   * launched process with the prefix stripped, which is the only mechanism a
+   * simulator offers that does not involve typing into it.
+   *
+   * `--terminate-running-process` for the same reason adb needs `-S`: a runner
+   * that is already up would otherwise be brought to the foreground with its
+   * old collector still configured, which looks exactly like an enrolment that
+   * worked.
+   *
+   * UNVERIFIED. The environment is passed correctly -- that is simctl's
+   * documented behaviour -- but nothing in the iOS runner reads FLEET_URL yet.
+   * It reads `@AppStorage("base_url")`, which a launch environment does not
+   * touch. Until the app is taught to, this enrols nothing and the workload
+   * will report that the device never registered.
+   */
+  async enrol(target: Target, opts: { url: string; deviceId?: string }): Promise<void> {
+    const env: Record<string, string> = { SIMCTL_CHILD_FLEET_URL: opts.url };
+    if (opts.deviceId) env.SIMCTL_CHILD_FLEET_DEVICE_ID = opts.deviceId;
+    await exec(
+      "xcrun",
+      ["simctl", "launch", "--terminate-running-process", target.id, RUNNER_BUNDLE_ID],
+      { timeout: 60_000, env: { ...process.env, ...env } },
+    );
+  },
 };
+
+/**
+ * The iOS/tvOS runner's bundle identifier, as project.yml declares it.
+ *
+ * The tvOS target is `.tv` and the visionOS one `.vision`; this is the iOS one,
+ * and enrolling an Apple TV simulator with it will fail to find the app. Left
+ * as the single common case rather than a lookup table, because a table with
+ * three untested entries is three ways to be wrong instead of one.
+ */
+const RUNNER_BUNDLE_ID = "com.taylab.fleetrunner";

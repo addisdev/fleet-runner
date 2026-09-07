@@ -27,6 +27,7 @@ import type { WorkloadRun } from "./types.js";
 type Loader = () => Promise<{ run?: unknown }>;
 
 export const BUNDLED: Record<string, Loader> = {
+  enrol: () => import("./enrol/index.js"),
   install: () => import("./install/index.js"),
   "size-report": () => import("./size-report/index.js"),
   "upgrade-test": () => import("./upgrade-test/index.js"),
