@@ -29,7 +29,7 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 
 ## What is in here
 
-Four projects in one repository. They ship independently and share no code —
+Five projects in one repository. They ship independently and share no code —
 only a JSON protocol — but they are versioned together, because the protocol is
 the thing that breaks and a change to it touches three of them at once.
 
@@ -40,6 +40,7 @@ the thing that breaks and a change to it touches three of them at once.
 | **[runner-ios/](runner-ios)** | The iOS agent. SwiftUI, with llama.cpp and Core ML backends, speaking the same JSON protocol without sharing a line of code. |
 | **[runner-machine/](runner-machine)** | The desktop agent. A Node process that makes a laptop or desktop a fleet device, so a phone's tok/s and a laptop's land in the same table. |
 | **[collector/runner-web/](collector/runner-web)** | The browser agent. One HTML file the collector serves at `/runner`: opening it enrols the browser that opened it. A smart TV, a console, a Chromebook — anything with no way to install a signed app. |
+| **[runner-roku/](runner-roku)** | The Roku agent. A SceneGraph channel in BrightScript, so a streaming player or a Roku TV is a fleet device. It has never been run on a Roku, and it has never been compiled — there is no emulator — so read its README before you read a number from it. |
 
 Each directory has its own README, its own tests and its own CI job, filtered by
 path so a change to a phone runner does not build the dashboard.
@@ -87,10 +88,11 @@ installing an APK or tapping through a UI test is not something an app can do
 to itself.
 
 "Phone" is no longer the whole story. An agent declares what platform it runs
-and what shape it is, so the same four projects cover Android phones, tablets,
+and what shape it is, so these five projects cover Android phones, tablets,
 TV sticks, headsets and watches; iPhone, iPad and Apple TV; macOS, Linux and
-Windows machines; and any browser at all. Which of those have actually been
-watched to register, and which are only believed to work, is
+Windows machines; Roku players and Roku TVs; and any browser at all. Which of
+those have actually been watched to register, and which are only believed to
+work, is
 **[docs/platforms.md](docs/platforms.md)** — with an honest column, because a
 list of platforms a project "supports" is worth very little.
 
@@ -106,7 +108,7 @@ something a runner can do without the collector shipping a release.
 
 Four hand-written implementations of one protocol stay honest because there is
 a test for it. `npm run conformance -- --device <id>` drives a running agent
-through eight clauses — every one of them something that has actually gone
+through nine clauses — every one of them something that has actually gone
 wrong here — including recomputing the synthetic backend's block digest from
 the written specification, so "identical token for token" is checkable rather
 than asserted.

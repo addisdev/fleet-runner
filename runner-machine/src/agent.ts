@@ -62,7 +62,8 @@ export type AgentOptions = {
 export type RunningAgent = {
   deviceId: string;
   capabilities: string[];
-  collector: string;
+  /** Every brain this agent registered with, in the order it was given them. */
+  collectors: string[];
   /**
    * Whether this agent was in the registry by the time startAgent resolved.
    * False means the collector was not reachable yet and the claim loop is still
@@ -170,28 +171,40 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
   const pools =
     opts.pools ?? (process.env.FLEET_POOLS ?? "machines").split(",").map((s) => s.trim()).filter(Boolean);
   const log = opts.log ?? ((msg: string) => console.log(`[${deviceId}] ${msg}`));
-  const bases = opts.collectors ?? [process.env.FLEET_URL ?? DEFAULT_BASE];
-
-  // Multi-homing is a real feature with a protocol change behind it -- an
-  // agent registered with two brains must never hold two claims, which needs a
-  // way to hand a job back that neither the collector nor this agent has yet.
-  // Until that exists, a second collector here would be silently ignored, and
-  // an agent that quietly does half of what it was asked is worse than one that
-  // says it cannot.
-  if (bases.length !== 1) {
-    throw new Error(
-      `this agent registers with exactly one collector, not ${bases.length}` +
-        " (multi-homing needs the claim gate and POST /jobs/:id/release)",
-    );
-  }
-  const client = new CollectorClient(bases[0]);
+  const bases = [
+    ...new Set(
+      (opts.collectors ?? (process.env.FLEET_URL ?? DEFAULT_BASE).split(",").map((b) => b.trim()).filter(Boolean)),
+    ),
+  ];
+  if (bases.length === 0) throw new Error("an agent needs at least one collector to register with");
+  const clients = bases.map((b) => new CollectorClient(b));
 
   let descriptor: Descriptor | null = null;
   let capabilities: string[] = ["benchmark"];
-  let currentJobId: string | null = null;
   let stopped = false;
 
-  async function register(): Promise<void> {
+  /**
+   * The claim gate: this agent runs one job at a time, whoever asked.
+   *
+   * A device can belong to several fleets -- that is the point of registering
+   * with more than one brain -- but it is one piece of hardware, and two
+   * benchmarks running at once produce two numbers that are both wrong. So
+   * everything below funnels through this.
+   *
+   * `heldBy` is the collector whose job is running, and `busy` is what every
+   * OTHER collector is told on its next beacon so that its queue stops offering
+   * work. The collector-side half of that is `busyElsewhere` in server.ts;
+   * neither half is sufficient alone, because the beacon is up to a minute old
+   * and the gate here is instantaneous.
+   */
+  const gate: {
+    heldBy: CollectorClient | null;
+    jobId: string | null;
+    /** Aborted once, at shutdown, so no poll outlives `stop()`. */
+    polls: AbortController;
+  } = { heldBy: null, jobId: null, polls: new AbortController() };
+
+  async function register(client: CollectorClient): Promise<void> {
     descriptor = await describe();
     await client.register({
       device_id: deviceId,
@@ -202,7 +215,19 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
     });
   }
 
-  async function beaconLoop(): Promise<void> {
+  /**
+   * One beacon loop per collector.
+   *
+   * Every brain this agent knows gets told the same three things every sixty
+   * seconds: how the hardware is, whether its own job's lease should be
+   * renewed, and -- if this agent is working for somebody else -- who.
+   *
+   * The last of those is what keeps a second brain from queueing work behind a
+   * device it cannot have. Without it, the brain whose job is NOT running sees
+   * a healthy, idle-looking device and keeps handing it jobs that get released
+   * a moment later.
+   */
+  async function beaconLoop(client: CollectorClient): Promise<void> {
     let last = Date.now();
     while (!stopped) {
       const now = Date.now();
@@ -211,8 +236,8 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
       // a suspend is what makes the machine reconnect without a restart; the
       // long-poll's own 40 s deadline handles the socket.
       if (now - last > WAKE_GAP_MS) {
-        log(`resumed after ${Math.round((now - last) / 1000)}s asleep; re-registering`);
-        await register().catch(() => {});
+        log(`resumed after ${Math.round((now - last) / 1000)}s asleep; re-registering with ${client.base}`);
+        await register(client).catch(() => {});
       }
       last = now;
 
@@ -224,22 +249,32 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
           await sleep(1000);
           continue;
         }
-        const jobId = currentJobId;
+        const mine = gate.heldBy === client ? gate.jobId : null;
+        const sample = await beacon();
+        // Told only to the collectors that are NOT running it. To the one that
+        // is, the job_id above is already the whole story, and repeating it as
+        // `busy` would be an agent describing its own claim back to the brain
+        // that granted it.
+        const busy =
+          gate.jobId !== null && gate.heldBy !== client
+            ? { job_id: gate.jobId, collector: gate.heldBy?.base ?? null }
+            : undefined;
+
         const renewed = await client.postBeacon({
           schema: SCHEMA, kind: "beacon", device_id: deviceId,
-          job_id: jobId ?? undefined, // renews the running job's lease
-          beacon: await beacon(),
+          job_id: mine ?? undefined, // renews the running job's lease
+          beacon: busy ? { ...sample, busy } : sample,
         });
         // An explicit false means the claim is gone — cancelled from the
         // dashboard, or swept — so tell the workload to stop. Only that answer
         // counts: an unreachable collector or a non-2xx throws to the catch
         // below, and a throw is not a cancellation.
-        if (jobId !== null && !renewed) {
-          log(`lease not renewed for ${jobId}; cancelling at the next iteration boundary`);
-          JobCancellation.cancel(jobId);
+        if (mine !== null && !renewed) {
+          log(`lease not renewed for ${mine}; cancelling at the next iteration boundary`);
+          JobCancellation.cancel(mine);
         }
       } catch {
-        // Best-effort: the agent loop owns error reporting.
+        // Best-effort: the claim loop owns error reporting.
       }
       await sleep(BEACON_INTERVAL_MS);
     }
@@ -253,7 +288,7 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
    * honest error row rather than silence, which is what the job detail page
    * needs in order to say why nothing happened.
    */
-  async function dispatch(job: JobSpec): Promise<void> {
+  async function dispatch(job: JobSpec, client: CollectorClient): Promise<void> {
     const device = descriptor ?? (await describe());
     const route = routeFor(job.workload);
     if (route) {
@@ -267,58 +302,134 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
     });
   }
 
-  async function claimLoop(alreadyRegistered: boolean): Promise<void> {
+  /**
+   * Take a claim, or give it straight back.
+   *
+   * The gate is held from the instant a job is accepted until the instant it
+   * finishes, and the check-and-set here is synchronous -- there is no `await`
+   * between reading `gate.heldBy` and writing it, so two concurrent claim loops
+   * on the same event loop cannot both pass.
+   *
+   * The loser hands the job back rather than queueing it. Holding it would mean
+   * this agent had two claims, which is the one thing the gate exists to
+   * prevent; dropping it silently would leave it `claimed` until a lease sweep,
+   * with an attempt burnt.
+   *
+   * ## Why the losing poll is not aborted
+   *
+   * The first version of this aborted every other collector's in-flight poll
+   * the instant a claim was taken, on the theory that a shorter window is a
+   * smaller race. It is the opposite. A poll that has *already been answered*
+   * -- the brain has run its claim transaction and the job row says `claimed`
+   * -- is one whose response is in flight, and aborting it throws the job away
+   * without anyone knowing it existed. Measured, that is exactly what happened:
+   * two brains, two jobs, one ran and the other sat `claimed` forever with no
+   * runner and no release, because the abort landed between the claim and the
+   * response.
+   *
+   * So the losing poll is allowed to finish, and its job comes back here to be
+   * handed over. Waiting out a long poll costs nothing: the loop is not doing
+   * anything else, and the check at the top of it stops any NEW poll while a
+   * job is running.
+   */
+  async function takeOrRelease(client: CollectorClient, job: JobSpec): Promise<boolean> {
+    if (gate.heldBy !== null) {
+      log(`released ${job.job_id} back to ${client.base}: already running ${gate.jobId}`);
+      await client.releaseJob(job.job_id, deviceId);
+      return false;
+    }
+    gate.heldBy = client;
+    gate.jobId = job.job_id;
+    return true;
+  }
+
+  function releaseGate(): void {
+    gate.heldBy = null;
+    gate.jobId = null;
+  }
+
+  /**
+   * One claim loop per collector, all sharing the gate.
+   *
+   * Each loop is otherwise exactly the single-collector loop that was here
+   * before: register, long-poll, claim, check constraints, run, report.
+   */
+  async function claimLoop(client: CollectorClient, alreadyRegistered: boolean): Promise<void> {
     // startAgent may have registered already, so that it could resolve only
     // after this agent exists in the registry. Re-registering here on the first
     // pass would then be a harmless upsert and a confusing pair of identical log
     // lines; every LATER pass is a reconnect, where re-registering is the point.
-    // When the initial attempts all failed, this loop owns the first one too.
     let registered = alreadyRegistered;
     while (!stopped) {
       try {
         if (!registered) {
           log(`re-registering with ${client.base}`);
-          await register();
-          log(`registered; capabilities: ${capabilities.join(", ")}`);
+          await register(client);
+          log(`registered with ${client.base}; capabilities: ${capabilities.join(", ")}`);
         }
         registered = false;
 
         while (!stopped) {
-          const job = await client.nextJob(deviceId);
-          if (!job) continue;
-          log(`claimed ${job.job_id} (${job.workload}/${job.backend ?? "synthetic"})`);
-
-          const refusal = await constraintError(job);
-          if (refusal) {
-            await client.postResult({
-              schema: SCHEMA, kind: "result", job_id: job.job_id, device_id: deviceId,
-              iter: 0, final: true, ok: false, device: descriptor ?? undefined, error: refusal,
-            });
-            log(`rejected ${job.job_id}: ${refusal}`);
+          // While another collector's job is running, this loop stops asking.
+          // The brain has been told `busy` and should not be offering anyway;
+          // this is the belt to that braces, and it costs nothing.
+          if (gate.heldBy !== null) {
+            await sleep(1_000);
             continue;
           }
-
-          currentJobId = job.job_id;
-          const release = holdAwake(log);
+          let job: JobSpec | null = null;
           try {
-            await dispatch(job);
-          } finally {
-            release();
-            currentJobId = null;
-            JobCancellation.clear(job.job_id);
+            job = await client.nextJob(deviceId, gate.polls.signal);
+          } catch (e) {
+            // The only abort is `stop()`, which the loop condition handles.
+            if (gate.polls.signal.aborted || (e as Error).name === "AbortError") continue;
+            throw e;
           }
-          log(`finished ${job.job_id}`);
+          if (!job) continue;
+
+          if (!(await takeOrRelease(client, job))) continue;
+          log(`claimed ${job.job_id} (${job.workload}/${job.backend ?? "synthetic"}) from ${client.base}`);
+
+          try {
+            const refusal = await constraintError(job);
+            if (refusal) {
+              await client.postResult({
+                schema: SCHEMA, kind: "result", job_id: job.job_id, device_id: deviceId,
+                iter: 0, final: true, ok: false, device: descriptor ?? undefined, error: refusal,
+              });
+              log(`rejected ${job.job_id}: ${refusal}`);
+              continue;
+            }
+
+            const release = holdAwake(log);
+            try {
+              await dispatch(job, client);
+            } finally {
+              release();
+              JobCancellation.clear(job.job_id);
+            }
+            log(`finished ${job.job_id}`);
+          } finally {
+            // In a `finally` so that a throw out of the workload -- a network
+            // failure mid-report, say -- cannot leave this agent permanently
+            // convinced it is busy, which would take it out of every fleet it
+            // belongs to until somebody restarted it.
+            releaseGate();
+          }
         }
       } catch (e) {
         if (stopped) return;
-        log(`error: ${(e as Error).message} — retrying in ${ERROR_BACKOFF_MS / 1000}s`);
+        log(`error from ${client.base}: ${(e as Error).message} — retrying in ${ERROR_BACKOFF_MS / 1000}s`);
         await sleep(ERROR_BACKOFF_MS);
       }
     }
   }
 
-  log(`fleet-runner-machine ${APP_VER} on ${process.platform}/${process.arch}, collector ${client.base}`);
-  if (client.base === DEFAULT_BASE && !process.env.FLEET_URL && !opts.collectors) {
+  log(
+    `fleet-runner-machine ${APP_VER} on ${process.platform}/${process.arch}, ` +
+      `collector${clients.length > 1 ? "s" : ""} ${bases.join(", ")}`,
+  );
+  if (bases.length === 1 && bases[0] === DEFAULT_BASE && !process.env.FLEET_URL && !opts.collectors) {
     log("FLEET_URL unset; using the loopback default");
   }
   capabilities = await probeCapabilities();
@@ -338,28 +449,36 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
   // forever, which is the behaviour a shelf device has always had. What the
   // caller loses is the guarantee that registration has already happened, and
   // it is told so rather than left to infer it.
-  let registeredNow = false;
-  for (const wait of [0, 500, 1_000, 2_000, 4_000, 8_000]) {
-    if (wait) await sleep(wait);
-    try {
-      await register();
-      registeredNow = true;
-      break;
-    } catch (e) {
-      if (wait === 8_000) {
-        log(`could not register with ${client.base} yet (${(e as Error).message}); the claim loop keeps trying`);
+  const registeredWith = new Set<CollectorClient>();
+  await Promise.all(
+    clients.map(async (client) => {
+      for (const wait of [0, 500, 1_000, 2_000, 4_000, 8_000]) {
+        if (wait) await sleep(wait);
+        try {
+          await register(client);
+          registeredWith.add(client);
+          return;
+        } catch (e) {
+          if (wait === 8_000) {
+            log(`could not register with ${client.base} yet (${(e as Error).message}); its claim loop keeps trying`);
+          }
+        }
       }
-    }
+    }),
+  );
+  if (registeredWith.size > 0) {
+    log(`registered with ${[...registeredWith].map((c) => c.base).join(", ")}; capabilities: ${capabilities.join(", ")}`);
   }
-  if (registeredNow) log(`registered; capabilities: ${capabilities.join(", ")}`);
-  void beaconLoop();
-  void claimLoop(registeredNow);
+  for (const client of clients) {
+    void beaconLoop(client);
+    void claimLoop(client, registeredWith.has(client));
+  }
 
   return {
     deviceId,
     capabilities,
-    collector: client.base,
-    registered: registeredNow,
+    collectors: bases,
+    registered: registeredWith.size > 0,
     /**
      * Stop claiming and stop beaconing.
      *
@@ -371,6 +490,9 @@ export async function startAgent(opts: AgentOptions = {}): Promise<RunningAgent>
      */
     stop: () => {
       stopped = true;
+      // Ends every in-flight long poll, so `stop()` takes effect now rather
+      // than in up to forty seconds when the last one times out.
+      gate.polls.abort();
     },
   };
 }

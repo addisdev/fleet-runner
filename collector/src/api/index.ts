@@ -15,6 +15,7 @@ import { registerEvals } from "./evals.js";
 import { registerJobs } from "./jobs.js";
 import { registerMutations } from "./mutations.js";
 import { registerOverview } from "./overview.js";
+import { registerPeers } from "./peers.js";
 import { registerResults } from "./results.js";
 import { registerStream } from "./stream.js";
 import { registerSystem } from "./system.js";
@@ -41,6 +42,7 @@ export function registerApi(app: FastifyInstance, announce: Announce, matchingDe
   registerEvals(app);
   registerSystem(app);
   registerVisual(app);
+  registerPeers(app);
   registerStream(app);
   registerMutations(app, announce, matchingDevices);
 

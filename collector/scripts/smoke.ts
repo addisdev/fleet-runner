@@ -2621,5 +2621,134 @@ runDbChecks(check);
   check("an empty frame is refused", empty.status === 400, `status=${empty.status}`);
 }
 
+// --- handing a claim back, and knowing about other brains -----------------
+//
+// The multi-homing pair. `POST /jobs/:id/release` is what closes the race two
+// brains create; `/api/peers` is how a dashboard shows more than one fleet.
+{
+  const DEV = `smoke-release-${Date.now()}`;
+  const JOB = `smoke-release-job-${Date.now()}`;
+  await json("POST", "/devices/register", {
+    device_id: DEV,
+    descriptor: { model: "release-test", os: "linux", platform: "linux", kind: "ci" },
+    pools: ["smoke-release"],
+    capabilities: ["benchmark"],
+  });
+  await json("POST", "/jobs", {
+    schema: 1, job_id: JOB, workload: "benchmark", executor: "device", backend: "synthetic",
+    params: { prompt_tokens: 8, gen_tokens: 4, measure_iters: 1 },
+    targets: { device_id: DEV },
+  });
+
+  // Not claimed yet: releasing is a 409 rather than a quiet success, because a
+  // release that "worked" on a queued job would hide a real bug in an agent.
+  const early = await json("POST", `/jobs/${JOB}/release`);
+  check("releasing a job nobody claimed is refused", early.status === 409, `status=${early.status}`);
+
+  const claimed = await json("GET", `/devices/${DEV}/next-job`);
+  check("the device claims it", claimed.status === 200 && claimed.body?.job_id === JOB, `status=${claimed.status}`);
+  const afterClaim = await json("GET", `/jobs/${JOB}`);
+  check("one attempt has been spent", afterClaim.body?.attempts === 1, String(afterClaim.body?.attempts));
+
+  // Somebody else's device must not be able to hand back this claim. On an
+  // unauthenticated API that would be a denial of service with one curl.
+  const impostor = await json("POST", `/jobs/${JOB}/release`, { device_id: "somebody-else" });
+  check("only the claimant may release it", impostor.status === 409, `status=${impostor.status}`);
+
+  const released = await json("POST", `/jobs/${JOB}/release`, { device_id: DEV });
+  check("the claimant may release it", released.status === 200, JSON.stringify(released.body));
+  const afterRelease = await json("GET", `/jobs/${JOB}`);
+  check("a released job is queued again", afterRelease.body?.status === "queued", String(afterRelease.body?.status));
+  // The point of the whole endpoint. Being handed a job you could not take is
+  // not evidence the job is flaky, and charging for it would retire a perfectly
+  // good job after three races.
+  check(
+    "and the attempt is handed back with it",
+    afterRelease.body?.attempts === 0,
+    String(afterRelease.body?.attempts),
+  );
+  check("with a reason recorded", /released by/.test(afterRelease.body?.last_error ?? ""), afterRelease.body?.last_error);
+
+  const reclaimed = await json("GET", `/devices/${DEV}/next-job`);
+  check("a released job is immediately claimable again", reclaimed.body?.job_id === JOB, String(reclaimed.status));
+
+  // Once a result exists it is no longer a release, it is an abandonment.
+  await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: JOB, device_id: DEV, iter: 1, metrics: { decode_tok_s: 1 },
+  });
+  const tooLate = await json("POST", `/jobs/${JOB}/release`, { device_id: DEV });
+  check("a job that has reported cannot be released", tooLate.status === 409, `status=${tooLate.status}`);
+  await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: JOB, device_id: DEV, iter: 0, final: true, ok: true, metrics: {},
+  });
+
+  const missing = await json("POST", "/jobs/no-such-job-at-all/release");
+  check("releasing a job that does not exist is a 404", missing.status === 404, `status=${missing.status}`);
+}
+
+// --- a device busy for another brain is not offered work ------------------
+{
+  const DEV = `smoke-busy-${Date.now()}`;
+  const JOB = `smoke-busy-job-${Date.now()}`;
+  await json("POST", "/devices/register", {
+    device_id: DEV,
+    descriptor: { model: "busy-test", os: "linux", platform: "linux", kind: "ci" },
+    pools: ["smoke-busy"],
+    capabilities: ["benchmark"],
+  });
+  // The beacon says this device is working for a collector that is not this one.
+  await json("POST", "/results", {
+    schema: 1, kind: "beacon", device_id: DEV,
+    beacon: { battery_pct: 100, charging: true, busy: { job_id: "elsewhere-1", collector: "0123456789abcdef" } },
+  });
+  await json("POST", "/jobs", {
+    schema: 1, job_id: JOB, workload: "benchmark", executor: "device", backend: "synthetic",
+    params: { prompt_tokens: 8, gen_tokens: 4, measure_iters: 1 },
+    targets: { device_id: DEV },
+  });
+  const offered = await json("GET", `/devices/${DEV}/next-job`);
+  check(
+    "a device busy for another brain is not offered work",
+    offered.status === 204,
+    `status=${offered.status} body=${JSON.stringify(offered.body)}`,
+  );
+  check("and the job stays queued rather than failing", (await json("GET", `/jobs/${JOB}`)).body?.status === "queued");
+
+  const shown = await json("GET", `/api/devices/${DEV}`);
+  // Visible on the device row, because "busy elsewhere" and "idle and nothing
+  // is offering it work" look identical otherwise and are opposite problems.
+  check(
+    "the dashboard can see who it is busy for",
+    shown.body?.beacon?.busy?.collector === "0123456789abcdef",
+    JSON.stringify(shown.body?.beacon?.busy),
+  );
+
+  // And it becomes claimable the moment it says it is free.
+  await json("POST", "/results", {
+    schema: 1, kind: "beacon", device_id: DEV, beacon: { battery_pct: 100, charging: true },
+  });
+  const nowOffered = await json("GET", `/devices/${DEV}/next-job`);
+  check("and is offered work again once it is free", nowOffered.body?.job_id === JOB, `status=${nowOffered.status}`);
+  await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: JOB, device_id: DEV, iter: 0, final: true, ok: true, metrics: {},
+  });
+}
+
+// --- peers ---------------------------------------------------------------
+{
+  const peers = await json("GET", "/api/peers");
+  check("the peers endpoint answers", peers.status === 200, `status=${peers.status}`);
+  check("and names this brain", /^[0-9a-f]{16}$/.test(peers.body?.self?.id ?? ""), JSON.stringify(peers.body?.self));
+  // None configured in the smoke run, which is the default and the common case.
+  check("with no peers configured, the list is empty", Array.isArray(peers.body?.peers) && peers.body.peers.length === 0);
+
+  const notAPeer = await json("GET", "/api/peers/0000000000000000/overview");
+  check("an unknown peer id is a 404 rather than a fetch", notAPeer.status === 404, `status=${notAPeer.status}`);
+  // The allow-list is what stops the next endpoint somebody adds being exposed
+  // by default, so it is checked in the refusing direction.
+  const notProxyable = await json("GET", "/api/peers/0000000000000000/stream");
+  check("a non-proxyable path is refused before any peer lookup", notProxyable.status === 403, `status=${notProxyable.status}`);
+}
+
 console.log(failures === 0 ? "\nsmoke: ALL PASS" : `\nsmoke: ${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

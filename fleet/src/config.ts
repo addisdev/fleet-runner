@@ -158,6 +158,7 @@ export function childEnv(
       set("FLEET_TAILNET_ALLOWLIST", config.collector.tailnetAllowlist.join(","));
     }
     if (config.name) set("FLEET_NAME", config.name);
+    if (config.peers.length > 0) set("FLEET_PEERS", config.peers.join(","));
   }
 
   if (role === "agent") {

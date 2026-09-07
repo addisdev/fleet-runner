@@ -89,6 +89,65 @@ published eval actually demonstrates, on a 3922 MB emulator.
 named executor; unset stays permissive, so anything not pinned is claimable by
 whichever executor is free.
 
+## Belonging to more than one fleet
+
+An agent may register with several collectors. Two people with two collectors
+can share a shelf; a laptop can be a device on the fleet at home and on the one
+at work; a machine running `fleet up --join <url>` is a brain in its own right
+whose agent also answers to somebody else's.
+
+What that does **not** mean is worth saying first, because the restraint is the
+design:
+
+- Collectors do not share a database, forward jobs, replicate results, or elect
+  anything. A job enqueued on brain A is A's job and lands in A's database,
+  whatever device ran it.
+- A brain knows another brain only as an address to read. See
+  [the peers API](api.md#peers-are-read-and-read-through-this-collector).
+
+The whole of multi-homing is on the device side, and it is one rule: **a device
+runs one job at a time, whoever asked.** Two benchmarks running at once produce
+two numbers that are both wrong, which is the failure this exists to prevent
+rather than a tidiness argument.
+
+Three mechanisms enforce it, and none of them is sufficient alone.
+
+| | Where | What it covers |
+|---|---|---|
+| The claim gate | in the agent | Instantaneous. A second job is refused the moment it arrives |
+| [`busy` on the beacon](protocol.md#busy-if-you-belong-to-more-than-one-fleet) | agent → every other brain | Stops the other queues offering at all, within a beacon interval |
+| [`POST /jobs/:id/release`](protocol.md#handing-a-job-straight-back) | agent → the brain that lost | Cleans up the race the first two cannot close |
+
+### The race, and why the obvious fix is wrong
+
+An agent long-polls every brain it knows. Brain A answers with a job. In the
+microseconds before the agent can stop asking, B may already have answered too
+— and B's job is now `claimed` by a socket nobody is reading.
+
+The obvious fix is to abort the other polls the instant a claim is taken. **It
+makes things worse, measurably.** A poll that has already been answered — the
+brain has run its claim transaction, the row says `claimed`, the response is in
+flight — is one whose job is thrown away by an abort, with no runner and no
+release. Tested, that is exactly what happened: one job ran and the other sat
+`claimed` forever.
+
+So the losing poll is allowed to finish, and the job it returns is handed back
+with `release`. Waiting out a long poll costs nothing; the loop is not doing
+anything else, and it does not start a new poll while a job is running.
+
+### What a runner has to implement
+
+If your agent registers with one collector, **nothing here applies** and none of
+it is required. If it registers with several:
+
+1. Never hold two claims. Check and set your gate with no `await` in between.
+2. Send `busy` to the brains whose job you are not running.
+3. Release a job you cannot take, and treat a 404 from that endpoint as
+   ordinary — it means the collector predates it, and the lease sweep is the
+   old behaviour.
+
+Clause 9 of the conformance suite checks all three.
+
 ## Leases
 
 A claim is a lease, not a permanent handoff. Without one, a runner that dies

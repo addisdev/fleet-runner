@@ -34,6 +34,14 @@ export type Settings = {
   dashDist: string;
   /** Off by default; `fleet up` turns it on. See src/discovery.ts. */
   discovery: boolean;
+  /**
+   * Other collectors this one knows about, for the dashboard's all-brains view.
+   *
+   * A list of addresses and nothing more: peers are read, never written to, and
+   * never forwarded jobs. See src/api/peers.ts for why that restraint is the
+   * design rather than a limitation.
+   */
+  peers: string[];
   /** This brain's display name. Null means "read it from the data directory". */
   name: string | null;
 };
@@ -98,6 +106,7 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): Settings {
     // Advertising over mDNS is opt-in: a collector on a shared network should
     // not announce itself because somebody upgraded.
     discovery: env.FLEET_DISCOVERY === "1",
+    peers: list(env.FLEET_PEERS),
     name: env.FLEET_NAME ?? null,
   };
 }
@@ -145,6 +154,7 @@ export let GITHUB_API: string;
 export let LOG_FILE: string;
 export let DASH_DIST: string;
 export let DISCOVERY: boolean;
+export let PEERS: string[];
 export let NAME: string | null;
 
 function apply(): void {
@@ -162,6 +172,7 @@ function apply(): void {
   LOG_FILE = settings.logFile;
   DASH_DIST = settings.dashDist;
   DISCOVERY = settings.discovery;
+  PEERS = settings.peers;
   NAME = settings.name;
 }
 

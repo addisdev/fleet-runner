@@ -56,6 +56,20 @@ function announce(event: { type: string; [k: string]: unknown }) {
   publish(event);
 }
 
+/**
+ * This collector's stable id, read once.
+ *
+ * The claim path needs it on every claim in order to tell "busy for me" from
+ * "busy for somebody else", and `identity()` is a file read. Resolved lazily
+ * rather than at module load because the data directory is not decided until
+ * `configure()` has run.
+ */
+let collectorId: string | null = null;
+function myCollectorId(): string {
+  if (collectorId === null) collectorId = identity(DATA_DIR).id;
+  return collectorId;
+}
+
 const LONG_POLL_S = 25;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -310,6 +324,51 @@ export function constraintsSatisfied(
   return true;
 }
 
+/**
+ * Whether this device is currently running a job for a *different* collector.
+ *
+ * A device can register with several brains -- that is the whole point of
+ * multi-homing -- but it is one piece of hardware and it runs one job at a
+ * time. The agent enforces that on its side with a claim gate; this is the
+ * other half, and it exists so the queue does not have to find out by handing
+ * over a job and having it handed straight back.
+ *
+ * The signal rides on the beacon rather than on a new endpoint, for the same
+ * reason `preempt` and `lease_renewed` do: the agent is already beaconing every
+ * sixty seconds to every brain it knows, and a device that has gone silent is
+ * a device whose claims about itself have expired anyway.
+ *
+ * Three things are deliberate:
+ *
+ * - **A stale beacon does not block.** Past BEACON_TRUST_S the claim is no
+ *   longer evidence of anything, and the failure mode of trusting it would be a
+ *   device that took one job from another brain, was unplugged, and then never
+ *   claimed anything here again.
+ * - **Our own id never blocks.** If the busy claim names this collector, it is
+ *   this collector's own job and the lease machinery already governs it.
+ *   Treating it as "busy elsewhere" would mean a device could never claim a
+ *   second job from the brain it is already working for.
+ * - **A busy claim with no collector named blocks anyway.** An agent that says
+ *   it is busy and cannot say for whom is still busy, and the conservative
+ *   reading costs a claim the device would have bounced.
+ */
+function busyElsewhere(
+  beacon: Record<string, unknown> | null,
+  beaconAgeS: number | null,
+  myCollectorId: string,
+): { job_id: string | null; collector: string | null } | null {
+  if (beaconAgeS !== null && beaconAgeS > BEACON_TRUST_S) return null;
+  const sample = (beacon?.beacon ?? beacon) as Record<string, unknown> | null | undefined;
+  const busy = sample?.busy as { job_id?: unknown; collector?: unknown } | undefined;
+  if (!busy || typeof busy !== "object") return null;
+  const collector = typeof busy.collector === "string" ? busy.collector : null;
+  if (collector !== null && collector === myCollectorId) return null;
+  return {
+    job_id: typeof busy.job_id === "string" ? busy.job_id : null,
+    collector,
+  };
+}
+
 /** Everything about a claimant a job spec can be judged against: the pools and
  *  capabilities it works under, the descriptor a `targets.match` expression
  *  reads, and the last beacon the collector-side constraints are measured
@@ -400,6 +459,12 @@ const claimTx = db.transaction((executor: "device" | "host", claimant: string): 
     if (locked) return null;
   }
   const ctx = claimantContext(executor, claimant);
+  // And a device already working for another brain is not available to this
+  // one. Checked here rather than after the match expression on purpose: this
+  // is a fact about the hardware, not a narrowing of which jobs suit it, and a
+  // job that "matched but was not offered" is easier to reason about than one
+  // that was offered and bounced.
+  if (executor === "device" && busyElsewhere(ctx.beacon, ctx.beaconAgeS, myCollectorId()) !== null) return null;
   // Priority first, then age. A job promoted from the dashboard jumps the queue
   // without anyone falsifying its created_at.
   const rows = db
@@ -826,6 +891,75 @@ app.post("/jobs", async (req, reply) => {
 
 // Runs on a timer too; exposed so an operator (or the smoke test) can force a
 // pass instead of waiting out the interval.
+/**
+ * Hand a claimed job back, before doing any of it.
+ *
+ * This is what makes multi-homing safe, and it exists because of a race that
+ * cannot be closed on the agent's side alone.
+ *
+ * An agent registered with two brains long-polls both. Brain A answers `200`
+ * with a job; the agent takes it and aborts its poll to brain B. But B may
+ * already have answered `200` in the microseconds before the abort landed, and
+ * that job is now claimed by a socket nobody is reading. Left alone it sits in
+ * `claimed` until the lease sweep finds it, which is ten minutes by default and
+ * four hours for a `drain` -- and it comes back having burned an attempt, so
+ * three such races retire the job permanently.
+ *
+ * So the agent says so instead. A release is not a failure and not a
+ * cancellation:
+ *
+ * - the job goes back to `queued`, immediately claimable by anything
+ * - **`attempts` is decremented**, because being handed a job you could not
+ *   take is not evidence that the job is flaky, and counting it would exhaust
+ *   `max_attempts` on a job that never once misbehaved -- the same reasoning
+ *   preemption already uses
+ * - `last_error` records that it happened, so a job that keeps being released
+ *   is visible rather than merely slow
+ *
+ * Refused once any result row exists for the job, which is the line between
+ * "handed back" and "abandoned half-done": a runner that has already reported
+ * an iteration must close the job properly rather than pretend it never had it.
+ *
+ * Additive, like everything else in this protocol version. An agent that never
+ * calls it behaves exactly as agents did before, and pays the lease sweep for
+ * the race instead.
+ */
+const releaseTx = db.transaction((jobId: string, claimant: string | null) => {
+  const job = db
+    .prepare("SELECT status, claimed_by, attempts FROM jobs WHERE job_id = ?")
+    .get(jobId) as { status: string; claimed_by: string | null; attempts: number } | undefined;
+  if (!job) return { ok: false as const, why: "no such job" };
+  if (job.status !== "claimed") return { ok: false as const, why: `job is ${job.status}, not claimed` };
+  // Only the holder may hand it back. Without this any caller could return
+  // another agent's running job to the queue, which on an unauthenticated API
+  // is a denial of service with one curl.
+  if (claimant !== null && job.claimed_by !== null && job.claimed_by !== claimant) {
+    return { ok: false as const, why: `job is claimed by ${job.claimed_by}` };
+  }
+  const reported = db.prepare("SELECT 1 FROM results WHERE job_id = ? LIMIT 1").get(jobId);
+  if (reported) return { ok: false as const, why: "results have already been posted for this job" };
+
+  db.prepare(
+    `UPDATE jobs SET status = 'queued', claimed_by = NULL, claimed_at = NULL,
+                     lease_deadline = NULL, attempts = MAX(attempts - 1, 0),
+                     last_error = 'released by ' || ? || ' before starting'
+     WHERE job_id = ?`,
+  ).run(job.claimed_by ?? "the claimant", jobId);
+  db.prepare("DELETE FROM device_locks WHERE job_id = ?").run(jobId);
+  return { ok: true as const, was: job.claimed_by };
+});
+
+app.post("/jobs/:id/release", async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const body = (req.body ?? {}) as { device_id?: string };
+  const out = releaseTx(id, typeof body.device_id === "string" ? body.device_id : null);
+  if (!out.ok) {
+    return reply.code(out.why === "no such job" ? 404 : 409).send({ error: out.why });
+  }
+  announce({ type: "job", job_id: id, status: "queued", released_by: out.was });
+  return { ok: true, job_id: id, status: "queued" };
+});
+
 app.post("/jobs/sweep", async () => {
   const swept = sweepLeases();
   return {
