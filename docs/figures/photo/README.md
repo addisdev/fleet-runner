@@ -4,7 +4,7 @@ Photographs the generated assets are built on. One file is expected here:
 
 | File | Used by |
 |---|---|
-| `shelf.jpg` | `assets/shelf-banner.html` → `img/shelf-banner.jpg`, and `assets/shelf-social.html` → `img/shelf-social.jpg` |
+| `shelf.jpg` | `figures/shelf-banner.html` → `img/shelf-banner.jpg`, and `figures/shelf-social.html` → `img/shelf-social.jpg` |
 
 Both figures declare `data-requires="photo/shelf.jpg"`, so `npm run assets`
 skips them with a message while the file is absent rather than rendering a hole

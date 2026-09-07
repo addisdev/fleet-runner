@@ -44,8 +44,8 @@ same line at a quarter of the size, not a different drawing.
 
 The docs site uses Inter and JetBrains Mono, which is what Material ships and
 what its layout is tuned for. Generated assets use the pairing above, from the
-copies in `assets/fonts/` — both families are SIL OFL, and
-[`assets/fonts/NOTICE.md`](https://github.com/addisdev/fleet-runner/blob/main/docs/assets/fonts/NOTICE.md)
+copies in `figures/fonts/` — both families are SIL OFL, and
+[`figures/fonts/NOTICE.md`](https://github.com/addisdev/fleet-runner/blob/main/docs/figures/fonts/NOTICE.md)
 says so properly.
 
 Numbers that line up in a column get `font-variant-numeric: tabular-nums`. A
@@ -58,25 +58,25 @@ Everything is rendered from source rather than drawn by hand, so it can be
 regenerated when the mark changes.
 
 The figures — the banner, the social card, the architecture diagram — are
-HTML files in [`docs/assets/`](https://github.com/addisdev/fleet-runner/tree/main/docs/assets),
-one per figure, each an inline SVG on the brand's tokens from `assets/brand.css`
-with the device outlines from `assets/symbols.js`. `npm run assets` in
+HTML files in [`docs/figures/`](https://github.com/addisdev/fleet-runner/tree/main/docs/figures),
+one per figure, each an inline SVG on the brand's tokens from `figures/brand.css`
+with the device outlines from `figures/symbols.js`. `npm run assets` in
 `collector/` opens each one in headless Chromium and screenshots it at 2× into
 `docs/img/`; `-- --only banner` does one. Playwright is already a collector
 dependency, so nothing new is installed.
 
 | Asset | Size | Source |
 |---|---|---|
-| `img/banner.png` | 2560×1280 | `assets/banner.html` |
-| `img/social-preview.png` | 2560×1280 (2× of GitHub's 1280×640) | `assets/social-preview.html` |
-| `img/architecture.png` | 2560×1280 | `assets/architecture.html` |
-| `img/lifecycle.png` | 2560×1360 | `assets/lifecycle.html` |
-| `img/protocol.png` | 2560×1120 | `assets/protocol.html` |
-| `img/workloads.png` | 2560×1200 | `assets/workloads.html` |
-| `img/platforms.png` | 2560×1400 | `assets/platforms.html` |
+| `img/banner.png` | 2560×1280 | `figures/banner.html` |
+| `img/social-preview.png` | 2560×1280 (2× of GitHub's 1280×640) | `figures/social-preview.html` |
+| `img/architecture.png` | 2560×1280 | `figures/architecture.html` |
+| `img/lifecycle.png` | 2560×1360 | `figures/lifecycle.html` |
+| `img/protocol.png` | 2560×1120 | `figures/protocol.html` |
+| `img/workloads.png` | 2560×1200 | `figures/workloads.html` |
+| `img/platforms.png` | 2560×1400 | `figures/platforms.html` |
 | `img/first-result.png`, `alerts.png`, `visual.png` | 1440 wide | `npm run shoot:dash` |
 | `img/fanout.gif` | 1280 wide, 18 s | `npm run shoot:motion` |
-| `img/shelf-banner.jpg`, `shelf-social.jpg` | 2560×1280, JPEG | `assets/shelf-banner.html`, `assets/shelf-social.html` — **skipped until [the photograph](#the-shelf-photograph) exists** |
+| `img/shelf-banner.jpg`, `shelf-social.jpg` | 2560×1280, JPEG | `figures/shelf-banner.html`, `figures/shelf-social.html` — **skipped until [the photograph](#the-shelf-photograph) exists** |
 | `img/overview.png`, `devices.png`, `jobs.png`, `results.png` | | Dashboard pages, captured with Playwright against a running collector |
 | `img/runner-web.png` | | `npm run shoot:runner-web`, against a throwaway collector |
 | `runner-ios/.../AppIcon.appiconset/icon-1024.png` | 1024×1024, no alpha | `img/icon-source.svg` |
@@ -87,7 +87,7 @@ dropped onto surfaces this repository does not control — the README in
 GitHub's light theme, a portfolio page, a slide. That is also why they are PNG
 rather than SVG: GitHub serves an SVG through a proxy as an image, so its web
 fonts never load and the text falls back to whatever the reader has installed.
-A PNG rendered with the self-hosted faces in `assets/fonts/` is the same on
+A PNG rendered with the self-hosted faces in `figures/fonts/` is the same on
 every machine and in CI.
 
 **Nothing in a figure is smaller than 14 px at 1×.** GitHub shows the README
@@ -139,7 +139,7 @@ that does not exist would be the same lie as an invented benchmark, and this
 project's whole argument is that it does not tell those.
 
 So the file is missing on purpose, and the pipeline is built to receive it.
-`assets/shelf-banner.html` and `assets/shelf-social.html` both declare
+`figures/shelf-banner.html` and `figures/shelf-social.html` both declare
 `data-requires="photo/shelf.jpg"`, so `npm run assets` skips them with a message
 until the photograph exists rather than rendering a hole.
 
@@ -163,7 +163,7 @@ until the photograph exists rather than rendering a hole.
 
 ### Using it
 
-1. Save it as `docs/assets/photo/shelf.jpg`.
+1. Save it as `docs/figures/photo/shelf.jpg`.
 2. `npm run assets` in `collector/`, which now also writes
    `img/shelf-banner.jpg` and `img/shelf-social.jpg`.
 3. In `README.md`, point the first image at `docs/img/shelf-banner.jpg`.

@@ -45,14 +45,18 @@ theme:
         icon: material/weather-sunny
         name: Switch to light mode
 
-# docs/assets/ holds the SOURCES the figures are rendered from — one HTML file
+# docs/figures/ holds the SOURCES the figures are rendered from — one HTML file
 # per figure, the brand stylesheet they share, the self-hosted fonts, and the
 # shelf photograph. They are inputs to `npm run assets`, not pages, and
 # publishing them shipped the figure markup into the site: the link check
 # caught it, because a figure that is skipped until its photograph exists
 # carries an <img> pointing at a file that is not there yet.
+#
+# The directory is `figures/` and not `assets/` because Material writes its own
+# theme stylesheets to site/assets/, and excluding `assets/` took those with it
+# — every page then linked a stylesheet the build no longer shipped.
 exclude_docs: |
-  assets/
+  figures/
 
 extra_css:
   - css/brand.css
