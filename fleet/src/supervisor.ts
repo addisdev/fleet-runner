@@ -81,6 +81,8 @@ export type ChildState = {
   gaveUpAt: Date | null;
   lastExit: { code: number | null; signal: string | null; at: Date } | null;
   startedAt: Date | null;
+  /** The pending backoff, so `stop()` can cancel a restart that has not fired. */
+  restartTimer: NodeJS.Timeout | null;
 };
 
 export type Supervisor = {
@@ -142,7 +144,9 @@ export function supervise(
   });
 
   for (const spec of specs) {
-    children.set(spec.name, { spec, process: null, restarts: 0, gaveUpAt: null, lastExit: null, startedAt: null });
+    children.set(spec.name, {
+      spec, process: null, restarts: 0, gaveUpAt: null, lastExit: null, startedAt: null, restartTimer: null,
+    });
     start(spec.name);
   }
 
@@ -201,7 +205,22 @@ export function supervise(
       }
 
       const delay = timings.backoffMs[Math.min(state.restarts - 1, timings.backoffMs.length - 1)];
-      setTimeout(() => start(name), delay).unref();
+      // NOT unref'd, and that is the whole point of a supervisor. Between a
+      // child dying and its restart there may be nothing else holding the event
+      // loop open -- no socket, no other child -- and an unref'd timer lets the
+      // process exit instead of restarting anything. The supervisor would end,
+      // silently, having decided to restart something and then not.
+      //
+      // It was unref'd, and CI found it on all three platforms at once: eight
+      // tests cancelled with "Promise resolution is still pending but the event
+      // loop has already resolved". `fleet up` masks it, because the collector's
+      // listening socket keeps the loop alive -- so this only ever bites the
+      // configuration with no brain in it, which is exactly a runner-only
+      // machine whose agent has just crashed.
+      state.restartTimer = setTimeout(() => {
+        state.restartTimer = null;
+        start(name);
+      }, delay);
     });
   }
 
@@ -209,6 +228,15 @@ export function supervise(
     children,
     async stop() {
       stopping = true;
+      // Before anything else: a pending restart is a live timer, and now that it
+      // is no longer unref'd it would hold the process open for its whole
+      // backoff after being asked to stop.
+      for (const c of children.values()) {
+        if (c.restartTimer) {
+          clearTimeout(c.restartTimer);
+          c.restartTimer = null;
+        }
+      }
       const alive = [...children.values()].filter((c) => c.process !== null);
       await Promise.all(
         alive.map(

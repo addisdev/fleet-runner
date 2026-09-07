@@ -29,7 +29,7 @@ import { createServer } from "node:net";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "../..");
@@ -106,8 +106,14 @@ test(
       // brain answering on two ports, which is not what is under test.
       assert.notEqual(healthA.collector, healthB.collector, "the two brains have different ids");
 
+      // pathToFileURL, not the bare path. On Windows an absolute path is
+      // `D:\\a\\...`, and the ESM loader reads the drive letter as a URL scheme:
+      // "Only URLs with a scheme in: file, data, and node are supported ...
+      // Received protocol 'd:'". This repository already knew that trap -- it is
+      // why every direct-run guard in the tree uses pathToFileURL -- and this
+      // test was written on a machine where it cannot happen.
       const { startAgent } = (await import(
-        path.join(ROOT, "runner-machine/src/agent.ts")
+        pathToFileURL(path.join(ROOT, "runner-machine/src/agent.ts")).href
       )) as typeof import("../../runner-machine/src/agent.js");
       agent = await startAgent({
         collectors: [A, B],

@@ -183,8 +183,37 @@ try {
   failed = true;
   console.error(`  ${(e as Error).message}`);
 } finally {
-  server?.kill("SIGTERM");
-  await rm(dir, { recursive: true, force: true });
+  // Wait for the collector to actually go before deleting its data directory.
+  //
+  // On Windows a killed process keeps its file handles until it exits, so the
+  // old `kill(); rm()` pair raced and failed with `EBUSY: resource busy or
+  // locked, unlink ...fleet.db` -- after the whole suite had passed, which is
+  // the worst possible place for a harness bug to live. POSIX unlinks a file
+  // that is still open perfectly happily, so this never showed up anywhere
+  // else, and the collector's first ever Windows run is what found it.
+  const child = server;
+  if (child && child.exitCode === null) {
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    child.kill("SIGTERM");
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 10_000))]);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }
+  // And retry the removal anyway. Windows can hold a handle for a moment past
+  // the process's own exit -- an antivirus scanner reading the file it just saw
+  // closed is the usual culprit -- and failing here would fail a suite that has
+  // already passed.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await rm(dir, { recursive: true, force: true });
+      break;
+    } catch (e) {
+      if (attempt >= 5) {
+        console.error(`  could not remove ${dir}: ${(e as Error).message}`);
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
 }
 
 console.log(failed ? "\nFAILED" : "\nALL PASS");
