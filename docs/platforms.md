@@ -176,16 +176,26 @@ part and this sits on the path to registration:
 | `gpu`, `vram_mb` | `Win32_VideoController` |
 | `kind` | `Win32_SystemEnclosure`, then `Win32_Battery` |
 
-Two things stayed deliberately null. `AdapterRAM` is a uint32, so every card
-with 4 GB or more reports the same saturated ceiling — reporting that as
-`4095` would let a match expression asking for 16000 skip the 24 GB machine
-that could have run the job, so the field says nothing instead. And `kind` on
-a hosted runner still reads `ci`, not the chassis answer: a container's
-hardware belongs to somebody else, and "this will be gone in four minutes" is
-the more useful fact.
+The same runner now reports:
 
-A hosted runner is a VM, so `model` reads something like `Virtual Machine`.
-That is a real answer, not a failure.
+```json
+{ "model": "Virtual Machine", "soc": "AMD EPYC 9V74 80-Core Processor",
+  "ram_mb": 16379, "os": "windows-10.0.26100",
+  "platform": "windows", "kind": "ci", "arch": "x64",
+  "gpu": "Microsoft Hyper-V Video", "vram_mb": null, "cpu_cores": 4 }
+```
+
+`os` and `ram_mb` answer, so a Windows machine can be selected by its OS and by
+its memory. A hosted runner is a VM, so `model` reads `Virtual Machine` — that
+is a real answer, not a failure.
+
+Two fields are null on purpose. `AdapterRAM` is a uint32, so every card with
+4 GB or more reports the same saturated ceiling; reporting that as `4095` would
+let a match expression asking for 16000 skip the 24 GB machine that could have
+run the job, so the field says nothing instead — and the Hyper-V synthetic
+adapter above has no dedicated memory to report either way. And `kind` still
+reads `ci` rather than the chassis answer: a container's hardware belongs to
+somebody else, and "this will be gone in four minutes" is the more useful fact.
 
 ## Adding one
 
