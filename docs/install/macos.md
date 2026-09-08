@@ -14,7 +14,9 @@ curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.
 
     The script itself has been exercised against locally built archives --
     checksum verified, a tampered archive refused, a re-install leaving
-    `config.json` and `data/` intact. It has never met a real release.
+    `config.json` and `data/` intact. It has since been run against the real
+    v0.5.0 release on macOS/arm64: the checksum verified and the installed
+    binary reported its version.
 
 **You need Node 22.13 or newer on `PATH`.** The release carries no runtime, by
 decision rather than oversight -- see [why](index.md#what-the-installers-do-and-what-they-refuse-to-do).

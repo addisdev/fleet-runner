@@ -33,10 +33,11 @@
 # fails to start without it, and `fleet doctor` says so in a sentence. An image
 # that needs them should install them in a layer of its own.
 #
-# STATUS: this file has never been built. Docker was not available on the
-# machine that wrote it, which is the same thing `docs/platforms.md` records
-# about runner-machine/Dockerfile. It is written from the layout `node
-# build.mjs` actually produces, which has been verified.
+# STATUS: built, never run. The release workflow built and pushed it for
+# linux/amd64 and linux/arm64 at v0.5.0, so the file is at least correct enough
+# to assemble. Nothing has started a container from it -- Docker was not
+# available on the machine that wrote it -- so whether `fleet up` actually comes
+# up inside one is unknown.
 
 # --- build the bundle ------------------------------------------------------
 FROM node:22-bookworm-slim AS build

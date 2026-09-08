@@ -96,14 +96,27 @@ What has actually been watched to work, on **macOS/arm64 and nowhere else**:
   it explicitly — without that, `SIGTERM` takes the default action and the process dies with
   sockets open and the database mid-write.
 
-What has not:
+Since v0.5.0, CI also runs this package's whole suite -- the supervisor, the config, the
+supervised `fleet up` end to end and the two-brain race -- on **Windows, Linux and macOS**,
+and builds the bundle and runs `fleet doctor` from it on each. That is coverage, not use:
+nobody has stood a fleet up on a Windows or Linux machine and worked with it.
 
-- **Never run on Windows or Linux.** Not the CLI, not the supervisor, not the bundle. The
-  paths, the process handling and the service backends for both are written and untested.
-- **`fleet service install` has never been run on any platform.** Not launchd, not systemd,
-  not the Windows scheduled task. Every path it writes is resolved absolutely and none of it
-  has been watched start at login.
-- **The install scripts have never been run against a real GitHub release**, because there is
-  no published release yet. They have been exercised against locally built archives only.
+The first three runs on those platforms failed, and everything they found is fixed: a
+supervisor backoff timer that was `unref`'d and so could skip a restart when nothing else
+held the event loop open, an absolute path imported as an ESM specifier (`Received protocol
+'d:'`), a database Windows would not unlink while a killed child still held it, `spawn("npm")`
+being ENOENT there and `spawn("npm.cmd")` being EINVAL, and a `node_modules/.bin` shim with
+no Windows equivalent.
+
+What has still not been run:
+
+- **`fleet service install`, on any platform.** Not launchd, not systemd, not the Windows
+  scheduled task. Every path it writes is resolved absolutely and none of it has been watched
+  start at login.
+- **A container.** `fleet/Dockerfile` is built and published by the release workflow for
+  linux/amd64 and linux/arm64, so it assembles; nothing has started a container from it.
+- **`install.ps1`.** No PowerShell was available to parse it, let alone run it. `install.sh`
+  *has* been run against the real v0.5.0 release on macOS/arm64: checksum verified, binary
+  installed and reporting its version.
 
 MIT — see [LICENSE](../LICENSE).

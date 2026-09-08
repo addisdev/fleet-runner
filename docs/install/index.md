@@ -10,36 +10,25 @@ fleet up
 Everything on this page is about getting `fleet` onto the machine so that you
 can type it.
 
-!!! warning "No release has been published yet, so `curl | sh` does not work"
+!!! note "It works now, and it did not when this page was written"
 
-    `install.sh` and `install.ps1` are written, and they have been exercised
-    against locally built archives -- checksum verified, a tampered archive
-    refused, a re-install leaving config and data intact. **Neither has ever
-    met a real GitHub release, because there is not one.** There are no tags,
-    no archives and no `SHASUMS256.txt` on the releases page.
+    v0.5.0 is published, so `install.sh` finds a release, verifies the download
+    against its `SHASUMS256.txt` and refuses to install if it does not match.
+    That has been run end to end on macOS/arm64 against the real release.
 
-    What actually happens if you run the one-liner today is that
-    `install.sh` asks `api.github.com` for the latest release, gets nothing back
-    that looks like a tag, and stops with:
-
-    ```
-    install.sh: could not work out the latest version from
-      https://api.github.com/repos/addisdev/fleet-runner/releases/latest.
-      Either there is no published release yet, or this address is rate limited.
-    ```
-
-    That is the correct behaviour and it is also a dead end. **Until a release
-    exists, build from a checkout** -- every platform page below has that path,
-    and on macOS it is the path that has actually been run.
+    `install.ps1` has still never been parsed by PowerShell, let alone run --
+    there was none on the machine that wrote it. The checkout path on every
+    platform page below stays, because it is the one that does not depend on any
+    of this.
 
 ## Pick your machine
 
 | | The one command | State |
 |---|---|---|
-| **[macOS](macos.md)** | `curl -fsSL …/install.sh \| sh` | The installer has never met a real release. **`fleet up` from a checkout and from a locally built bundle is the one path that has been watched to work**, on macOS/arm64 |
-| **[Windows](windows.md)** | `irm …/install.ps1 \| iex` | Installer untested against a release. **The `fleet` CLI has never been run on Windows at all** -- not the paths, not the process handling, not the service backend |
-| **[Linux](linux.md)** | `curl -fsSL …/install.sh \| sh` | Installer untested against a release. **The CLI has never been run on Linux either.** The machine agent's own suite passes on x64 and arm64 Linux in CI, which is a different claim |
-| **[Docker](docker.md)** | `docker run ghcr.io/addisdev/fleet` | **Neither Dockerfile has ever been built**, and no image has been pushed. Docker was not available on the machine that wrote them |
+| **[macOS](macos.md)** | `curl -fsSL …/install.sh \| sh` | Installed from the real v0.5.0 release, checksum verified, and the installed binary runs. **`fleet up` has been watched to work on macOS/arm64** |
+| **[Windows](windows.md)** | `irm …/install.ps1 \| iex` | `install.ps1` has never been parsed by PowerShell. The CLI's own suite -- supervisor, config, `fleet up` end to end -- passes on `windows-latest` in CI, but **nobody has stood a fleet up on a Windows machine**, and the service backend is untested |
+| **[Linux](linux.md)** | `curl -fsSL …/install.sh \| sh` | The installer is the same script macOS runs against the real release; it has not been run on Linux. The collector's and the CLI's suites pass on x64 and arm64 Linux in CI. **Nobody has stood a fleet up on one** |
+| **[Docker](docker.md)** | `docker run ghcr.io/addisdev/fleet` | Published for linux/amd64 and linux/arm64 at v0.5.0, so it builds. **No container has been started from it** |
 | **[Devices](devices.md)** | -- | How a phone, a television, a Roku or a browser joins a fleet that is already up |
 
 ## What the installers do, and what they refuse to do
