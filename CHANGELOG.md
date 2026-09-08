@@ -325,23 +325,27 @@ Everything in this list is written and reviewed and has not been run. It is
 collected here rather than scattered, because a reader deciding whether to trust
 this release needs the list.
 
-- **The `fleet` CLI has never run on Windows or Linux.** Not the CLI, not the
-  supervisor, not the bundle. The paths, the process handling and both service
-  backends are written and untested; `fleet.yml` declares a three-platform
-  matrix that has never executed. Everything that *has* been watched to work --
-  `fleet up` supervising a brain and an agent with a synthetic benchmark running
-  end to end through both, from a checkout and from the bundled release, clean
-  SIGTERM shutdown, mDNS discovery and `fleet join --discover` -- was on
-  macOS/arm64 and nowhere else.
+- **Nobody has run a fleet on Windows or Linux.** The suites do: `ci.yml` runs
+  the collector on Windows, Linux x64 and Linux arm64, and the `fleet` package's
+  own suite -- including the supervised `fleet up` end to end and the two-brain
+  race -- on all three platforms. That is not the same as somebody standing a
+  fleet up on one and using it. Everything that has been *watched* to work
+  -- `fleet up` supervising a brain and an agent from a checkout and from the
+  bundled release, clean SIGTERM shutdown, mDNS discovery and `fleet join
+  --discover` -- was on macOS/arm64.
 - **`fleet service install` has never been run on any platform.** Not launchd,
   not systemd, not the Windows scheduled task. No path it writes has been watched
   to start at login.
-- **Neither Dockerfile has ever been built**, and no image has been pushed.
-  Docker was not available on the machine that wrote them.
-- **The install scripts have never met a real GitHub release**, because none
-  exists. They were exercised against locally built archives: checksum verified,
-  a tampered archive refused, a re-install leaving config and data intact.
-- **`release.yml` has never run.** The first tag is the first run.
+- **`fleet/Dockerfile` is built but never run.** The release workflow built and
+  pushed `ghcr.io/addisdev/fleet` for linux/amd64 and linux/arm64, so it
+  assembles; no container has been started from it, so the entrypoint, the
+  volume, the health check and the non-root user are all untested.
+  `runner-machine/Dockerfile`, the agent-only image, is not built at all.
+- **The install scripts were exercised against locally built archives** --
+  checksum verified, a tampered archive refused, a re-install leaving config and
+  data intact -- and `install.sh` has since been run against the real v0.5.0
+  release on macOS/arm64. `install.ps1` has still never been parsed by
+  PowerShell, let alone run.
 - **No signing, notarisation, winget, Scoop or Homebrew.** Each is omitted with a
   comment saying why, rather than referencing a secret that does not exist and
   failing from the first tag. macOS will quarantine an archive downloaded in a

@@ -28,7 +28,7 @@ that says which ones somebody has watched register is worth something.
 | **Apple TV (tvOS)** | `runner-ios`, `FleetRunnerTV` target | `devicectl` or `simctl` | **builds** — `xcodebuild -scheme FleetRunnerTV` succeeds. No Apple TV has run it |
 | **Vision Pro (visionOS)** | `runner-ios`, `FleetRunnerVision` target | `devicectl` or `simctl` | **no** — the target is written and has never been compiled; the visionOS platform is not installed on the machine it was written on |
 | **Raspberry Pi, Jetson, Steam Deck** | `runner-machine` | `install-agent.sh`, or the Docker image | **no** — but arm64 Linux in CI reports a nearly complete descriptor, so a board should register cleanly. No board has |
-| **Anything with Docker** | `runner-machine` | `docker run` | **no** — the Dockerfile has never been built; Docker was not available on the machine that wrote it |
+| **Anything with Docker** | `fleet/Dockerfile` | `docker run ghcr.io/addisdev/fleet` | **builds** — CI built and published the image for linux/amd64 and linux/arm64 at v0.5.0. **No container has been run**: Docker was not available on the machine that wrote it, so the image assembling is all that is known |
 
 ## What Wave 6 added
 

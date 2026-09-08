@@ -18,9 +18,9 @@ fleet up
 ```
 
 A collector and a machine agent, supervised, on the machine you are typing on.
-There is **no published release yet**, so getting `fleet` means building from a
-checkout -- [Install](install/index.md) is honest per platform about which of
-them anybody has actually run.
+Getting `fleet` is one command -- [Install](install/index.md) has it per
+platform, with an honest column about which of them anybody has actually run a
+fleet on. The answer is macOS; the suites run on all three.
 
 <div class="grid cards" markdown>
 

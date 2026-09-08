@@ -42,14 +42,17 @@ machine agent (this laptop, as a device on the fleet), each in its own process,
 both supervised. No configuration file to write, no broker, no cloud service.
 `fleet doctor` says what the machine can and cannot run, and why not.
 
-> **There is no published release yet, so `curl … | sh` does not work.** The
-> install scripts are written and have been exercised against locally built
-> archives, and they have never met a real GitHub release because there is not
-> one. Until then, build from a checkout -- three `npm install`s and
-> `node fleet/build.mjs`, which is
-> **[docs/install/](https://addisdev.github.io/fleet-runner/install/)**, per
-> platform, with an honest column about which of them anybody has actually run.
-> The answer is macOS/arm64.
+```
+curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.sh | sh
+```
+
+> The installer verifies the download against the release's `SHASUMS256.txt` and
+> refuses to install if it does not match. It needs Node 22.13 or newer and
+> carries no runtime of its own. **`fleet up` itself has been watched to work on
+> macOS/arm64 only** -- CI runs the suites on Windows and Linux, which is not the
+> same as somebody having run a fleet on one.
+> **[docs/install/](https://addisdev.github.io/fleet-runner/install/)** is honest
+> per platform.
 
 ## Documentation
 

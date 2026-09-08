@@ -6,22 +6,21 @@ docker run -d --restart unless-stopped -p 8788:8788 \
   ghcr.io/addisdev/fleet up --role brain,agent
 ```
 
-!!! danger "Nothing here has ever been built or run"
+!!! warning "Built, never run"
 
-    **Neither Dockerfile in this repository has ever been built.** Docker was not
-    available on the machine that wrote them. No image has been pushed to
-    `ghcr.io/addisdev/fleet`, because the release workflow that would push one
-    has never run -- there is no tag. `docs/platforms.md` has recorded this about
-    `runner-machine/Dockerfile` since it was written, and it is equally true of
-    `fleet/Dockerfile`.
+    `ghcr.io/addisdev/fleet` exists: the release workflow built and pushed it for
+    linux/amd64 and linux/arm64 at v0.5.0, tagged `0.5.0` and `latest`. So the
+    Dockerfile is at least correct enough to assemble, which is more than could
+    be said of it before that tag.
 
-    The first tag that runs `.github/workflows/release.yml` is the first build.
-    Until then the honest instruction is [build it
-    yourself](#build-it-yourself), which will at least tell you whether the
-    Dockerfile is correct.
+    **No container has been started from it.** Docker was not available on the
+    machine that wrote it, and the build succeeding in CI says nothing about
+    whether `fleet up` comes up inside one -- the entrypoint, the volume, the
+    health check and the non-root user are all untested. If you run it and it
+    works, or does not, that is worth an issue either way.
 
-    Both files are written from the layout `node fleet/build.mjs` actually
-    produces, which *has* been verified.
+    `runner-machine/Dockerfile`, the agent-only image, is still **not built at
+    all**: nothing publishes it and nobody has run `docker build` on it.
 
 ## Build it yourself
 
