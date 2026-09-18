@@ -75,6 +75,37 @@ and `fleet` only fills in what nobody has said. `fleet config set` warns when th
 just wrote is also set in the environment, because "I edited the config and nothing happened"
 is almost always that.
 
+### The settings this file has no key for
+
+The three programs read about twenty `FLEET_*` variables and the config names six. The rest
+are per-deployment facts with no good home — where this host's Maestro flows live, where its
+Playwright specs live, which Xcode project the generic iOS bundle builds from, whether web
+workloads are enabled here, where alerts go. `env` carries them:
+
+```bash
+fleet config set env.FLEET_FLOWS_DIR ~/fleet-runner/collector/flows
+fleet config set env.FLEET_WEB_SPECS_DIR ~/fleet-runner/collector/web-specs
+fleet config set env.FLEET_ALERT_WEBHOOK http://127.0.0.1:8790/alert
+```
+
+It exists because of what migrating to `fleet service install` does without it. The old
+deployment set those variables in a hand-written plist per component; the new one writes
+**one** unit and gives it only a `PATH`, so every one of them is dropped — and a `ui-test`
+whose flows directory has silently defaulted elsewhere fails with "no such flow", which names
+neither the cause nor the file that caused it.
+
+Entries go through the same precedence as everything else, so a variable already in the
+environment still wins and an entry here still beats a computed default. That last part is
+deliberate: pointing a fresh install at a database that predates it — `env.FLEET_DATA_DIR` —
+is how an existing collector is adopted rather than re-created.
+
+Names are validated as `A-Z`, `0-9` and `_` when set and again when read, because a key the
+loader would drop leaves a config file that says one thing and a fleet that does another.
+`PATH` itself is not the business of this file: it belongs to the service unit, which is
+written from the environment of the shell that ran `fleet service install` — so install the
+service from a shell that can see `adb`, or the executor that unit starts will not find it
+either.
+
 `fleet service install` writes **one** unit running `fleet up`, not one per component. The
 old deployment had a plist each for the collector, the executor, the iOS executor, the tunnel
 and the agent. One unit is the difference between switching the brain off being a config edit
