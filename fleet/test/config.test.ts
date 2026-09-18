@@ -173,3 +173,82 @@ test("setting one thing does not disturb the rest", () => {
   assert.deepEqual(next.agent.pools, ["a", "b"]);
   assert.equal(c.collector.port, 8788, "and the original is not mutated");
 });
+
+// --- env passthrough --------------------------------------------------------
+//
+// The config file names six of the twenty-odd FLEET_* variables the three
+// programs read. The rest are per-deployment facts — where this host's Maestro
+// flows live, which Xcode project the generic iOS bundle builds from, where
+// alerts go — and before `env` there was nowhere to put them. That was fine
+// while every component had a hand-written plist and is not fine now that
+// `fleet service install` writes one unit carrying only a PATH: migrating to it
+// dropped every one of them silently, and a ui-test whose flows directory
+// defaulted to the wrong place fails with "no such flow".
+
+test("config env reaches every component", () => {
+  const c = defaults();
+  c.env = { FLEET_FLOWS_DIR: "/srv/flows", FLEET_WEB: "1" };
+  for (const role of ["brain", "agent", "executor"] as const) {
+    const e = childEnv(role, c, {});
+    assert.equal(e.FLEET_FLOWS_DIR, "/srv/flows", `${role} lost FLEET_FLOWS_DIR`);
+    assert.equal(e.FLEET_WEB, "1", `${role} lost FLEET_WEB`);
+  }
+});
+
+test("the real environment still beats config env", () => {
+  // The precedence the README states is flag > FLEET_* env > config > default,
+  // and a deployed plist that sets a variable has to keep deciding.
+  const c = defaults();
+  c.env = { FLEET_FLOWS_DIR: "/from/config" };
+  const e = childEnv("executor", c, { FLEET_FLOWS_DIR: "/from/the/plist" });
+  assert.equal(e.FLEET_FLOWS_DIR, "/from/the/plist");
+});
+
+test("config env beats a computed default", () => {
+  // Pointing a release at a database that predates it is the migration case,
+  // and it only works if an explicit value outranks paths().
+  inHome((env) => {
+    const c = defaults();
+    c.env = { FLEET_DATA_DIR: "/an/older/collector/data" };
+    assert.equal(childEnv("brain", c, env).FLEET_DATA_DIR, "/an/older/collector/data");
+    // Untouched keys still get theirs.
+    assert.equal(childEnv("brain", defaults(), env).FLEET_DATA_DIR, paths(env).data);
+  });
+});
+
+test("env survives a save and load round trip", () => {
+  inHome((env) => {
+    const c = defaults();
+    c.env = { FLEET_IOS_PROJECT: "/Users/someone/app.xcodeproj" };
+    save(c, env);
+    assert.deepEqual(load(env).env, { FLEET_IOS_PROJECT: "/Users/someone/app.xcodeproj" });
+  });
+});
+
+test("an unusable env entry is dropped with a warning, not carried", () => {
+  inHome((env, home) => {
+    writeFileSync(
+      path.join(home, "config.json"),
+      JSON.stringify({ env: { FLEET_OK: "yes", "not a name": "x", FLEET_NUM: 3, FLEET_NULL: null } }),
+    );
+    const warnings: string[] = [];
+    const c = load(env, (m) => warnings.push(m));
+    assert.deepEqual(c.env, { FLEET_OK: "yes", FLEET_NUM: "3" }, "a number is usable, a null is not");
+    assert.equal(warnings.length, 2, warnings.join(" | "));
+    assert.ok(warnings.some((w) => w.includes("not a name")), warnings.join(" | "));
+  });
+});
+
+test("env is an open map, so setting a key that is not there yet works", () => {
+  // Every other setting refuses an unknown key, because there a new key is a
+  // typo. Here it is the normal case.
+  const next = setPath(defaults(), "env.FLEET_FLOWS_DIR", "/srv/flows");
+  assert.deepEqual(next.env, { FLEET_FLOWS_DIR: "/srv/flows" });
+  assert.deepEqual(defaults().env, {}, "and the original is not mutated");
+});
+
+test("but a name the loader would drop is refused at the point of setting it", () => {
+  // Otherwise the file says one thing and the fleet does another.
+  assert.throws(() => setPath(defaults(), "env.flows_dir", "/srv/flows"), /usable variable name/);
+  assert.throws(() => setPath(defaults(), "env.2FAST", "x"), /usable variable name/);
+});

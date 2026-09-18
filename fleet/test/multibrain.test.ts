@@ -218,9 +218,15 @@ test(
         const gone = new Promise<void>((r) => brain.once("exit", () => r()));
         brain.kill("SIGTERM");
         await Promise.race([gone, sleep(10_000)]);
-        if (brain.exitCode === null && brain.signalCode === null) brain.kill("SIGKILL");
+        if (brain.exitCode === null && brain.signalCode === null) {
+          brain.kill("SIGKILL");
+          await Promise.race([gone, sleep(5_000)]);
+        }
       }
-      rmSync(dir, { recursive: true, force: true });
+      // Two collectors' databases here, so two chances at the Windows EBUSY
+      // that up.test.ts hit: a killed process keeps its file handle for a
+      // moment, and `force` suppresses ENOENT rather than EBUSY.
+      rmSync(dir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
     }
   },
 );
