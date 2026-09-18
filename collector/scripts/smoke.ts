@@ -18,6 +18,7 @@ import { runDriverChecks, runDescriptorChecks } from "../src/drivers/drivers.tes
 import { runZipChecks } from "../src/zip-dir.test.js";
 import { runTailnetChecks } from "../src/tailnet.test.js";
 import { runDbChecks } from "../src/db.test.js";
+import { runAlertChecks } from "../src/alerts.test.js";
 import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
@@ -44,6 +45,54 @@ async function json(method: string, url: string, body?: unknown) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Refuse to run against a collector that is somebody's fleet.
+ *
+ * This suite registers eleven devices, four executors, two apps and a couple of
+ * dozen jobs, all named `smoke-*`. Against a throwaway collector that is the
+ * point. Against the live brain it is contamination that nothing cleans up:
+ * on 2026-09-17 the production registry held 44 smoke devices, 18 dead executor
+ * rows and 8 fixture artifacts, from four runs spread over three weeks, and the
+ * offline alerts they raised drowned the six real devices.
+ *
+ * FLEET_DASH_TOKEN is not the protection here, whatever it looks like. It
+ * guards three routes -- alert tick, baseline accept, mirror upload -- and none
+ * of them is one this suite touches, so a token would not have stopped any of
+ * those four runs.
+ *
+ * The test is emptiness, not naming. `scripts/test.ts` starts its collector on
+ * a fresh mkdtemp data directory, so a suite collector has no devices, no jobs
+ * and no results; anything that does is a fleet somebody is using. Set
+ * FLEET_SMOKE_I_MEAN_IT=1 to override, which exists so that a deliberate run
+ * against a scratch collector that already has rows in it is still possible.
+ */
+async function refuseIfLiveFleet(): Promise<void> {
+  if (process.env.FLEET_SMOKE_I_MEAN_IT === "1") {
+    console.log("  (FLEET_SMOKE_I_MEAN_IT=1 — the live-fleet check is skipped)");
+    return;
+  }
+  const { status, body } = await json("GET", "/api/system");
+  // A collector too old to answer /api/system, or one that is not up yet, is
+  // not evidence either way -- and failing closed here would make the suite
+  // unrunnable against the very thing it is meant to test.
+  if (status !== 200 || !body) return;
+  const counts = (body as { db?: { counts?: Record<string, number> } }).db?.counts ?? {};
+  const occupied = (["devices", "jobs", "results"] as const)
+    .map((k) => [k, counts[k] ?? 0] as const)
+    .filter(([, n]) => n > 0);
+  if (occupied.length === 0) return;
+
+  console.error(
+    `\nREFUSED: ${BASE} is not empty — it holds ` +
+      occupied.map(([k, n]) => `${n} ${k}`).join(", ") +
+      ".\n\n" +
+      "  This suite writes ~60 rows named smoke-* and removes none of them, so it\n" +
+      "  only belongs on a throwaway collector. `npm test` starts one for you.\n\n" +
+      "  To run it here anyway: FLEET_SMOKE_I_MEAN_IT=1 npm run smoke\n",
+  );
+  process.exit(2);
+}
+
 const run = Date.now();
 const DEVICE = `smoke-pixel-${run}`;
 const BENCH_JOB = `smoke-bench-${run}`;
@@ -56,6 +105,7 @@ const DRAIN_JOB = `smoke-drain-${run}`;
 const MATCH_POOL = `smoke-match-pool-${run}`;
 
 console.log(`smoke against ${BASE}`);
+await refuseIfLiveFleet();
 
 // 1. register a device
 {
@@ -2523,6 +2573,10 @@ runTailnetChecks(check);
 // The database layer itself: transactions, the open/close lifecycle, the
 // driver's error codes, and the migration path a fresh database never takes.
 runDbChecks(check);
+
+// Which devices are worth waking somebody for. Both cases are rows that filled
+// the live brain's alert list with noise nobody could act on.
+runAlertChecks(check);
 
 // The enrol workload's refusals, against a fake context. Every path that
 // decides NOT to enrol, which is where it earns its keep -- the launch itself
