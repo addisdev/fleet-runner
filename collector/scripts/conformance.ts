@@ -584,7 +584,20 @@ async function clauseMultiHome(dev: Device): Promise<void> {
 // --- run --------------------------------------------------------------------
 
 async function main() {
-  console.log(`conformance: ${DEVICE} against ${BASE}\n`);
+  // Name the brain, not just its URL. This suite enqueues real jobs, and unlike
+  // the smoke suite it is *meant* to run against a live fleet — so it cannot
+  // refuse one, and saying which fleet is the only protection available. A
+  // loopback URL is especially worth resolving: `127.0.0.1:18788` is a tunnel
+  // to somebody else's collector on this shelf, and reads like a local scratch
+  // one.
+  let brain = "";
+  try {
+    const h = await api<{ name?: string; collector?: string }>("GET", "/api/health");
+    brain = h.name ? ` (${h.name}${h.collector ? `, ${h.collector}` : ""})` : "";
+  } catch {
+    // An older collector has no name to report. The URL still identifies it.
+  }
+  console.log(`conformance: ${DEVICE} against ${BASE}${brain}\n`);
 
   let dev: Device;
   try {

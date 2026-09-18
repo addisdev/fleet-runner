@@ -2539,6 +2539,7 @@ async function describeTarget(
       ...(memKb ? { ram_mb: Math.round(memKb / 1024) } : {}),
       serial: t.id,
       attached_to: NAME,
+      attached_host: HOST,
       kind: t.kind,
     };
   }
@@ -2557,6 +2558,7 @@ async function describeTarget(
         os: v ? `ios-${v}` : "ios",
         serial: t.id,
         attached_to: NAME,
+        attached_host: HOST,
         // simctl knows it, so it is a simulator whichever enumerator found it.
         kind: "simulator",
         // Belt and braces for isSimulator(), which reads model/os/soc: a
@@ -2580,10 +2582,18 @@ async function describeTarget(
       ...(info.productType ? { soc: info.productType } : {}),
       serial: t.id,
       attached_to: NAME,
+      attached_host: HOST,
       kind: "device",
     };
   }
-  return { model: t.kind === "simulator" ? "simulator" : "iphone", os: "ios", serial: t.id, attached_to: NAME, kind: t.kind };
+  return {
+    model: t.kind === "simulator" ? "simulator" : "iphone",
+    os: "ios",
+    serial: t.id,
+    attached_to: NAME,
+    attached_host: HOST,
+    kind: t.kind,
+  };
 }
 
 /**
@@ -2598,6 +2608,43 @@ async function describeTarget(
  * Best effort by design -- presence must never be the reason an executor stops
  * claiming work, so failures here are swallowed.
  */
+
+/**
+ * The machine this executor is running on, reported beside `attached_to`.
+ *
+ * `attached_to` is the executor's NAME, and a name is a routing handle, not a
+ * machine: two Macs configured with the same FLEET_EXECUTOR_NAME both claim
+ * the jobs pinned to it, and the registry could not say which of them a phone
+ * was actually cabled to. That is not hypothetical -- on 2026-09-17 a staging
+ * copy of the iOS executor's LaunchAgent was found loaded on a second Mac,
+ * racing the real one for twelve days, and answering which host held the
+ * iPhone meant reading two log files.
+ *
+ * The hostname does not replace the name and does not route anything. It is
+ * the field that makes the duplicate visible from the dashboard instead of
+ * from the shell.
+ */
+const HOST = os.hostname();
+
+/**
+ * How long a virtual device's presence report is good for.
+ *
+ * A simulator or emulator is created, renamed and deleted constantly, and the
+ * executor is the only thing that ever registers one -- so when a simulator is
+ * deleted, its row has nothing left to refresh it and sits on the shelf as an
+ * offline device forever. Thirty registry rows accumulated that way in a month.
+ *
+ * Declaring a TTL makes the row self-limiting: the queue stops offering it work
+ * and the shelf stops listing it once the executor stops reporting it. Fifteen
+ * minutes is long enough that a slow sweep (adb getprop has a 10s timeout per
+ * device) never expires a simulator that is really there, and short enough that
+ * a deleted one is gone within the quarter hour that ONLINE/STALE already use.
+ *
+ * Real hardware sends no TTL, on purpose: an unplugged phone is a fact somebody
+ * should see on the shelf, not a row that tidies itself away.
+ */
+const VIRTUAL_PRESENCE_TTL_S = 900;
+
 /**
  * The virtual device name behind this target, or null if it is real hardware.
  *
@@ -2671,10 +2718,20 @@ async function reportAttached() {
       seen.add(t.id);
       if (!(await fleetOwnedTarget(t, sims))) continue;
       try {
+        const descriptor = await describeTarget(t, sims, ios);
+        // Only virtual devices get a TTL. See VIRTUAL_PRESENCE_TTL_S: a deleted
+        // simulator has nothing left to refresh its row, an unplugged phone is
+        // something somebody should see.
+        const virtual = descriptor.kind === "simulator" || isAndroidEmulatorSerial(t.id);
         await fetch(`${BASE}/devices/register`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ device_id: t.id, descriptor: await describeTarget(t, sims, ios), pools: [] }),
+          body: JSON.stringify({
+            device_id: t.id,
+            descriptor,
+            pools: [],
+            ...(virtual ? { ttl_s: VIRTUAL_PRESENCE_TTL_S } : {}),
+          }),
         });
       } catch {
         // Next tick will try again.
