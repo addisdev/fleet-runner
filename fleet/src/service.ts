@@ -144,7 +144,7 @@ ${argv}
   }
   await exec("launchctl", ["bootout", `gui/${process.getuid?.() ?? 0}/${LABEL}`]).catch(() => {});
   try {
-    await exec("launchctl", ["bootstrap", `gui/${process.getuid?.() ?? 0}`, dest]);
+    await bootstrapLaunchd(dest);
   } catch (e) {
     console.error(`launchctl refused it: ${(e as Error).message}`);
     return 1;
@@ -155,6 +155,48 @@ ${argv}
   console.log("\nThis is a LaunchAgent, so it starts at login rather than at boot. A machine that");
   console.log("reboots unattended needs automatic login, or the same job as a root LaunchDaemon.");
   return 0;
+}
+
+/**
+ * `launchctl bootstrap`, retried, because immediately after a `bootout` it
+ * fails.
+ *
+ * Reinstalling the service is bootout-then-bootstrap, and on macOS the second
+ * half loses a race with the first:
+ *
+ *     Bootstrap failed: 5: Input/output error
+ *     Try re-running the command as root for richer errors.
+ *
+ * Root is not the problem and the advice in that message is launchd's, not
+ * ours. The label is still being torn down; a few seconds later the identical
+ * command succeeds. Reproduced twice in a row on macOS 12 while reinstalling
+ * the live brain's service to change its roles, and recovered both times by
+ * waiting and retrying by hand.
+ *
+ * It matters more than a re-install being awkward. The plist is already
+ * written by the time this runs, so a refusal leaves the machine with a new
+ * unit and nothing running it -- and on the machine this was found on, that
+ * was the fleet's brain, with every device long-polling a collector that was
+ * no longer there. Waiting is free and being down is not.
+ *
+ * Only EIO-shaped refusals are retried. A malformed plist or a path that does
+ * not exist fails the same way every time, and retrying those just makes the
+ * error take twenty seconds to arrive.
+ */
+async function bootstrapLaunchd(dest: string, attempts = 6, waitMs = 3_000): Promise<void> {
+  const uid = process.getuid?.() ?? 0;
+  for (let i = 1; ; i++) {
+    try {
+      await exec("launchctl", ["bootstrap", `gui/${uid}`, dest]);
+      return;
+    } catch (e) {
+      const message = (e as Error).message;
+      const transient = /Input\/output error|Bootstrap failed: 5|already bootstrapped|Operation in progress/i.test(message);
+      if (!transient || i >= attempts) throw e;
+      if (i === 1) console.log("  launchd is still letting go of the old job; waiting");
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
 }
 
 // --- Linux -----------------------------------------------------------------
@@ -274,14 +316,19 @@ async function startStop(which: "start" | "stop"): Promise<number> {
   try {
     if (process.platform === "darwin") {
       const uid = process.getuid?.() ?? 0;
-      if (which === "start") await exec("launchctl", ["bootstrap", `gui/${uid}`, launchdPlistPath()]);
+      // Retried for the same reason `install` retries: `fleet service stop`
+      // followed by `fleet service start` is the other way to lose this race,
+      // and it is the one somebody types when a component is misbehaving --
+      // exactly when leaving the fleet down is worst.
+      if (which === "start") await bootstrapLaunchd(launchdPlistPath());
       else await exec("launchctl", ["bootout", `gui/${uid}/${LABEL}`]);
     } else if (process.platform === "win32") {
       await exec("schtasks", [which === "start" ? "/Run" : "/End", "/TN", WINDOWS_TASK]);
     } else {
       await exec("systemctl", ["--user", which, "fleet.service"]);
     }
-    console.log(`${which}ed`);
+    // Not `${which}ed`, which prints "stoped".
+    console.log(which === "stop" ? "stopped" : "started");
     return 0;
   } catch (e) {
     console.error(`${which} failed: ${(e as Error).message}`);
