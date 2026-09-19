@@ -281,7 +281,8 @@ async function startStop(which: "start" | "stop"): Promise<number> {
     } else {
       await exec("systemctl", ["--user", which, "fleet.service"]);
     }
-    console.log(`${which}ed`);
+    // Not `${which}ed`, which prints "stoped".
+    console.log(which === "stop" ? "stopped" : "started");
     return 0;
   } catch (e) {
     console.error(`${which} failed: ${(e as Error).message}`);
