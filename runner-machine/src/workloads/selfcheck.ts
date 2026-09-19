@@ -25,9 +25,30 @@ import {
   parseLaunchctlList, parseSystemctlIsActive,
 } from "../versions.js";
 
+/**
+ * The service names that count as "this agent is supervised".
+ *
+ * Two of each, because there are two deployments and both are real. The first
+ * pair is what `deploy/install-agent.sh` writes — one unit per component, the
+ * way this fleet was built. The second is what `fleet service install` writes:
+ * **one** unit running `fleet up`, which supervises the agent as a child.
+ *
+ * Only the first pair was checked, so every machine adopted onto `fleet up`
+ * failed this row every night while being perfectly well supervised. Seen on
+ * two machines the day they were migrated, and it is the worst shape of
+ * false alarm — a check that fires because the thing it checks for got
+ * better.
+ *
+ * `FLEET_AGENT_LABEL` and `FLEET_AGENT_UNIT` still override, and still mean
+ * "this exact one", because an operator who names a service is answering the
+ * question rather than asking it.
+ */
+export const AGENT_LABELS = ["com.addisdev.fleet", "com.addisdev.fleet-runner-machine"] as const;
+export const AGENT_UNITS = ["fleet.service", "fleet-runner-machine.service"] as const;
+
 /** The launchd label and systemd unit `deploy/install-agent.sh` installs. */
-export const AGENT_LABEL = "com.addisdev.fleet-runner-machine";
-export const AGENT_UNIT = "fleet-runner-machine.service";
+export const AGENT_LABEL = AGENT_LABELS[1];
+export const AGENT_UNIT = AGENT_UNITS[1];
 
 /** Below this, a build is going to fail on disk space rather than on code. */
 export const DEFAULT_MIN_DISK_GB = 10;
@@ -142,29 +163,54 @@ export async function agentLoadedCheck(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<CheckRow> {
-  const label = env.FLEET_AGENT_LABEL ?? AGENT_LABEL;
   if (platform === "darwin") {
-    const text = await orNull(() => out("launchctl", ["list", label], 15_000));
-    const state = parseLaunchctlList(text);
-    if (!state.loaded) return { name: "agent_loaded", ok: false, detail: `launchd has no ${label} loaded` };
-    if (state.lastExit !== null && state.lastExit !== 0 && state.pid === null) {
-      return { name: "agent_loaded", ok: false, value: label, detail: `${label} is loaded but not running (last exit ${state.lastExit})` };
+    // Named explicitly means that one and no other; otherwise any of the
+    // deployments this project ships counts, and the failure names them all.
+    const labels = env.FLEET_AGENT_LABEL ? [env.FLEET_AGENT_LABEL] : [...AGENT_LABELS];
+    let degraded: CheckRow | null = null;
+    for (const label of labels) {
+      const text = await orNull(() => out("launchctl", ["list", label], 15_000));
+      const state = parseLaunchctlList(text);
+      if (!state.loaded) continue;
+      if (state.lastExit !== null && state.lastExit !== 0 && state.pid === null) {
+        // Loaded but dead. Keep looking — another label may be healthy — but
+        // remember this one, because "loaded and crashed" is a better answer
+        // than "nothing found" if nothing else turns up.
+        degraded ??= {
+          name: "agent_loaded",
+          ok: false,
+          value: label,
+          detail: `${label} is loaded but not running (last exit ${state.lastExit})`,
+        };
+        continue;
+      }
+      return {
+        name: "agent_loaded",
+        ok: true,
+        value: label,
+        detail: state.pid === null ? `${label} loaded` : `${label} running as pid ${state.pid}`,
+      };
     }
-    return { name: "agent_loaded", ok: true, value: label, detail: state.pid === null ? `${label} loaded` : `${label} running as pid ${state.pid}` };
+    return (
+      degraded ?? { name: "agent_loaded", ok: false, detail: `launchd has none of ${labels.join(", ")} loaded` }
+    );
   }
   if (platform === "linux") {
-    const unit = env.FLEET_AGENT_UNIT ?? AGENT_UNIT;
+    const units = env.FLEET_AGENT_UNIT ? [env.FLEET_AGENT_UNIT] : [...AGENT_UNITS];
     if (!(await which("systemctl", env))) return skipped("agent_loaded", "systemctl is not on PATH");
-    // is-active exits non-zero for anything but active, so the exit status is
-    // not the answer -- the word it prints is, which `run` gives even then.
-    const text = await orNull(async () => {
-      const r = await run("systemctl", ["--user", "is-active", unit], 15_000);
-      return `${r.stdout}${r.stderr}`.trim() || null;
-    });
-    const state = parseSystemctlIsActive(text);
-    return state.loaded
-      ? { name: "agent_loaded", ok: true, value: unit, detail: `${unit} is ${state.state}` }
-      : { name: "agent_loaded", ok: false, value: unit, detail: `${unit} is ${state.state ?? "not known to systemd"}` };
+    let last: string | null = null;
+    for (const unit of units) {
+      // is-active exits non-zero for anything but active, so the exit status is
+      // not the answer -- the word it prints is, which `run` gives even then.
+      const text = await orNull(async () => {
+        const r = await run("systemctl", ["--user", "is-active", unit], 15_000);
+        return `${r.stdout}${r.stderr}`.trim() || null;
+      });
+      const state = parseSystemctlIsActive(text);
+      if (state.loaded) return { name: "agent_loaded", ok: true, value: unit, detail: `${unit} is ${state.state}` };
+      last = state.state ?? "not known to systemd";
+    }
+    return { name: "agent_loaded", ok: false, value: units[units.length - 1], detail: `none of ${units.join(", ")} is active (last: ${last})` };
   }
   return skipped("agent_loaded", `no service-manager probe for ${platform}`);
 }
