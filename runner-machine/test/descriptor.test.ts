@@ -45,6 +45,20 @@ for (const platform of FOREIGN) {
   });
 }
 
+test("a platform probe that found nothing keeps the memory Node knows", async () => {
+  // Every one of these asks for a platform this test is not running on, so the
+  // platform probe answers null for every field. `ram_mb` is the exception it
+  // must not take down with it: os.totalmem() answered before the probe ran.
+  // Windows reported ram_mb: null for a release because a plain spread let the
+  // probe's null win over the base reading, which is what made a Windows
+  // machine unselectable by memory even though Node had the number.
+  for (const platform of FOREIGN) {
+    const d = await describe(platform);
+    assert.equal(typeof d.ram_mb, "number", `${platform} lost its memory reading`);
+    assert.ok((d.ram_mb ?? 0) > 0, `${platform} reported ${d.ram_mb} MB`);
+  }
+});
+
 test("a beacon for a foreign platform is all nulls, not an error", async () => {
   const s = await beacon("aix");
   assert.equal(s.battery_pct, null);

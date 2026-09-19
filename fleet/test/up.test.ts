@@ -165,9 +165,21 @@ test("fleet up runs a brain and an agent, and a job goes through both", { timeou
       // If it does not go, the next test in this file inherits a held port,
       // which is a failure that reads as unrelated.
       await Promise.race([exited, sleep(15_000)]);
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+        // SIGKILL is not instantaneous and the wait above has already elapsed,
+        // so without a second one the removal below races the kernel. On
+        // Windows that race is the difference between a clean run and EBUSY.
+        await Promise.race([exited, sleep(5_000)]);
+      }
     }
-    rmSync(home, { recursive: true, force: true });
+    // Windows will not unlink a file a process still holds, and "still holds"
+    // outlives "has been killed" by a moment the collector spends closing its
+    // database. `force` does not cover EBUSY -- it suppresses ENOENT -- so the
+    // removal retries, which is what `maxRetries` is for. Seen as a flaky
+    // `EBUSY ... unlink '…\data\fleet.db'` on windows-latest, in teardown,
+    // after all 32 assertions had already passed.
+    rmSync(home, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 
   // The port is free afterwards, which is the property `fleet service restart`

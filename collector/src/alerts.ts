@@ -11,7 +11,7 @@
 // system that cries wolf gets muted, and a muted alerting system is worse than
 // none.
 import { db } from "./db.js";
-import { beaconFields, deviceStatus, effectivePools, hasBattery, parse } from "./api/shared.js";
+import { beaconFields, deviceStatus, effectivePools, hasBattery, isExpired, parse } from "./api/shared.js";
 import { minuteKey, prevRun } from "./cron.js";
 
 export type Severity = "warning" | "critical";
@@ -66,7 +66,7 @@ export function evaluate(now = new Date(), sizes: { dbBytes: number; logBytes: n
   // --- devices ---
   const devices = db
     .prepare(
-      `SELECT device_id, pools, pools_override, last_beacon, name,
+      `SELECT device_id, pools, pools_override, last_beacon, name, ttl_s,
               CAST(strftime('%s','now') - strftime('%s', last_seen) AS INTEGER) AS age_s
        FROM devices`,
     )
@@ -76,20 +76,37 @@ export function evaluate(now = new Date(), sizes: { dbBytes: number; logBytes: n
     pools_override: string | null;
     last_beacon: string | null;
     name: string | null;
+    ttl_s: number | null;
     age_s: number;
   }[];
 
   for (const d of devices) {
+    // An agent that declared a TTL and outlived it said it was temporary and
+    // then went quiet, which is the sequence it promised -- not a fault. The
+    // queue and the shelf already drop it (api/shared.ts isExpired); this is
+    // the third place that has to agree, and it did not, so every expired
+    // browser tab and every deleted simulator raised an offline alert that
+    // nothing could ever resolve.
+    if (isExpired(d, d.age_s)) continue;
+
     // The device's name if it has one, always with the id, because an alert
     // is often read somewhere the id is what you need to act on it.
     const label = d.name ? `${d.name} (${d.device_id})` : d.device_id;
     if (d.age_s > THRESHOLDS.deviceOfflineS) {
-      out.push({
-        rule: "device-offline",
-        subject: d.device_id,
-        severity: "warning",
-        message: `${label} has not checked in for ${Math.round(d.age_s / 60)} min`,
-      });
+      // Only named devices. A name is the operator saying "this one is mine and
+      // I want to know" -- everything on the shelf gets one. An unnamed row is
+      // a device that wandered past: a phone that registered from the desk for
+      // one benchmark, a simulator a suite created. Alerting on those produced
+      // 79 open alerts against 6 real devices, with seen_count past 33,000, and
+      // an alert channel nobody reads is the failure this rule exists to avoid.
+      if (d.name) {
+        out.push({
+          rule: "device-offline",
+          subject: d.device_id,
+          severity: "warning",
+          message: `${label} has not checked in for ${Math.round(d.age_s / 60)} min`,
+        });
+      }
       // Battery and thermal readings from a silent device describe whenever it
       // went silent, so they are not worth alerting on.
       continue;

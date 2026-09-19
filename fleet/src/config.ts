@@ -60,7 +60,41 @@ export type FleetConfig = {
   };
   /** Other brains this one knows about, for the dashboard's all-fleets view. */
   peers: string[];
+  /**
+   * `FLEET_*` variables to hand every component, for the settings this file has
+   * no key of its own for.
+   *
+   * The three programs read about twenty environment variables and the config
+   * above names six of them. The rest are per-deployment facts with no good
+   * home: where this host's Maestro flows live (`FLEET_FLOWS_DIR`), its
+   * Playwright specs (`FLEET_WEB_SPECS_DIR`), which Xcode project the generic
+   * iOS bundle builds from (`FLEET_IOS_PROJECT`), whether web workloads are
+   * enabled here (`FLEET_WEB`), where alerts go (`FLEET_ALERT_WEBHOOK`).
+   *
+   * Before this there was nowhere to put them. The old deployment set them in a
+   * hand-written plist per component; `fleet service install` writes one unit
+   * and gives it only a PATH, so migrating to it silently dropped every one --
+   * and a `ui-test` whose flows directory defaulted to the wrong place fails
+   * with "no such flow" rather than with anything that names the cause.
+   *
+   * Applied through the same `set()` as everything else, so the precedence in
+   * the README holds unchanged: a variable already in the environment still
+   * wins over this, and this wins over the computed defaults. Which means a
+   * value here can override `FLEET_DATA_DIR` too, deliberately -- pointing a
+   * release at a database that predates it is exactly the migration case.
+   */
+  env: Record<string, string>;
 };
+
+/**
+ * Environment variable names this file may set.
+ *
+ * A config file is not a shell profile. Restricting the shape keeps a typo from
+ * becoming an invisible no-op and keeps this from turning into a way to set
+ * `PATH` or `DYLD_*` for every child -- those belong to the service unit, which
+ * is written from the installing shell's own environment and says so.
+ */
+const ENV_KEY = /^[A-Z][A-Z0-9_]*$/;
 
 export function defaults(): FleetConfig {
   return {
@@ -69,7 +103,34 @@ export function defaults(): FleetConfig {
     agent: { collectors: [], pools: ["machines"] },
     executor: {},
     peers: [],
+    env: {},
   };
+}
+
+/**
+ * Keep the string entries whose names are usable, and say why about the rest.
+ *
+ * A dropped entry is warned about rather than ignored: the failure it causes
+ * happens later, somewhere else, in a component that has no idea this file
+ * exists.
+ */
+function envMap(raw: unknown, warn: (m: string) => void): Record<string, string> {
+  if (raw === undefined) return {};
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    warn(`config "env" should be an object of NAME: value pairs; ignoring it`);
+    return {};
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!ENV_KEY.test(k)) {
+      warn(`config env.${k} is not a usable variable name (A-Z, 0-9 and _, not starting with a digit); ignoring it`);
+      continue;
+    }
+    if (typeof v === "string") out[k] = v;
+    else if (typeof v === "number" || typeof v === "boolean") out[k] = String(v);
+    else warn(`config env.${k} is ${v === null ? "null" : typeof v}, and an environment variable is a string; ignoring it`);
+  }
+  return out;
 }
 
 /**
@@ -99,6 +160,7 @@ export function load(env: NodeJS.ProcessEnv = process.env, warn: (m: string) => 
     agent: { ...d.agent, ...(onDisk.agent ?? {}) },
     executor: { ...d.executor, ...(onDisk.executor ?? {}) },
     peers: Array.isArray(onDisk.peers) ? onDisk.peers : d.peers,
+    env: envMap(onDisk.env, warn),
   };
 }
 
@@ -138,6 +200,10 @@ export function childEnv(
   const set = (key: string, value: string | undefined) => {
     if (value !== undefined && out[key] === undefined) out[key] = value;
   };
+
+  // First, so that an explicit entry beats a computed default below while the
+  // real environment still beats both -- `set` never overwrites.
+  for (const [k, v] of Object.entries(config.env ?? {})) set(k, v);
 
   set("FLEET_CACHE_DIR", p.cache);
 
@@ -201,6 +267,21 @@ export function setPath(config: FleetConfig, dotted: string, raw: string): Fleet
     node = child as Record<string, unknown>;
   }
   const leaf = parts[parts.length - 1];
+  // `env` is an open map rather than a fixed schema, so a key that is not there
+  // yet is the normal case rather than a typo -- which is the whole reason the
+  // check below exists for every other setting. The name is still validated,
+  // because `fleet config set env.flows_dir …` would otherwise write a key that
+  // `load` drops on the next read, leaving a config file that says one thing
+  // and a fleet that does another.
+  if (parts.length === 2 && parts[0] === "env") {
+    if (!ENV_KEY.test(leaf)) {
+      throw new Error(
+        `env.${leaf} is not a usable variable name — A-Z, 0-9 and _, not starting with a digit (env.${leaf.toUpperCase().replace(/[^A-Z0-9_]/g, "_")}?)`,
+      );
+    }
+    node[leaf] = raw;
+    return next;
+  }
   if (!(leaf in node)) throw new Error(`no such setting: ${dotted}`);
   node[leaf] = coerce(node[leaf], raw, dotted);
   return next;
