@@ -16,6 +16,108 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-09-18
+
+The instruments, before the hardware. Everything here came out of pointing the
+project at its own fleet and writing down what was wrong with it, which is the
+first thing the lab plan asks for.
+
+### Fixed
+
+- **An offline alert for every device that ever registered.** The live brain
+  held **79 open `device-offline` alerts against 6 real devices**, some with
+  `seen_count` past 33,000, and an alert channel nobody reads is the failure
+  alerting exists to avoid. Two causes, both fixed. The rule now fires only for
+  devices somebody **named** — a name is the operator saying "this one is
+  mine", and nothing else in the schema separates a shelf device from one that
+  registered from a desk for a single benchmark. And it now skips **expired**
+  ephemeral agents: an agent that declared a `ttl_s` and outlived it did
+  exactly what it promised, the queue and the shelf already drop it, and the
+  alert engine was the third place that had to agree and did not — so a closed
+  browser tab raised an alert about a row the dashboard will not even show.
+- **A simulator that is deleted now leaves the shelf.** The host executor is
+  the only thing that ever registers a simulator, so a deleted one had nothing
+  left to refresh its row and sat there offline forever; thirty accumulated in
+  a month. Virtual targets register with a fifteen-minute `ttl_s`. Real
+  hardware sends none, on purpose — an unplugged phone is a fact somebody
+  should see, not a row that tidies itself away.
+- **A teardown that raced the kernel on Windows.** `fleet`'s `up` test failed
+  in cleanup with `EBUSY … unlink '…\data\fleet.db'` after all its assertions
+  had passed. A `SIGKILL`'d process keeps its file handle for a moment, the
+  teardown did not wait after the kill, and `rmSync`'s `force` suppresses
+  ENOENT rather than EBUSY. Both fixed, and the same treatment applied to the
+  multi-brain test, which tears down two databases and had simply not lost the
+  race yet.
+
+### Added
+
+- **`env` in `~/.fleet/config.json`**, an open map of `FLEET_*` variables
+  handed to every component. The config names six of the twenty-odd variables
+  the three programs read; the rest are per-deployment facts with no home —
+  where this host's Maestro flows live, where its Playwright specs live, which
+  Xcode project the generic iOS bundle builds from, where alerts go.
+
+  It exists because of what adopting the release does without it. The old
+  deployment set those in a hand-written plist per component. `fleet service
+  install` writes **one** unit and gives it only a `PATH`, so migrating to it
+  dropped every one of them — and a `ui-test` whose flows directory has
+  silently defaulted elsewhere fails with "no such flow", which names neither
+  the cause nor the file that caused it.
+
+  The stated precedence is unchanged: a variable already in the environment
+  still wins, and an entry here still beats a computed default. That second
+  half is the point of it — `env.FLEET_DATA_DIR` is how a fresh install
+  **adopts a collector's existing database** instead of starting an empty one
+  beside it.
+- **`attached_host` on a host-driven device**, beside `attached_to`.
+  `attached_to` is the executor's *name*, which is a routing handle and not a
+  machine: two Macs configured with the same `FLEET_EXECUTOR_NAME` both claim
+  the jobs pinned to it, and the registry could not say which of them a phone
+  was cabled to. That is not hypothetical — a staging copy of the iOS
+  executor's LaunchAgent was found loaded on a second Mac, racing the real one
+  for twelve days.
+- **The smoke suite refuses a fleet somebody is using.** It writes about sixty
+  rows named `smoke-*` and removes none of them; pointed at the live brain four
+  times over three weeks, it left 44 fixture devices, 18 dead executor rows and
+  8 fixture artifacts, whose offline alerts drowned the real shelf. The test is
+  emptiness rather than naming, because a suite collector starts on a fresh
+  `mkdtemp` and so has no devices, jobs or results. `FLEET_SMOKE_I_MEAN_IT=1`
+  overrides it.
+
+  `FLEET_DASH_TOKEN` is **not** that protection, despite looking like it. It
+  guards three routes — alert tick, baseline accept, mirror upload — and the
+  smoke suite touches none of them.
+- The conformance suite **names the brain** it is about to enqueue jobs on,
+  rather than only its URL. It is meant to run against a live fleet, so it
+  cannot refuse one, and `127.0.0.1:18788` reads like a scratch collector while
+  being a tunnel to the real one.
+- A machine whose platform probe found nothing **keeps the memory Node already
+  knew**. `describe()` fills `ram_mb` from `os.totalmem()` and then merged the
+  platform fields over it with a plain spread, so a probe's `null` won — the
+  second, quieter reason a Windows agent could not be selected by memory.
+
+### Documented
+
+- `fleet service install` writes the service's `PATH` from **the environment of
+  the shell that ran it**. Not guessable, and the difference between an
+  executor that drives Android and one that reports no targets: on the fleet
+  this was found on, `adb` lives under `~/.local/` and is on no default PATH.
+
+### Still not true
+
+- `install.sh` has now installed on **Intel macOS 12** as well as arm64, from
+  the real v0.5.0 release, checksum verified, and the installed binary runs.
+  `install.ps1` has still never been parsed by PowerShell, and no container has
+  been started from the published image.
+- **`fleet service install` has still never been run**, on any platform. This
+  release is what makes running it on the live brain possible, and that happens
+  immediately after it — so expect a follow-up that corrects this line rather
+  than a release that quietly claims it.
+- One cosmetic thing worth knowing before reading a version string: on Node
+  22.x, `node:sqlite` still prints an `ExperimentalWarning` to stderr, so
+  `fleet version` output carries it. Harmless to a person, not harmless to
+  anything parsing it.
+
 ## [0.5.0] — 2026-09-07
 
 One command instead of a checkout: `fleet up`. And a device can belong to more
@@ -654,7 +756,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/addisdev/fleet-runner/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/addisdev/fleet-runner/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/addisdev/fleet-runner/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/addisdev/fleet-runner/compare/v0.4.0...v0.4.1
