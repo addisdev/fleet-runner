@@ -13,6 +13,7 @@
  * variables, still has its own entry point, still runs perfectly well started
  * by hand. This puts a face on them and keeps them alive.
  */
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import process from "node:process";
@@ -21,7 +22,7 @@ import {
   type FleetConfig, type Role, ROLES,
 } from "./config.js";
 import { paths, selfCommand, isCheckout, repoRoot } from "./paths.js";
-import { supervise, type ChildSpec } from "./supervisor.js";
+import { supervise, snapshot, type ChildSpec } from "./supervisor.js";
 import { runDoctor } from "./doctor.js";
 import { serviceCommand } from "./service.js";
 import { VERSION } from "./version.js";
@@ -192,6 +193,19 @@ async function up(flags: Flags): Promise<number> {
   if (roles.includes("agent")) console.log(`  agent    -> ${collectors.join(", ") || "(no collector configured)"}`);
   console.log();
 
+  // Published on every state change so that `fleet service status`, which can
+  // only otherwise ask launchd about the launchd job, can say what the
+  // supervisor is actually doing. Best effort: a supervisor that cannot write
+  // its status file must still supervise.
+  const publish = () => {
+    try {
+      writeFileSync(p.supervisorStatus, `${JSON.stringify(snapshot(supervisor), null, 2)}\n`);
+    } catch {
+      // A read-only or full disk is a reason to lose the status file, never a
+      // reason to take the fleet down.
+    }
+  };
+
   const supervisor = supervise(
     roles.map((r) => childFor(r, config)),
     p.logs,
@@ -199,8 +213,10 @@ async function up(flags: Flags): Promise<number> {
       const when = new Date().toISOString().slice(11, 19);
       if (e.kind === "gave-up") console.error(`${when}  ${e.child}: GAVE UP -- ${e.detail}`);
       else console.log(`${when}  ${e.child}: ${e.kind} ${e.detail}`);
+      publish();
     },
   );
+  publish();
 
   let stopping = false;
   const shutdown = async () => {

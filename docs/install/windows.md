@@ -130,8 +130,10 @@ On Windows the service backend is **`schtasks`**, registering a task that runs
 `fleet up` at logon. It is not a Windows Service: a service would need
 elevation, and nothing else in this project does.
 
-**`fleet service install` has never been run on any platform**, and the Windows
-backend is the least exercised of the three. See [headless
+**`fleet service install` has never been run on Windows**, and the scheduled-task
+backend is the least exercised of the three. It has now been run on macOS, where
+it runs a real fleet's brain; that says the command works and nothing about this
+backend. See [headless
 hosts](../deploy/headless.md).
 
 ## What is deliberately absent

@@ -16,7 +16,7 @@ import { existsSync } from "node:fs";
 import { out, readText, orNull, firstMatch, finite, run } from "./probe.js";
 import type { Descriptor } from "./protocol.js";
 
-export const APP_VER = "0.6.0";
+export const APP_VER = "0.6.1";
 
 const MB = 1024 * 1024;
 

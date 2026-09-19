@@ -249,3 +249,20 @@ test("with nothing loaded, the failure names every label it looked for", async (
     assert.ok(AGENT_LABELS.includes(row.value as (typeof AGENT_LABELS)[number]));
   }
 });
+
+test("a Mac with only the Command Line Tools is not a broken Mac", async () => {
+  // /usr/bin/xcodebuild is a shim the CLT installs. It resolves, it runs, and
+  // it refuses -- which toolCheck reads as a broken install and fails. But
+  // `fleet doctor` reports the same machine as merely lacking Xcode, and it is
+  // right: the brain of this fleet is a CLT machine by design and was failing
+  // its nightly self-check for that reason alone.
+  //
+  // Asserted through the public shape rather than by faking xcode-select,
+  // because what matters is that the row is never a *failure* on a machine
+  // whose only sin is having no Xcode.
+  const rows = [
+    await toolCheck("definitely-not-a-real-tool", ["--version"], () => null, { PATH: "" }),
+  ];
+  assert.equal(rows[0].ok, null, "an absent tool is skipped, not failed");
+  assert.equal(countFailed(rows), 0);
+});

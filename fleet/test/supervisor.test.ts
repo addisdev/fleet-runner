@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { supervise, type ChildSpec, type Timings } from "../src/supervisor.js";
+import { supervise, type ChildSpec, type Timings, snapshot } from "../src/supervisor.js";
 
 /**
  * The same policy, in milliseconds instead of seconds.
@@ -191,5 +191,51 @@ test("a child that ran for a while and then died is not treated as a loop", asyn
       "each run outlived healthyAfterMs, so the restart count reset every time",
     );
     assert.ok(events.filter((e) => e.kind === "start").length >= 3, "and it kept being restarted");
+  });
+});
+
+// --- what another process can see -------------------------------------------
+//
+// `fleet service status` could only ask launchd, and launchd only knows about
+// the launchd job. The job is the supervisor, and a supervisor that has
+// permanently given up on the brain is still running — so status reported
+// `running, pid 75631` while the fleet had no collector at all and every
+// device was long-polling something that had gone. Seen for real on the live
+// brain. The snapshot is what lets status say otherwise.
+
+test("a snapshot names a child that gave up, and the pid that wrote it", async () => {
+  await inTemp(async (dir) => {
+    const spec = scriptChild(dir, "doomed", 'process.stderr.write("nope\\n"); process.exit(3);');
+    const sup = supervise([spec], dir, () => {}, FAST);
+    await sup.wait();
+
+    const snap = snapshot(sup);
+    assert.equal(snap.pid, process.pid, "the reader needs this to tell a live file from a stale one");
+    assert.equal(snap.children.length, 1);
+    const child = snap.children[0];
+    assert.equal(child.name, "doomed");
+    assert.ok(child.gaveUpAt, "the whole point: a reader can see it is not coming back");
+    assert.equal(child.pid, null, "and that nothing is running");
+    assert.ok(child.restarts >= 2, `it recorded the retries (${child.restarts})`);
+    assert.equal(child.lastExit?.code, 3, "and why it went");
+    // Serialisable, because it crosses a process boundary as JSON.
+    assert.deepEqual(JSON.parse(JSON.stringify(snap)), snap);
+
+    await sup.stop();
+  });
+});
+
+test("a snapshot of a healthy child says it is running", async () => {
+  await inTemp(async (dir) => {
+    const spec = scriptChild(dir, "fine", "setInterval(() => {}, 1000);");
+    const sup = supervise([spec], dir, () => {}, FAST);
+    await settle(300);
+
+    const child = snapshot(sup).children[0];
+    assert.equal(child.gaveUpAt, null);
+    assert.equal(typeof child.pid, "number", "a running child reports its pid");
+    assert.ok(child.startedAt);
+
+    await sup.stop();
   });
 });

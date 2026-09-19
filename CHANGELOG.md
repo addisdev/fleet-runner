@@ -16,6 +16,82 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-09-19
+
+What running the thing found. v0.6.0 was written from a survey; this is from
+two days of the fleet actually being up.
+
+### Fixed
+
+- **Every optional setting was unreachable from the CLI.** `setPath` refuses a
+  key that is not already in the object, which is right for a fixed schema —
+  there a new key is a typo. An optional setting is absent because nobody has
+  set it yet, and the check could not tell those apart, so `name`,
+  `agent.deviceId`, `agent.ttlS`, `executor.collector` and **`executor.name`**
+  all answered `no such setting`. The last is in the README's own command table
+  and is what an executor needs to inherit the job routing of the one it
+  replaces. Found at the first command of a real migration.
+- **`launchctl bootstrap` loses a race with the `bootout` before it.**
+  Reinstalling the service is bootout-then-bootstrap, and the second half fails
+  with `Bootstrap failed: 5: Input/output error` — launchd is still tearing the
+  label down, and the same command a few seconds later works. The plist is
+  written before the bootstrap runs, so a refusal leaves the machine carrying a
+  new unit with nothing running it; on the machine this was found on that was
+  the fleet's brain. It took the brain down twice before it was understood.
+  Retried now, for EIO-shaped refusals only, on `install` and on `start`.
+- **`fleet service status` said `running` while the fleet had no brain.**
+  launchd can only speak about the launchd job, and the job is `fleet up` — a
+  supervisor that has permanently given up on the collector is still running
+  perfectly well. So status reported healthy while every device long-polled
+  something that had gone, which is the worst answer available. The supervisor
+  now publishes what it is doing and `status` reads it, naming any component
+  that gave up and exiting non-zero. The file carries the supervisor's pid, so
+  one left behind by a supervisor that is gone is ignored rather than believed.
+- **The self-check did not know `fleet service` exists.** `agent_loaded` looked
+  for `com.addisdev.fleet-runner-machine`, the label `install-agent.sh` writes,
+  and not for `com.addisdev.fleet`, the one unit `fleet service install` writes.
+  Every machine adopted onto `fleet up` therefore failed the row nightly while
+  being supervised perfectly well — a check firing because the thing it checks
+  for got better. Both names count now; naming one explicitly still means that
+  one and no other.
+- **A Mac with only the Command Line Tools is not a broken Mac.**
+  `/usr/bin/xcodebuild` is a shim the CLT installs: it resolves, it runs, and it
+  refuses, which the tool check read as a broken install. `fleet doctor` calls
+  the same fact informational and is right. The brain of this fleet is a CLT
+  machine by design and was failing its nightly self-check for that reason
+  alone. A genuinely broken Xcode still fails.
+- `fleet service stop` printed `stoped`.
+
+### Added
+
+- **`collector/deploy/backup-brain.sh`** and **`pull-brain-backups.sh`**, with
+  a LaunchAgent for each. Nothing was backed up, and the Maestro flows and
+  Playwright specs this fleet runs are not in git — they name the apps under
+  test — so **the only copies in existence were on one 2016 laptop**. Losing
+  that disk would have left every nightly still running and testing nothing.
+  The database is copied with sqlite3's own `.backup` rather than `cp`, because
+  a plain copy of a live WAL-mode database restores into a page it cannot read,
+  and the copy is opened and checked before it is kept. Artifacts are excluded:
+  content-addressed, and everything worth keeping is referenced by a result row
+  the backup already carries.
+- **[`docs/lab.md`](https://addisdev.github.io/fleet-runner/deploy/lab/)**, a
+  worked example of a real deployment: which machine runs what, why the brain
+  is the oldest machine in the house, what each schedule guards, how to restart
+  one, how to restore, and the traps this deployment hit.
+
+### Changed
+
+- **`fleet service install` has now been run**, which corrects the line v0.6.0
+  left deliberately negative. It runs the brain of this project's own fleet:
+  one launchd unit, three components, on an Intel Mac under macOS 12, adopting
+  a collector database that predates it. Not on systemd and not on Windows.
+- `install.sh` has now installed on **Intel macOS 12** as well as arm64, and
+  performed the **first in-place upgrade** it has ever done.
+- The macOS row of [platforms](https://addisdev.github.io/fleet-runner/platforms/)
+  records both architectures registering, passing conformance, and reporting
+  comparable synthetic numbers with matching digests.
+
+
 ## [0.6.0] — 2026-09-18
 
 The instruments, before the hardware. Everything here came out of pointing the
@@ -756,7 +832,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/addisdev/fleet-runner/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/addisdev/fleet-runner/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/addisdev/fleet-runner/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/addisdev/fleet-runner/compare/v0.4.1...v0.4.2
