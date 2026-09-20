@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-backup</string>
+
+  <!-- Nightly backup of a brain, half an hour before the nightlies start.
+
+       Before them on purpose: a backup taken after a night of work is a backup
+       of a database that a failing job may have been halfway through writing,
+       and the point of the copy is the last known-good state rather than the
+       freshest one. 01:30 against a first schedule at 02:00 leaves room for the
+       copy to take its time on a spinning-rust-era laptop.
+
+       This is a LaunchAgent, so it runs when somebody is logged in. On a brain
+       that is a dedicated machine with automatic login that is every night; on
+       one that is not, the backup is as reliable as the login, and that is
+       worth knowing rather than discovering.
+
+       Paths are absolute because launchd expands nothing: `~` is not a home
+       directory here and a path it cannot resolve fails by doing nothing. -->
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>__HOME__/backup-brain.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>1</integer>
+    <key>Minute</key><integer>30</integer>
+  </dict>
+
+  <!-- sqlite3 and curl are in /usr/bin; `fleet version` for the manifest is in
+       the fleet home. Nothing here needs Homebrew. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>FLEET_BACKUP_KEEP</key>
+    <string>14</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/.fleet/logs/backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.fleet/logs/backup.log</string>
+</dict>
+</plist>

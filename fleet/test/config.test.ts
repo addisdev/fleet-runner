@@ -252,3 +252,49 @@ test("but a name the loader would drop is refused at the point of setting it", (
   assert.throws(() => setPath(defaults(), "env.flows_dir", "/srv/flows"), /usable variable name/);
   assert.throws(() => setPath(defaults(), "env.2FAST", "x"), /usable variable name/);
 });
+
+// --- optional settings ------------------------------------------------------
+//
+// `setPath` refuses a key that is not already in the object, because for a
+// fixed schema a new key is a typo. An optional setting is absent for a
+// different reason — nobody has set it yet — and refusing those made all five
+// of them unsettable, including `fleet config set executor.name`, which the
+// README documents and which an executor deployment cannot proceed without.
+
+test("an optional setting can be set before it exists", () => {
+  const c = setPath(defaults(), "executor.name", "mac-xcode");
+  assert.equal(c.executor.name, "mac-xcode");
+  assert.equal(childEnv("executor", c, {}).FLEET_EXECUTOR_NAME, "mac-xcode");
+});
+
+test("every optional setting is reachable", () => {
+  // Enumerated rather than spot-checked: the bug was that the whole category
+  // was unreachable, and a test for one of them would not have caught it.
+  const c = defaults();
+  assert.equal(setPath(c, "name", "fleet-host").name, "fleet-host");
+  assert.equal(setPath(c, "agent.deviceId", "shelf-01").agent.deviceId, "shelf-01");
+  assert.equal(setPath(c, "agent.ttlS", "600").agent.ttlS, 600);
+  assert.equal(setPath(c, "executor.collector", "http://brain:8788").executor.collector, "http://brain:8788");
+  assert.equal(setPath(c, "executor.name", "mac-xcode").executor.name, "mac-xcode");
+});
+
+test("an optional setting is coerced to its declared type, not to a string", () => {
+  // There is no existing value to read the type from, so a guess would write
+  // "600" — which survives a save, a load and a `config get`, and only shows up
+  // when something compares it to a number.
+  const c = setPath(defaults(), "agent.ttlS", "600");
+  assert.equal(typeof c.agent.ttlS, "number");
+  assert.throws(() => setPath(defaults(), "agent.ttlS", "ten minutes"), /number/);
+});
+
+test("being optional does not make every neighbouring typo settable", () => {
+  assert.throws(() => setPath(defaults(), "executor.nmae", "x"), /no such setting/);
+  assert.throws(() => setPath(defaults(), "agent.ttl", "600"), /no such setting/);
+});
+
+test("an optional setting survives a save and load round trip", () => {
+  inHome((env) => {
+    save(setPath(defaults(), "executor.name", "mac-xcode"), env);
+    assert.equal(load(env).executor.name, "mac-xcode");
+  });
+});

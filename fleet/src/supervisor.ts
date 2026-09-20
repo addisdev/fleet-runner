@@ -93,6 +93,60 @@ export type Supervisor = {
   wait: () => Promise<void>;
 };
 
+/** One child, as another process can read it. */
+export type ChildSnapshot = {
+  name: string;
+  pid: number | null;
+  restarts: number;
+  gaveUpAt: string | null;
+  startedAt: string | null;
+  lastExit: { code: number | null; signal: string | null; at: string } | null;
+};
+
+/** The whole supervisor, as another process can read it. */
+export type SupervisorSnapshot = {
+  /** The supervisor's own pid, so a reader can tell a live file from a stale one. */
+  pid: number;
+  at: string;
+  children: ChildSnapshot[];
+};
+
+/**
+ * What the supervisor is doing, for a different process to read.
+ *
+ * `fleet service status` asked launchd, and launchd's answer is about the
+ * launchd job. The job is the supervisor, and a supervisor that has
+ * permanently given up on the brain is still very much running -- so `status`
+ * said `running, pid 75631` while the fleet had no collector and every device
+ * was long-polling something that had gone. That is the worst answer available:
+ * a fleet reporting healthy while it is down.
+ *
+ * A file rather than a socket or a signal, because the reader is a short-lived
+ * CLI invocation that may be on the other side of an SSH session, and because
+ * the interesting case is precisely the one where the component that would have
+ * answered a request is the one that is dead.
+ *
+ * The `pid` is what makes it trustworthy. A file left behind by a supervisor
+ * that was killed says nothing about now, and a reader that cannot see that
+ * process is entitled to ignore the whole thing.
+ */
+export function snapshot(supervisor: Supervisor): SupervisorSnapshot {
+  return {
+    pid: process.pid,
+    at: new Date().toISOString(),
+    children: [...supervisor.children.values()].map((c) => ({
+      name: c.spec.name,
+      pid: c.process?.pid ?? null,
+      restarts: c.restarts,
+      gaveUpAt: c.gaveUpAt?.toISOString() ?? null,
+      startedAt: c.startedAt?.toISOString() ?? null,
+      lastExit: c.lastExit
+        ? { code: c.lastExit.code, signal: c.lastExit.signal, at: c.lastExit.at.toISOString() }
+        : null,
+    })),
+  };
+}
+
 /**
  * Roll a log file over when it gets big, keeping a few generations.
  *

@@ -31,6 +31,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { load, type Role } from "./config.js";
+import type { SupervisorSnapshot } from "./supervisor.js";
 import { paths, selfCommand } from "./paths.js";
 
 const exec = promisify(execFile);
@@ -144,7 +145,7 @@ ${argv}
   }
   await exec("launchctl", ["bootout", `gui/${process.getuid?.() ?? 0}/${LABEL}`]).catch(() => {});
   try {
-    await exec("launchctl", ["bootstrap", `gui/${process.getuid?.() ?? 0}`, dest]);
+    await bootstrapLaunchd(dest);
   } catch (e) {
     console.error(`launchctl refused it: ${(e as Error).message}`);
     return 1;
@@ -155,6 +156,48 @@ ${argv}
   console.log("\nThis is a LaunchAgent, so it starts at login rather than at boot. A machine that");
   console.log("reboots unattended needs automatic login, or the same job as a root LaunchDaemon.");
   return 0;
+}
+
+/**
+ * `launchctl bootstrap`, retried, because immediately after a `bootout` it
+ * fails.
+ *
+ * Reinstalling the service is bootout-then-bootstrap, and on macOS the second
+ * half loses a race with the first:
+ *
+ *     Bootstrap failed: 5: Input/output error
+ *     Try re-running the command as root for richer errors.
+ *
+ * Root is not the problem and the advice in that message is launchd's, not
+ * ours. The label is still being torn down; a few seconds later the identical
+ * command succeeds. Reproduced twice in a row on macOS 12 while reinstalling
+ * the live brain's service to change its roles, and recovered both times by
+ * waiting and retrying by hand.
+ *
+ * It matters more than a re-install being awkward. The plist is already
+ * written by the time this runs, so a refusal leaves the machine with a new
+ * unit and nothing running it -- and on the machine this was found on, that
+ * was the fleet's brain, with every device long-polling a collector that was
+ * no longer there. Waiting is free and being down is not.
+ *
+ * Only EIO-shaped refusals are retried. A malformed plist or a path that does
+ * not exist fails the same way every time, and retrying those just makes the
+ * error take twenty seconds to arrive.
+ */
+async function bootstrapLaunchd(dest: string, attempts = 6, waitMs = 3_000): Promise<void> {
+  const uid = process.getuid?.() ?? 0;
+  for (let i = 1; ; i++) {
+    try {
+      await exec("launchctl", ["bootstrap", `gui/${uid}`, dest]);
+      return;
+    } catch (e) {
+      const message = (e as Error).message;
+      const transient = /Input\/output error|Bootstrap failed: 5|already bootstrapped|Operation in progress/i.test(message);
+      if (!transient || i >= attempts) throw e;
+      if (i === 1) console.log("  launchd is still letting go of the old job; waiting");
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
 }
 
 // --- Linux -----------------------------------------------------------------
@@ -274,20 +317,79 @@ async function startStop(which: "start" | "stop"): Promise<number> {
   try {
     if (process.platform === "darwin") {
       const uid = process.getuid?.() ?? 0;
-      if (which === "start") await exec("launchctl", ["bootstrap", `gui/${uid}`, launchdPlistPath()]);
+      // Retried for the same reason `install` retries: `fleet service stop`
+      // followed by `fleet service start` is the other way to lose this race,
+      // and it is the one somebody types when a component is misbehaving --
+      // exactly when leaving the fleet down is worst.
+      if (which === "start") await bootstrapLaunchd(launchdPlistPath());
       else await exec("launchctl", ["bootout", `gui/${uid}/${LABEL}`]);
     } else if (process.platform === "win32") {
       await exec("schtasks", [which === "start" ? "/Run" : "/End", "/TN", WINDOWS_TASK]);
     } else {
       await exec("systemctl", ["--user", which, "fleet.service"]);
     }
-    console.log(`${which}ed`);
+    // Not `${which}ed`, which prints "stoped".
+    console.log(which === "stop" ? "stopped" : "started");
     return 0;
   } catch (e) {
     console.error(`${which} failed: ${(e as Error).message}`);
     console.error("Is it installed? `fleet service install`.");
     return 1;
   }
+}
+
+/**
+ * The service manager's answer, corrected by what the supervisor is doing.
+ *
+ * launchd, systemd and schtasks can only speak about the job they run, and the
+ * job is `fleet up` -- a supervisor. A supervisor that has permanently given up
+ * on the brain is still running perfectly well, so the honest answer from the
+ * service manager was `running, pid 75631` while the fleet had no collector at
+ * all and every device was long-polling something that had gone.
+ *
+ * That is the worst answer available: a fleet reporting healthy while it is
+ * down. So the supervisor publishes what it is doing and this reads it.
+ *
+ * Two ways the file can lie, and both are handled by refusing to believe it:
+ * it can be left behind by a supervisor that is gone (the recorded pid will not
+ * match the running one), and it can predate a restart (same test catches it).
+ * An unreadable or absent file is not an error -- an older `fleet up`, or one
+ * that could not write, is still a running fleet -- so the service manager's
+ * answer stands and this adds nothing.
+ */
+function reportSupervised(headline: string, servicePid: number | null): number {
+  let snap: SupervisorSnapshot | null = null;
+  try {
+    snap = JSON.parse(readFileSync(paths().supervisorStatus, "utf8")) as SupervisorSnapshot;
+  } catch {
+    console.log(headline);
+    return 0;
+  }
+  if (servicePid !== null && snap.pid !== servicePid) {
+    // Written by a supervisor that is not the one running now.
+    console.log(headline);
+    return 0;
+  }
+
+  const gaveUp = snap.children.filter((c) => c.gaveUpAt);
+  const down = snap.children.filter((c) => !c.gaveUpAt && c.pid === null);
+  console.log(headline);
+  for (const c of snap.children) {
+    const state = c.gaveUpAt
+      ? `GAVE UP at ${c.gaveUpAt.slice(11, 19)} after ${c.restarts} restarts`
+      : c.pid === null
+        ? "restarting"
+        : `pid ${c.pid}`;
+    console.log(`  ${c.name.padEnd(10)} ${state}`);
+  }
+  if (gaveUp.length > 0) {
+    console.error(
+      `\n${gaveUp.map((c) => c.name).join(", ")} ${gaveUp.length === 1 ? "is" : "are"} not running and ` +
+        `will not be restarted. The reason is in ${paths().logs}.`,
+    );
+    return 1;
+  }
+  return down.length > 0 ? 1 : 0;
 }
 
 async function serviceStatus(): Promise<number> {
@@ -303,17 +405,31 @@ async function serviceStatus(): Promise<number> {
       // Loaded and crash-looping is not the same as running, and the pid is
       // what tells them apart -- the same distinction the self-check workload
       // makes for exactly this reason.
-      console.log(pid ? `running, pid ${pid}` : "loaded but not running (it may be crash-looping; see the logs)");
-      return pid ? 0 : 1;
+      if (!pid) {
+        console.log("loaded but not running (it may be crash-looping; see the logs)");
+        return 1;
+      }
+      return reportSupervised(`running, pid ${pid}`, Number(pid));
     }
+    // Neither of these reports a pid this can match against, so the snapshot
+    // is trusted on its own. That is weaker than the launchd path -- a file
+    // from a supervisor that has since been killed would be believed -- but a
+    // stale file that says a component gave up errs towards looking, which is
+    // the right direction for this particular wrong answer.
     if (process.platform === "win32") {
       const { stdout } = await exec("schtasks", ["/Query", "/TN", WINDOWS_TASK, "/FO", "LIST"]);
-      console.log(stdout.trim());
-      return /Running/i.test(stdout) ? 0 : 1;
+      if (!/Running/i.test(stdout)) {
+        console.log(stdout.trim());
+        return 1;
+      }
+      return reportSupervised(stdout.trim(), null);
     }
     const { stdout } = await exec("systemctl", ["--user", "is-active", "fleet.service"]);
-    console.log(stdout.trim());
-    return stdout.trim() === "active" ? 0 : 1;
+    if (stdout.trim() !== "active") {
+      console.log(stdout.trim());
+      return 1;
+    }
+    return reportSupervised(stdout.trim(), null);
   } catch {
     console.log("not installed, or not running. `fleet service install`");
     return 1;

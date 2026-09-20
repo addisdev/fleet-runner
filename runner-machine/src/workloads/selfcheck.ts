@@ -25,9 +25,30 @@ import {
   parseLaunchctlList, parseSystemctlIsActive,
 } from "../versions.js";
 
+/**
+ * The service names that count as "this agent is supervised".
+ *
+ * Two of each, because there are two deployments and both are real. The first
+ * pair is what `deploy/install-agent.sh` writes — one unit per component, the
+ * way this fleet was built. The second is what `fleet service install` writes:
+ * **one** unit running `fleet up`, which supervises the agent as a child.
+ *
+ * Only the first pair was checked, so every machine adopted onto `fleet up`
+ * failed this row every night while being perfectly well supervised. Seen on
+ * two machines the day they were migrated, and it is the worst shape of
+ * false alarm — a check that fires because the thing it checks for got
+ * better.
+ *
+ * `FLEET_AGENT_LABEL` and `FLEET_AGENT_UNIT` still override, and still mean
+ * "this exact one", because an operator who names a service is answering the
+ * question rather than asking it.
+ */
+export const AGENT_LABELS = ["com.addisdev.fleet", "com.addisdev.fleet-runner-machine"] as const;
+export const AGENT_UNITS = ["fleet.service", "fleet-runner-machine.service"] as const;
+
 /** The launchd label and systemd unit `deploy/install-agent.sh` installs. */
-export const AGENT_LABEL = "com.addisdev.fleet-runner-machine";
-export const AGENT_UNIT = "fleet-runner-machine.service";
+export const AGENT_LABEL = AGENT_LABELS[1];
+export const AGENT_UNIT = AGENT_UNITS[1];
 
 /** Below this, a build is going to fail on disk space rather than on code. */
 export const DEFAULT_MIN_DISK_GB = 10;
@@ -70,7 +91,7 @@ export async function runSelfCheck(
   );
 
   // --- tools --------------------------------------------------------------
-  checks.push(await toolCheck("xcodebuild", ["-version"], parseXcodebuildVersion, env));
+  checks.push(await xcodebuildCheck(env));
   checks.push(await toolCheck("adb", ["version"], parseAdbVersion, env));
   checks.push(await toolCheck("gradle", ["--version"], parseGradleVersion, env, 60_000));
   checks.push(await toolCheck("node", ["-v"], parseNodeVersion, env));
@@ -110,6 +131,41 @@ export async function runSelfCheck(
 }
 
 /**
+ * `xcodebuild`, which exists on every Mac and works on some of them.
+ *
+ * `/usr/bin/xcodebuild` is a shim installed with the Command Line Tools. On a
+ * Mac with no full Xcode it resolves, runs, and refuses:
+ *
+ *     xcode-select: error: tool 'xcodebuild' requires Xcode, but active
+ *     developer directory '/Library/Developer/CommandLineTools' is a command
+ *     line tools instance
+ *
+ * `toolCheck` sees a tool that is present and unparseable, which is its
+ * definition of a broken install, and fails it. But a Mac without Xcode is not
+ * broken -- it is a Mac without Xcode, and `fleet doctor` says exactly that
+ * about the same machine, as an informational line that is explicitly not a
+ * fault. Two tools disagreeing about one fact, and the self-check is the one
+ * that was wrong: the brain of this fleet is a Command Line Tools machine by
+ * design and failed its nightly self-check for that reason alone.
+ *
+ * So the shim is reported the way an absent tool is. A genuinely broken Xcode
+ * -- installed, selected, and still not answering -- does not print that
+ * message and still fails, which is the case worth keeping.
+ */
+async function xcodebuildCheck(env: NodeJS.ProcessEnv = process.env): Promise<CheckRow> {
+  const resolved = await which("xcodebuild", env);
+  if (!resolved) return skipped("tool:xcodebuild", "xcodebuild is not on PATH");
+  const text = await orNull(() => out(resolved, ["-version"], 20_000));
+  const version = parseXcodebuildVersion(text);
+  if (version !== null) return { name: "tool:xcodebuild", ok: true, value: version, detail: resolved };
+  return skipped(
+    "tool:xcodebuild",
+    "only the Command Line Tools; there is no full Xcode on this machine. Install Xcode and " +
+      "run `sudo xcode-select -s /Applications/Xcode.app` if this host should build for Apple platforms.",
+  );
+}
+
+/**
  * A tool check. Absent is skipped; present-but-unparseable is a failure,
  * because that is a broken install and the only way anyone finds out is here.
  */
@@ -142,29 +198,54 @@ export async function agentLoadedCheck(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<CheckRow> {
-  const label = env.FLEET_AGENT_LABEL ?? AGENT_LABEL;
   if (platform === "darwin") {
-    const text = await orNull(() => out("launchctl", ["list", label], 15_000));
-    const state = parseLaunchctlList(text);
-    if (!state.loaded) return { name: "agent_loaded", ok: false, detail: `launchd has no ${label} loaded` };
-    if (state.lastExit !== null && state.lastExit !== 0 && state.pid === null) {
-      return { name: "agent_loaded", ok: false, value: label, detail: `${label} is loaded but not running (last exit ${state.lastExit})` };
+    // Named explicitly means that one and no other; otherwise any of the
+    // deployments this project ships counts, and the failure names them all.
+    const labels = env.FLEET_AGENT_LABEL ? [env.FLEET_AGENT_LABEL] : [...AGENT_LABELS];
+    let degraded: CheckRow | null = null;
+    for (const label of labels) {
+      const text = await orNull(() => out("launchctl", ["list", label], 15_000));
+      const state = parseLaunchctlList(text);
+      if (!state.loaded) continue;
+      if (state.lastExit !== null && state.lastExit !== 0 && state.pid === null) {
+        // Loaded but dead. Keep looking — another label may be healthy — but
+        // remember this one, because "loaded and crashed" is a better answer
+        // than "nothing found" if nothing else turns up.
+        degraded ??= {
+          name: "agent_loaded",
+          ok: false,
+          value: label,
+          detail: `${label} is loaded but not running (last exit ${state.lastExit})`,
+        };
+        continue;
+      }
+      return {
+        name: "agent_loaded",
+        ok: true,
+        value: label,
+        detail: state.pid === null ? `${label} loaded` : `${label} running as pid ${state.pid}`,
+      };
     }
-    return { name: "agent_loaded", ok: true, value: label, detail: state.pid === null ? `${label} loaded` : `${label} running as pid ${state.pid}` };
+    return (
+      degraded ?? { name: "agent_loaded", ok: false, detail: `launchd has none of ${labels.join(", ")} loaded` }
+    );
   }
   if (platform === "linux") {
-    const unit = env.FLEET_AGENT_UNIT ?? AGENT_UNIT;
+    const units = env.FLEET_AGENT_UNIT ? [env.FLEET_AGENT_UNIT] : [...AGENT_UNITS];
     if (!(await which("systemctl", env))) return skipped("agent_loaded", "systemctl is not on PATH");
-    // is-active exits non-zero for anything but active, so the exit status is
-    // not the answer -- the word it prints is, which `run` gives even then.
-    const text = await orNull(async () => {
-      const r = await run("systemctl", ["--user", "is-active", unit], 15_000);
-      return `${r.stdout}${r.stderr}`.trim() || null;
-    });
-    const state = parseSystemctlIsActive(text);
-    return state.loaded
-      ? { name: "agent_loaded", ok: true, value: unit, detail: `${unit} is ${state.state}` }
-      : { name: "agent_loaded", ok: false, value: unit, detail: `${unit} is ${state.state ?? "not known to systemd"}` };
+    let last: string | null = null;
+    for (const unit of units) {
+      // is-active exits non-zero for anything but active, so the exit status is
+      // not the answer -- the word it prints is, which `run` gives even then.
+      const text = await orNull(async () => {
+        const r = await run("systemctl", ["--user", "is-active", unit], 15_000);
+        return `${r.stdout}${r.stderr}`.trim() || null;
+      });
+      const state = parseSystemctlIsActive(text);
+      if (state.loaded) return { name: "agent_loaded", ok: true, value: unit, detail: `${unit} is ${state.state}` };
+      last = state.state ?? "not known to systemd";
+    }
+    return { name: "agent_loaded", ok: false, value: units[units.length - 1], detail: `none of ${units.join(", ")} is active (last: ${last})` };
   }
   return skipped("agent_loaded", `no service-manager probe for ${platform}`);
 }

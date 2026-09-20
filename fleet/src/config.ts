@@ -96,6 +96,36 @@ export type FleetConfig = {
  */
 const ENV_KEY = /^[A-Z][A-Z0-9_]*$/;
 
+/**
+ * The settings the type marks optional, and what each one is.
+ *
+ * `setPath` refuses a key that is not already in the object, because for a
+ * fixed schema a new key is a typo and silently creating it is the worst of
+ * the three possible behaviours. An optional setting is absent from
+ * `defaults()` for a different reason — nobody has set it yet — and refusing
+ * those made every one of them unsettable:
+ *
+ *     $ fleet config set executor.name mac-xcode
+ *     no such setting: executor.name
+ *
+ * Which is a command the README documents, and the one an executor deployment
+ * cannot proceed without. All five were unreachable; found while configuring
+ * the live brain in Phase 1 of LAB-PLAN.md.
+ *
+ * The type matters as much as the name: `coerce` reads the existing value to
+ * decide how to parse the new one, and there is no existing value here. Left
+ * to guess it would write `agent.ttlS` as the string "600", which survives
+ * a save, a load and a `config get`, and turns into `FLEET_DEVICE_TTL_S=600`
+ * that happens to be right — until something compares it to a number.
+ */
+const OPTIONAL: Record<string, "string" | "number"> = {
+  name: "string",
+  "agent.deviceId": "string",
+  "agent.ttlS": "number",
+  "executor.collector": "string",
+  "executor.name": "string",
+};
+
 export function defaults(): FleetConfig {
   return {
     roles: ["brain", "agent"],
@@ -282,7 +312,15 @@ export function setPath(config: FleetConfig, dotted: string, raw: string): Fleet
     node[leaf] = raw;
     return next;
   }
-  if (!(leaf in node)) throw new Error(`no such setting: ${dotted}`);
+  // An optional setting that nobody has set yet is absent for a reason that is
+  // not a typo, so it is coerced against the type it is declared as rather than
+  // against a value that is not there.
+  const optional = OPTIONAL[dotted];
+  if (!(leaf in node)) {
+    if (!optional) throw new Error(`no such setting: ${dotted}`);
+    node[leaf] = coerce(optional === "number" ? 0 : "", raw, dotted);
+    return next;
+  }
   node[leaf] = coerce(node[leaf], raw, dotted);
   return next;
 }

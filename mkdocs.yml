@@ -125,6 +125,7 @@ nav:
       - Networking: deploy/networking.md
       - The iOS executor: deploy/ios-executor.md
       - Alerts: deploy/alerts.md
+      - This lab: lab.md
   - Brand: brand.md
   - History:
       - Overview: history/index.md

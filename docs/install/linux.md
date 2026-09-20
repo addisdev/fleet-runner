@@ -128,9 +128,11 @@ lingering for the account (`loginctl enable-linger <user>`). A headless Pi that
 reboots unattended and is never logged into will otherwise sit there running
 nothing.
 
-**`fleet service install` has never been run on any platform.** Every path it
-writes is resolved absolutely, because systemd expands no `~` and reads no login
-`PATH` -- and none of it has been watched start. [Headless
+**`fleet service install` has never been run on Linux.** It has now been run
+on macOS, where it runs a real fleet's brain -- so the command works and the
+systemd backend specifically does not have that behind it. Every path it writes
+is resolved absolutely, because systemd expands no `~` and reads no login
+`PATH`, and none of it has been watched start here. [Headless
 hosts](../deploy/headless.md) has the older, actually-deployed alternative.
 
 ## Next

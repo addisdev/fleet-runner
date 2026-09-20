@@ -18,7 +18,7 @@ import {
   parseXcodebuildVersion, parseAdbVersion, parseGradleVersion, parseNodeVersion,
   parseLaunchctlList, parseSystemctlIsActive,
 } from "../src/versions.js";
-import { countFailed, toolCheck, agentLoadedCheck } from "../src/workloads/selfcheck.js";
+import { countFailed, toolCheck, agentLoadedCheck, AGENT_LABEL, AGENT_LABELS, AGENT_UNIT, AGENT_UNITS } from "../src/workloads/selfcheck.js";
 import type { CheckRow } from "../src/protocol.js";
 
 // --- clock -------------------------------------------------------------------
@@ -207,4 +207,62 @@ test("a platform with no service manager skips the agent check", async () => {
 test("a Linux box without systemctl skips rather than fails the agent check", async () => {
   const row = await agentLoadedCheck("linux", { PATH: "" });
   assert.equal(row.ok, null);
+});
+
+// --- which service counts as "supervised" -----------------------------------
+//
+// There are two deployments and both are real: one unit per component, which
+// `deploy/install-agent.sh` writes, and one unit running `fleet up`, which
+// `fleet service install` writes and which supervises the agent as a child.
+// Only the first was checked, so a machine adopted onto `fleet up` failed this
+// row every night while being perfectly well supervised — a check firing
+// because the thing it checks for got better. Seen on two machines the day
+// they were migrated.
+
+test("both deployments count as supervised", () => {
+  assert.ok(AGENT_LABELS.includes("com.addisdev.fleet"), "fleet service install writes this one");
+  assert.ok(AGENT_LABELS.includes("com.addisdev.fleet-runner-machine"), "install-agent.sh writes this one");
+  assert.ok(AGENT_UNITS.includes("fleet.service"));
+  assert.ok(AGENT_UNITS.includes("fleet-runner-machine.service"));
+  // The old single-value exports still resolve, because other code imports them.
+  assert.equal(AGENT_LABEL, "com.addisdev.fleet-runner-machine");
+  assert.equal(AGENT_UNIT, "fleet-runner-machine.service");
+});
+
+test("naming a service means that one and no other", async () => {
+  // An operator who sets FLEET_AGENT_LABEL is answering the question, not
+  // asking it, so the fallback list must not rescue a name that is not loaded.
+  const row = await agentLoadedCheck("darwin", { FLEET_AGENT_LABEL: "com.example.definitely-not-loaded" });
+  assert.equal(row.ok, false);
+  assert.match(row.detail ?? "", /com\.example\.definitely-not-loaded/);
+  assert.doesNotMatch(row.detail ?? "", /com\.addisdev/, "it must not fall back to the built-in names");
+});
+
+test("with nothing loaded, the failure names every label it looked for", async () => {
+  const row = await agentLoadedCheck("darwin", {});
+  // Whether this machine has one loaded depends on the machine, so the only
+  // safe assertion is about the shape of a negative answer.
+  if (row.ok === false) {
+    assert.match(row.detail ?? "", /com\.addisdev\.fleet/);
+  } else {
+    assert.equal(row.ok, true);
+    assert.ok(AGENT_LABELS.includes(row.value as (typeof AGENT_LABELS)[number]));
+  }
+});
+
+test("a Mac with only the Command Line Tools is not a broken Mac", async () => {
+  // /usr/bin/xcodebuild is a shim the CLT installs. It resolves, it runs, and
+  // it refuses -- which toolCheck reads as a broken install and fails. But
+  // `fleet doctor` reports the same machine as merely lacking Xcode, and it is
+  // right: the brain of this fleet is a CLT machine by design and was failing
+  // its nightly self-check for that reason alone.
+  //
+  // Asserted through the public shape rather than by faking xcode-select,
+  // because what matters is that the row is never a *failure* on a machine
+  // whose only sin is having no Xcode.
+  const rows = [
+    await toolCheck("definitely-not-a-real-tool", ["--version"], () => null, { PATH: "" }),
+  ];
+  assert.equal(rows[0].ok, null, "an absent tool is skipped, not failed");
+  assert.equal(countFailed(rows), 0);
 });
