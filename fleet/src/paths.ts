@@ -26,6 +26,12 @@ export function paths(env: NodeJS.ProcessEnv = process.env) {
     artifacts: path.join(home, "artifacts"),
     cache: path.join(home, "cache"),
     logs: path.join(home, "logs"),
+    /**
+     * What `fleet up`'s supervisor is doing, for `fleet service status` to
+     * read. Beside the logs rather than in them: it is state, it is rewritten
+     * rather than appended, and a log rotation must never take it away.
+     */
+    supervisorStatus: path.join(home, "logs", "supervisor.json"),
     /** A private Node, when the install script put one here. */
     runtime: path.join(home, "runtime"),
   };

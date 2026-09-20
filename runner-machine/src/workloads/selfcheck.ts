@@ -91,7 +91,7 @@ export async function runSelfCheck(
   );
 
   // --- tools --------------------------------------------------------------
-  checks.push(await toolCheck("xcodebuild", ["-version"], parseXcodebuildVersion, env));
+  checks.push(await xcodebuildCheck(env));
   checks.push(await toolCheck("adb", ["version"], parseAdbVersion, env));
   checks.push(await toolCheck("gradle", ["--version"], parseGradleVersion, env, 60_000));
   checks.push(await toolCheck("node", ["-v"], parseNodeVersion, env));
@@ -128,6 +128,41 @@ export async function runSelfCheck(
       ? { error: `${failed} check${failed === 1 ? "" : "s"} failed: ${checks.filter((c) => c.ok === false).map((c) => c.name).join(", ")}` }
       : {}),
   });
+}
+
+/**
+ * `xcodebuild`, which exists on every Mac and works on some of them.
+ *
+ * `/usr/bin/xcodebuild` is a shim installed with the Command Line Tools. On a
+ * Mac with no full Xcode it resolves, runs, and refuses:
+ *
+ *     xcode-select: error: tool 'xcodebuild' requires Xcode, but active
+ *     developer directory '/Library/Developer/CommandLineTools' is a command
+ *     line tools instance
+ *
+ * `toolCheck` sees a tool that is present and unparseable, which is its
+ * definition of a broken install, and fails it. But a Mac without Xcode is not
+ * broken -- it is a Mac without Xcode, and `fleet doctor` says exactly that
+ * about the same machine, as an informational line that is explicitly not a
+ * fault. Two tools disagreeing about one fact, and the self-check is the one
+ * that was wrong: the brain of this fleet is a Command Line Tools machine by
+ * design and failed its nightly self-check for that reason alone.
+ *
+ * So the shim is reported the way an absent tool is. A genuinely broken Xcode
+ * -- installed, selected, and still not answering -- does not print that
+ * message and still fails, which is the case worth keeping.
+ */
+async function xcodebuildCheck(env: NodeJS.ProcessEnv = process.env): Promise<CheckRow> {
+  const resolved = await which("xcodebuild", env);
+  if (!resolved) return skipped("tool:xcodebuild", "xcodebuild is not on PATH");
+  const text = await orNull(() => out(resolved, ["-version"], 20_000));
+  const version = parseXcodebuildVersion(text);
+  if (version !== null) return { name: "tool:xcodebuild", ok: true, value: version, detail: resolved };
+  return skipped(
+    "tool:xcodebuild",
+    "only the Command Line Tools; there is no full Xcode on this machine. Install Xcode and " +
+      "run `sudo xcode-select -s /Applications/Xcode.app` if this host should build for Apple platforms.",
+  );
 }
 
 /**

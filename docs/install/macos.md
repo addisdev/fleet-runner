@@ -183,9 +183,20 @@ writes **one** launchd unit running `fleet up`, into
 rather than the five plists the old deployment had, so switching the brain off
 is a config edit rather than a `launchctl` invocation somebody has to look up.
 
-**`fleet service install` has never been run, on this platform or any other.**
-Every path it writes is resolved absolutely -- launchd expands no `~` and reads
-no login `PATH` -- and none of it has been watched start at login.
+**This is the one platform `fleet service install` has been run on.** Since
+2026-09-19 it runs the brain of the fleet this project was built for: one
+launchd unit, three components, on an Intel Mac under macOS 12, surviving a
+reboot of the supervisor and a `kill -9` of the collector under it.
+
+Two things that cost an outage each, both fixed and both worth knowing:
+`launchctl bootstrap` loses a race with the `bootout` immediately before it and
+refuses with `Bootstrap failed: 5: Input/output error` (retried now), and the
+unit's `PATH` is taken from **the environment of the shell that ran the
+install** -- so install it from a shell that can see `adb`, or the executor
+that unit starts will report no Android targets and not say why.
+
+Every path it writes is resolved absolutely, because launchd expands no `~` and
+reads no login `PATH`.
 [Headless hosts](../deploy/headless.md) covers what the old, actually-deployed
 plists do, and the local-network gate that bites a launchd agent on macOS
 specifically.

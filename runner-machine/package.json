@@ -1,6 +1,6 @@
 {
   "name": "fleet-runner-machine",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "type": "module",
   "description": "Fleet Runner machine agent: turns a laptop or desktop into a device the collector can send work to.",

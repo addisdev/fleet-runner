@@ -14,7 +14,7 @@ that says which ones somebody has watched register is worth something.
 | Android phone, tablet | `runner-android` | `adb install`, or sideload | **yes** — the original shelf |
 | iPhone, iPad | `runner-ios` | Xcode, TestFlight internal | **yes** |
 | iOS simulator | `runner-ios` | `simctl install` | **yes** |
-| macOS, Linux, Windows | `runner-machine` | `npm start`, or a LaunchAgent / systemd unit | **macOS yes.** Linux and Windows run their suite in CI on x64 and arm64, and neither has registered against a real collector — see [what each one reports](#what-a-cloud-runner-actually-reports) |
+| macOS, Linux, Windows | `runner-machine` | `fleet up`, or `npm start`, or a LaunchAgent / systemd unit | **macOS yes, on both architectures** — an Apple M1 Pro and a 2016 Intel i7 both registered, passed `npm run conformance`, and produce comparable synthetic numbers with matching digests; both run under `fleet service`. Linux and Windows run their suite in CI on x64 and arm64, and neither has registered against a real collector — see [what each one reports](#what-a-cloud-runner-actually-reports) |
 | Android emulator | `runner-android` | `adb install` to the emulator | **yes** |
 
 ## What Wave 5 added

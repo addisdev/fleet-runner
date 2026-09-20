@@ -25,9 +25,9 @@ can type it.
 
 | | The one command | State |
 |---|---|---|
-| **[macOS](macos.md)** | `curl -fsSL …/install.sh \| sh` | Installed from the real v0.5.0 release, checksum verified, and the installed binary runs. **`fleet up` has been watched to work on macOS/arm64** |
+| **[macOS](macos.md)** | `curl -fsSL …/install.sh \| sh` | Installed from a real release on **arm64 and Intel**, checksum verified, and upgraded in place from 0.5.0 to 0.6.0. **A real fleet's brain runs here under `fleet service`** — one launchd unit, three components, on macOS 12 |
 | **[Windows](windows.md)** | `irm …/install.ps1 \| iex` | `install.ps1` has never been parsed by PowerShell. The CLI's own suite -- supervisor, config, `fleet up` end to end -- passes on `windows-latest` in CI, but **nobody has stood a fleet up on a Windows machine**, and the service backend is untested |
-| **[Linux](linux.md)** | `curl -fsSL …/install.sh \| sh` | The installer is the same script macOS runs against the real release; it has not been run on Linux. The collector's and the CLI's suites pass on x64 and arm64 Linux in CI. **Nobody has stood a fleet up on one** |
+| **[Linux](linux.md)** | `curl -fsSL …/install.sh \| sh` | The installer is the same script macOS runs against the real release; it has not been run on Linux. The collector's and the CLI's suites pass on x64 and arm64 Linux in CI. **Nobody has stood a fleet up on one**, and the systemd service backend is unexercised |
 | **[Docker](docker.md)** | `docker run ghcr.io/addisdev/fleet` | Published for linux/amd64 and linux/arm64 at v0.5.0, so it builds. **No container has been started from it** |
 | **[Devices](devices.md)** | -- | How a phone, a television, a Roku or a browser joins a fleet that is already up |
 

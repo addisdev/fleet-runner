@@ -139,11 +139,18 @@ held the event loop open, an absolute path imported as an ESM specifier (`Receiv
 being ENOENT there and `spawn("npm.cmd")` being EINVAL, and a `node_modules/.bin` shim with
 no Windows equivalent.
 
+Since 0.6.1, **`fleet service install` runs the brain of the fleet this project was built
+for**: one launchd unit, three components, on an Intel Mac under macOS 12, adopting a
+collector database that predated it. It has survived a supervisor restart and a `kill -9` of
+the collector under it. Two things cost an outage each on the way and are fixed —
+`launchctl bootstrap` losing a race with the `bootout` before it, and the unit taking its
+`PATH` from the shell that ran the install, which is how an executor ends up unable to find
+`adb`.
+
 What has still not been run:
 
-- **`fleet service install`, on any platform.** Not launchd, not systemd, not the Windows
-  scheduled task. Every path it writes is resolved absolutely and none of it has been watched
-  start at login.
+- **`fleet service install` on systemd or on Windows.** The launchd backend is the one with a
+  real deployment behind it; the other two are written, typechecked, and unexercised.
 - **A container.** `fleet/Dockerfile` is built and published by the release workflow for
   linux/amd64 and linux/arm64, so it assembles; nothing has started a container from it.
 - **`install.ps1`.** No PowerShell was available to parse it, let alone run it. `install.sh`

@@ -10,4 +10,4 @@
  * which CI runs on every push. See its header for why one number across four
  * components is the rule.
  */
-export const APP_VERSION = "0.6.0";
+export const APP_VERSION = "0.6.1";
