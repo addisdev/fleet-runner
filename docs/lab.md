@@ -143,7 +143,7 @@ Six enabled. All times local to fleet-host.
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
 | `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** Since 09-16 it is `no targets attached` — the Galaxy S8+ is unplugged |
 | `nightly-aliquant-web` | 04:00 | `fleet-host`, `chromium` and `mobile-chrome` | Green on fleet-host from its first run. It had been red on runner-host since 09-06 — on the three projects that are no longer in it |
-| `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | **Red, and correctly.** Aliquant's sign-in page gained a "Forgot password?" link after the baseline was accepted on 2026-08-21. That shifts the card and diverges 2.7% on desktop, 6.1% on mobile. Accepting the new captures on the dashboard's Visual page turns it green |
+| `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | Green. The baseline was re-accepted on 2026-09-22 from fleet-host's own captures, after Aliquant's sign-in page gained a "Forgot password?" link; the old one had diverged 2.7% on desktop and 6.1% on mobile since 09-10. The `webkit` and `mobile-safari` baselines are still the August ones, because nothing runs those projects now |
 | `nightly-aliquant-audit` | 04:45 | `fleet-host` | Green |
 
 **The iOS nightlies are paused**: `nightly-greenfolio-ios`, `nightly-aliquant-ios`
@@ -235,5 +235,3 @@ from, so a restore does not have to guess.
   current macOS and Xcode, and the only such Mac besides your daily laptop is the
   runner farm. A dedicated Mac — or the mini, once fleet-host is on the tailnet —
   would bring back the three iOS nightlies and the three missing web projects.
-- **The `aliquant` visual baseline** predates the "Forgot password?" link and
-  needs accepting.
