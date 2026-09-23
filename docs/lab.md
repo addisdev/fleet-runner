@@ -14,8 +14,8 @@ and nothing said which of them held the iPhone.
 
 | | What it is | Runs | Reached by |
 |---|---|---|---|
-| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | The brain, a machine agent, and the `fleet-host` executor — one `fleet` service, three components | `ssh fleet-host`, `http://192.168.50.27:8788` |
-| **runner-host** | The Mac with full Xcode | The `mac-xcode` executor, for iOS and web work | `ssh runner-host` **when it is awake**, which is not reliable |
+| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | The brain, a machine agent, and the `fleet-host` executor — one `fleet` service, three components. The executor does Android host work and the web nightlies, in the installed Google Chrome | `ssh fleet-host`, `http://192.168.50.27:8788` |
+| **runner-host** | MacBook Pro (Mac14,10), macOS 26.7, Xcode 27 | **Nothing of Fleet Runner's, since 2026-09-22.** It runs the GitHub Actions runner farm, which is its own project | `ssh runner-host` |
 | **the dev MacBook** | M1 Pro, 16 GB, macOS 27, Xcode 27 | A machine agent and the `mac-dev` executor, plus the SSH tunnel and the alert receiver | it is the machine you are on |
 | **the mini** | Mac mini M4, macOS 15.6.1, up 224 days | Nothing fleet-related | `ssh mini`, over the tailnet |
 
@@ -25,6 +25,26 @@ later, where a launchd job cannot ask for local-network access and gets
 `EHOSTUNREACH` that looks exactly like a network fault. See
 [networking](deploy/networking.md). The brain being the slowest machine costs
 nothing: it schedules, it does not compute.
+
+**Why runner-host was taken off the fleet.** It is the only Mac here with a
+current Xcode, and it was running every iOS and web nightly — alongside forty
+GitHub Actions runners. On 2026-09-22 its load average was 52 on twelve cores,
+Spotlight was indexing the runners' build directories, and on 2026-09-20 it had
+gone to sleep on a *thermal emergency*. The `greenfolio-ios` nightly hung for 55
+minutes three nights running there. Its `com.addisdev.fleet-watch`,
+`fleet-autofix` and `fleet-dashboard` jobs belong to the runner farm, **not** to
+Fleet Runner, despite the shared prefix — leave them alone. Fleet Runner's two
+jobs there are renamed to `.plist.disabled`.
+
+**The web nightlies run in the installed Chrome.** Playwright 1.62 refuses to
+install Chromium or Firefox on macOS 12, so fleet-host drives the Google Chrome
+already on it (`FLEET_CHROMIUM_CHANNEL=chrome`), from the Playwright install in
+`~/fleet-collector` (`FLEET_PLAYWRIGHT_DIR`). That covers the `chromium` and
+`mobile-chrome` projects. Firefox, WebKit and mobile Safari need a Mac on a newer
+macOS and currently run nowhere. fleet-host is also Liz's machine — it serves the
+Pinterest dashboard on 8787 behind a Cloudflare tunnel — and it is
+enterprise-managed (SentinelOne, Jamf, GlobalProtect), which is one more reason
+it drives a browser that was already there rather than downloading new ones.
 
 **The mini is not on the fleet.** It is on `192.168.1.x` and the shelf is on
 `192.168.50.x`, so the only route is the tailnet, and the brain is not on it.
@@ -46,8 +66,8 @@ address, so the dev MacBook's agent and executor both point at
 `targets.executor` routes by **name**. Two machines configured with the same
 `FLEET_EXECUTOR_NAME` both claim the jobs pinned to it and each runs them on
 whatever devices it can see, so a nightly lands on old or new code by coin
-flip. The names in use are `fleet-host`, `mac-xcode` (runner-host) and
-`mac-dev` (the dev MacBook).
+flip. The names in use are `fleet-host` and `mac-dev` (the dev MacBook).
+`mac-xcode` was runner-host's and is retired; no schedule points at it.
 
 Devices now report `attached_host` beside `attached_to`, so the registry can
 tell two Macs apart. Before that, answering "which Mac is this iPhone cabled
@@ -115,17 +135,21 @@ the copy is the last known-good state rather than the freshest one.
 
 ## The schedules
 
-Seven enabled. All times local to fleet-host.
+Six enabled. All times local to fleet-host.
 
 | | When | Runs on | What red means |
 |---|---|---|---|
 | `nightly-synthetic-shelf` | 02:00 | fanout, pool `machines` | A machine's throughput moved, or an agent is not claiming. This is the comparison table |
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
 | `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** Since 09-16 it is `no targets attached` — the Galaxy S8+ is unplugged |
-| `nightly-greenfolio-ios` | 03:00 | `mac-xcode`, simulator `fleet-sim-1` | The one nightly that was green all month, until 09-18 |
-| `nightly-aliquant-web` | 04:00 | `mac-xcode` | **Red since 09-06** on firefox, 09-12 on webkit and mobile-safari |
-| `nightly-aliquant-shots` | 04:15 | `mac-xcode` | **Red since 09-10**, every browser: `no screenshot for page 'home'` |
-| `nightly-aliquant-audit` | 04:45 | `mac-xcode` | Green |
+| `nightly-aliquant-web` | 04:00 | `fleet-host`, `chromium` and `mobile-chrome` | Green on fleet-host from its first run. It had been red on runner-host since 09-06 — on the three projects that are no longer in it |
+| `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | **Red, and correctly.** Aliquant's sign-in page gained a "Forgot password?" link after the baseline was accepted on 2026-08-21. That shifts the card and diverges 2.7% on desktop, 6.1% on mobile. Accepting the new captures on the dashboard's Visual page turns it green |
+| `nightly-aliquant-audit` | 04:45 | `fleet-host` | Green |
+
+**The iOS nightlies are paused**: `nightly-greenfolio-ios`, `nightly-aliquant-ios`
+and `nightly-jerv-ios`. fleet-host cannot run them — it has only the Command Line
+Tools, and macOS 12 tops out at Xcode 14 — and runner-host is off the fleet.
+They come back when a Mac with a current Xcode is dedicated to it.
 
 Nine more are disabled. Four of them carry placeholder values (`SET-ME-numeric-app-id`)
 and should be filled in or deleted — a disabled schedule with a placeholder in it
@@ -207,5 +231,9 @@ from, so a restore does not have to guess.
 - **Alerts still go to the dev MacBook's local receiver** over the tunnel's
   reverse forward, which fails whenever the tunnel does. An ntfy topic is the
   fix and it needs an account decision.
-- **runner-host sleeps.** It holds the only full Xcode and every iOS and web
-  nightly. `pmset` is the fix.
+- **No Mac for iOS, or for Firefox, WebKit and mobile Safari.** Those need a
+  current macOS and Xcode, and the only such Mac besides your daily laptop is the
+  runner farm. A dedicated Mac — or the mini, once fleet-host is on the tailnet —
+  would bring back the three iOS nightlies and the three missing web projects.
+- **The `aliquant` visual baseline** predates the "Forgot password?" link and
+  needs accepting.
