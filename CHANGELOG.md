@@ -16,6 +16,37 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.6.2] — 2026-09-22
+
+The web nightlies move off the machine that was running forty CI runners and
+overheating, and onto the fleet's brain -- which turned out to need two things
+the web path had never needed.
+
+### Fixed
+
+- **The web workloads had never run from a release.** `npx playwright test`
+  ran with no working directory, so it found `playwright.config.ts` and
+  `@playwright/test` by inheriting the executor's; `import("playwright")`
+  resolved against the executor's own module. Both hold in a checkout. Under a
+  release the executor is `~/.fleet/bin/fleet.mjs`, started by launchd from
+  `/`, with no Playwright anywhere near it. `FLEET_PLAYWRIGHT_DIR` names the
+  directory that owns a host's Playwright -- package, config and specs -- and
+  every web path uses it. Unset, it is the working directory, so a checkout is
+  unchanged.
+
+### Added
+
+- **`FLEET_CHROMIUM_CHANNEL`**, to drive an installed browser instead of one
+  Playwright downloaded. Playwright 1.62 **refuses to install Chromium or
+  Firefox on macOS 12** -- `does not support chromium on mac12` -- and the
+  fleet's brain is a Mac on 12, so there the Google Chrome already on the
+  machine is the only Chromium there is. `FLEET_CHROMIUM_CHANNEL=chrome` drives
+  it, for the config's `chromium` and `mobile-chrome` projects and for the
+  browsers the executor launches itself. Only the Chromium engine has a
+  channel, so such a host runs two of the five projects; Firefox, WebKit and
+  mobile Safari need a Mac on a newer macOS.
+
+
 ## [0.6.1] — 2026-09-19
 
 What running the thing found. v0.6.0 was written from a survey; this is from
@@ -832,7 +863,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/addisdev/fleet-runner/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/addisdev/fleet-runner/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/addisdev/fleet-runner/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/addisdev/fleet-runner/compare/v0.4.2...v0.5.0
