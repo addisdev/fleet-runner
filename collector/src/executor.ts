@@ -14,6 +14,7 @@ import {
 } from "./fleet-client.js";
 import { runWebUnfurl } from "./web/unfurl.js";
 import { runWebAudit } from "./web/audit.js";
+import { playwrightDir } from "./browser.js";
 import { runArchive } from "./web/archive/index.js";
 import { runDigest } from "./web/digest.js";
 import { countXcodebuildTests, xcodebuildDiagnostics } from "./xcparse.js";
@@ -1953,6 +1954,7 @@ function walkFiles(dir: string, rel: string): { file: string; name: string }[] {
 /** The project names playwright.config.ts resolves to, via --list. */
 async function listWebProjects(): Promise<string[]> {
   const { stdout } = await exec("npx", ["playwright", "test", "--list", "--reporter=json"], {
+    cwd: playwrightDir(),
     timeout: 120_000,
     env: { ...process.env, CI: "1" },
     maxBuffer: 64 * 1024 * 1024,
@@ -1986,6 +1988,7 @@ async function runWebProject(
 
   try {
     const { stdout } = await exec("npx", args, {
+      cwd: playwrightDir(),
       timeout: timeoutS * 1000,
       env: { ...process.env, PLAYWRIGHT_BASE_URL: url, CI: "1" },
     });
@@ -2352,6 +2355,7 @@ async function runWebShots(job: Job) {
           ["playwright", "test", path.join(specRoot, "_shots"),
            `--project=${profile}`, "--reporter=json", `--output=${testResults}`],
           {
+            cwd: playwrightDir(),
             timeout: timeoutS * 1000,
             env: {
               ...process.env, CI: "1", PLAYWRIGHT_BASE_URL: url,
