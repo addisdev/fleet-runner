@@ -16,6 +16,13 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- **A faster front door for evaluators and contributors.** The README now
+  summarizes the system, evidence and engineering scope before the deep dive;
+  a structured feature-request form asks for the decision and trust boundary
+  behind proposed work.
+
 ## [0.6.2] — 2026-09-22
 
 The web nightlies move off the machine that was running forty CI runners and

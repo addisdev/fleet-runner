@@ -1,0 +1,64 @@
+name: Feature request
+description: Propose a workload, platform, or capability grounded in a concrete use case.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Fleet Runner grows around measurements and workflows somebody actually
+        needs. Start with the decision or task this feature would make possible,
+        not only the mechanism you would like added.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to learn or automate?
+      description: Include the product, testing, or measurement decision this would support.
+      placeholder: "I need to compare ... so that I can decide whether ..."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it fit?
+      options:
+        - collector or dashboard
+        - runner-android
+        - runner-ios
+        - runner-machine
+        - browser runner
+        - Roku runner
+        - host executor
+        - CLI or desktop app
+        - protocol or integration
+        - documentation
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: What would a trustworthy result look like?
+      description: >
+        Name the output, environmental conditions, comparison, or failure mode
+        the fleet must record so the result can be believed later.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Optional. Describe an implementation or alternatives you have considered.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and discussions for this request
+          required: true
+        - label: I have said what the feature should refuse or report when it cannot measure the requested result
+          required: true
