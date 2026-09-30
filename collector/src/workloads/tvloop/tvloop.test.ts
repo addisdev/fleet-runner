@@ -118,7 +118,7 @@ export async function runTvloopChecks(check: Check): Promise<void> {
     doctor.args.join(" ") === `${CLI} doctor --json --device 10.0.0.9`, doctor.args.join(" "));
   const replay = commandFor("replay", { host: "10.0.0.9", outDir: "/o", flows: ["smoke"], node: "node" });
   check("tvloop: replay writes JUnit into the run's own directory",
-    replay.args.includes("--reporter") && replay.args.includes("/o/flows.xml") && replay.args.includes("smoke"));
+    replay.args.includes("--reporter") && replay.args.includes(path.join("/o", "flows.xml")) && replay.args.includes("smoke"));
   check("tvloop: hardware is test:hardware without pnpm",
     commandFor("hardware", { host: "h", outDir: "/o", flows: [] }).env?.TVLOOP_HARDWARE === "1");
   check("tvloop: junit counts, errors included", JSON.stringify(junitCounts(JUNIT_FAIL)) === '{"passed":1,"failed":2}');
