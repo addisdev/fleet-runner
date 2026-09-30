@@ -127,3 +127,22 @@ export async function loadRun(w: LoadedWorkload): Promise<WorkloadRun> {
   }
   return mod.run as WorkloadRun;
 }
+
+/**
+ * The `run` for a job's workload, or null if nothing here knows the name.
+ *
+ * Discovered directories first, then the bundle's map. The second half is not
+ * a nicety: in a release there is no workloads directory on disk, so discovery
+ * finds nothing, and when dispatch asked only the discovered map every
+ * directory workload -- install, enrol, size-report, upgrade-test -- answered
+ * "not supported by this executor" from every release since they moved out of
+ * executor.ts. loadRun already preferred the bundle; nothing ever got to it.
+ */
+export async function resolveRun(
+  name: string,
+  loaded: Map<string, LoadedWorkload>,
+): Promise<WorkloadRun | null> {
+  const w = loaded.get(name);
+  if (w) return loadRun(w);
+  return bundledRun(name);
+}

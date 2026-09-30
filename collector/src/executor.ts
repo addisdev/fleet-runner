@@ -51,7 +51,8 @@ import { ADB, batteryPct, hasApp, launchApp, processAlive } from "./workloads/de
 // Moved out so a workload directory can run a flow without importing the
 // executor, which would start a second poll loop. Same move device.ts made.
 import { FLOWS_DIR, MAESTRO, resolveFlow, runFlow } from "./workloads/flows.js";
-import { discoverWorkloads, loadRun, type LoadedWorkload } from "./workloads/registry.js";
+import { discoverWorkloads, resolveRun, type LoadedWorkload } from "./workloads/registry.js";
+import { bundledNames } from "./workloads/static.js";
 import { prepareInstallable } from "./workloads/install/index.js";
 import type { Target, WorkloadCtx } from "./workloads/types.js";
 
@@ -2910,9 +2911,8 @@ const LOADED = discoverWorkloads(log);
  * same "not supported by this executor" row it always did.
  */
 async function dispatch(job: Job, loaded: Map<string, LoadedWorkload>): Promise<void> {
-  const w = loaded.get(job.workload);
-  if (w) {
-    const run = await loadRun(w);
+  const run = await resolveRun(job.workload, loaded);
+  if (run) {
     await run(job, CTX);
     return;
   }
@@ -2965,7 +2965,7 @@ export async function startExecutor(): Promise<RunningExecutor> {
   log(
     LOADED.size > 0
       ? `workloads loaded from src/workloads: ${[...LOADED.keys()].sort().join(", ")}`
-      : "no workload directories found; every job falls back to the built-in handlers",
+      : `no workload directories on disk (a release); bundled: ${bundledNames().join(", ")}`,
   );
   // Which drivers exist, said once at startup. The question this answers is
   // "why can this host not see my phone", and the useful half of the answer is
