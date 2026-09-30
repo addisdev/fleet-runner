@@ -33,7 +33,7 @@ import {
 import { evaluate, expireSnoozes, notify, reconcile } from "./alerts.js";
 import { requireToken } from "./api/guard.js";
 import { invalidateOverview, publish, registerApi } from "./api/index.js";
-import { AGE, capabilityMatches, deviceCapabilities, effectivePools, isExpired } from "./api/shared.js";
+import { AGE, capabilityMatches, deviceCapabilities, effectivePools, isExpired, ONLINE_S } from "./api/shared.js";
 import { admit, isTailnetAddress, normaliseIp, whois } from "./tailnet.js";
 // Dependency chains live beside the cancel path, which also has to settle
 // waiters; imported here rather than duplicated. mutations.ts imports nothing
@@ -430,10 +430,48 @@ function claimantContext(executor: "device" | "host", claimant: string): Claiman
  * would do — a second implementation would eventually promise a preemption
  * that the claim loop then refuses, which is a running job stopped for nothing.
  */
+/**
+ * Which executors hold an online device this host job could run on, judged
+ * from the presence reports executors already send: `attached_to` names the
+ * executor, `last_seen` says it is still there, and `targets.device_id` or
+ * `targets.match` says whether it fits. A job that names neither fits any
+ * attached device, so every executor with something attached qualifies.
+ */
+function executorsHolding(spec: JobSpec): Set<string> {
+  const rows = db
+    .prepare(
+      `SELECT device_id, descriptor, ${AGE("last_seen")} AS age_s FROM devices
+        WHERE json_extract(descriptor, '$.attached_to') IS NOT NULL`,
+    )
+    .all() as { device_id: string; descriptor: string; age_s: number | null }[];
+  const holders = new Set<string>();
+  for (const r of rows) {
+    if (r.age_s === null || r.age_s > ONLINE_S) continue;
+    if (spec.targets?.device_id && spec.targets.device_id !== r.device_id) continue;
+    let d: Record<string, unknown>;
+    try { d = JSON.parse(r.descriptor) as Record<string, unknown>; } catch { continue; }
+    if (spec.targets?.match) {
+      try { if (!evalMatch(spec.targets.match, { ...d, device_id: r.device_id })) continue; } catch { continue; }
+    }
+    if (typeof d.attached_to === "string") holders.add(d.attached_to);
+  }
+  return holders;
+}
+
 function specEligibleFor(ctx: ClaimantContext, spec: JobSpec): boolean {
-  // Host jobs may name the executor that should take them. Unset stays
-  // permissive: any executor claims it.
-  if (ctx.executor === "host") return !spec.targets?.executor || spec.targets.executor === ctx.claimant;
+  // Host jobs may name the executor that should take them.
+  if (ctx.executor === "host") {
+    if (spec.targets?.executor) return spec.targets.executor === ctx.claimant;
+    // Unpinned, it goes to an executor that actually holds a device it can run
+    // on. It used to go to whichever executor polled first, which with two
+    // executors is a coin flip: a job meant for a phone cabled to one Mac was
+    // claimed by the other, found nothing attached, and was skipped -- while
+    // the phone sat idle a room away. When no executor holds a match, any may
+    // claim it, so the answer is a prompt "no targets" skip rather than a job
+    // queued forever for a device that is not coming.
+    const holders = executorsHolding(spec);
+    return holders.size === 0 || holders.has(ctx.claimant);
+  }
 
   if (spec.targets?.device_id && spec.targets.device_id !== ctx.claimant) return false;
   const pool = spec.targets?.pool;
@@ -1034,7 +1072,7 @@ const requeuePreemptedTx = db.transaction((jobId: string, finalRow: Record<strin
 app.post("/results", async (req, reply) => {
   const b = req.body as {
     schema?: number; kind?: string; job_id?: string; device_id?: string;
-    iter?: number; final?: boolean; ok?: boolean;
+    iter?: number; final?: boolean; ok?: boolean; error?: string;
     // A final row that closes nothing: the runner was asked to step aside and
     // has checkpointed. See requeuePreemptedTx.
     preempted?: boolean;
@@ -1127,7 +1165,10 @@ app.post("/results", async (req, reply) => {
     for (const f of settled.failed)
       announce({ type: "job", job_id: f.job_id, status: "failed", reason: f.reason });
 
-    reportStatus(b.job_id, status === "failed" ? "failure" : "success").catch((e) =>
+    // A skip -- nothing attached, a host under pressure -- is ok for the queue
+    // and says nothing about the code, so it must not become a green check.
+    const skipped = b.ok === true && typeof b.error === "string" && b.error.startsWith("skipped:");
+    reportStatus(b.job_id, status === "failed" ? "failure" : "success", skipped).catch((e) =>
       app.log.error(e, "status report failed"),
     );
     return { ok: true, status, promoted: settled.promoted, failed: settled.failed.map((f) => f.job_id) };
@@ -1137,7 +1178,7 @@ app.post("/results", async (req, reply) => {
 
 // --- GitHub commit statuses (recorded always, posted only when armed) ---
 
-async function reportStatus(jobId: string, state: "success" | "failure") {
+async function reportStatus(jobId: string, state: "success" | "failure", skipped = false) {
   const row = db.prepare("SELECT spec FROM jobs WHERE job_id = ?").get(jobId) as
     | { spec: string }
     | undefined;
@@ -1148,7 +1189,13 @@ async function reportStatus(jobId: string, state: "success" | "failure") {
 
   let posted = 0;
   let detail: string;
-  if (!GITHUB_STATUS_ARMED || !GITHUB_TOKEN) {
+  if (skipped) {
+    // Posting `success` for a run that tested nothing would put a green check
+    // on a PR where no device ran. Posting nothing leaves the check absent,
+    // which is the truth: advisory, it reads as "not run"; required, it
+    // blocks until something does run.
+    detail = "skipped: nothing ran, so nothing was posted";
+  } else if (!GITHUB_STATUS_ARMED || !GITHUB_TOKEN) {
     detail = "dry run: FLEET_GITHUB_STATUS/FLEET_GITHUB_TOKEN not set";
     app.log.info({ job_id: jobId, target, state }, "commit status recorded, not posted (CI off)");
   } else {

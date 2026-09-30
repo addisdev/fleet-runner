@@ -24,7 +24,7 @@ import {
   type IosDeviceInfo,
 } from "./targets.js";
 import {
-  DRIVERS, adbDriver, simctlDriver, dedupe, devicectlDevices, listAllTargets,
+  DRIVERS, adbDriver, simctlDriver, dedupe, devicectlDevices, listAllTargets, driverNamed,
 } from "./drivers/index.js";
 import { targetsFrom } from "./drivers/devicectl.js";
 import { describeRoku, rokuDevPassword, rokuDevices, rokuPresenceHere, rokuTarget, type RokuDevice } from "./drivers/roku.js";
@@ -52,6 +52,7 @@ import { ADB, batteryPct, hasApp, launchApp, processAlive } from "./workloads/de
 // executor, which would start a second poll loop. Same move device.ts made.
 import { FLOWS_DIR, MAESTRO, resolveFlow, runFlow } from "./workloads/flows.js";
 import { discoverWorkloads, loadRun, type LoadedWorkload } from "./workloads/registry.js";
+import { prepareInstallable } from "./workloads/install/index.js";
 import type { Target, WorkloadCtx } from "./workloads/types.js";
 
 
@@ -536,6 +537,13 @@ async function runUiTest(job: Job) {
   }
   const appId = job.suite?.app_id ?? declared;
 
+  // A job that names a build tests that build. Without this a ui-test ran its
+  // flow against whatever was already on the phone -- so a CI run "pinned to
+  // the exact APK just built" passed or failed on last week's install, and a
+  // phone that had never had the app skipped rather than testing anything.
+  // Fetched once, installed per device, inside the lock.
+  const installable = job.app?.sha256 ? await prepareInstallable(job.app, fetchArtifact) : null;
+
   const granted = job.targets?.exclusive
     ? await acquireLocks(job.job_id, targets.map((t) => t.id))
     : null;
@@ -551,6 +559,33 @@ async function runUiTest(job: Job) {
       });
       log(`ui-test on ${serial}: skipped (locked)`);
       continue;
+    }
+    if (installable && job.app && target.platform !== (job.app.platform ?? "android")) {
+      // The build is for another platform. Running the flow here would test
+      // an old install of something else, which is the bug this block fixes.
+      await postResult({
+        job_id: job.job_id, device_id: serial, iter: 0, ok: true,
+        error: `skipped: this job's build is for ${job.app.platform ?? "android"}, not ${target.platform}`,
+      });
+      continue;
+    }
+    if (installable && job.app) {
+      try {
+        const driver = driverNamed(target.driver);
+        if (!driver?.install) throw new Error(`nothing here can install onto ${serial} (driver ${target.driver ?? "none"})`);
+        await driver.install(target, installable);
+        log(`ui-test on ${serial}: installed ${job.app.name}@${job.app.build ?? job.app.sha256.slice(0, 12)}`);
+      } catch (e) {
+        // A build that will not install is this build's failure, not a skip:
+        // it is exactly what a CI run on real phones is there to catch.
+        allOk = false;
+        await postResult({
+          job_id: job.job_id, device_id: serial, iter: 0, ok: false,
+          error: `install failed: ${(e as Error).message.slice(0, 280)}`,
+        });
+        log(`ui-test on ${serial}: install FAILED`);
+        continue;
+      }
     }
     if (appId && !(await hasApp(target, appId))) {
       await postResult({
