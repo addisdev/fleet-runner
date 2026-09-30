@@ -14,6 +14,7 @@ import {
 import { runWebUnfurl } from "./web/unfurl.js";
 import { runWebAudit } from "./web/audit.js";
 import { playwrightDir } from "./browser.js";
+import { pressureReason, readPressure } from "./pressure.js";
 import { runArchive } from "./web/archive/index.js";
 import { runDigest } from "./web/digest.js";
 import { countXcodebuildTests, xcodebuildDiagnostics } from "./xcparse.js";
@@ -2938,6 +2939,19 @@ export async function startExecutor(): Promise<RunningExecutor> {
       }
 
       log(`claimed ${job.job_id} (${job.workload})`);
+
+      // On a host that is somebody's workstation, keep their rule: no heavy
+      // work above the load or below the free swap they set. See pressure.ts.
+      const busy = pressureReason(await readPressure());
+      if (busy) {
+        await postResult({
+          job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: true,
+          error: `skipped: ${busy}`,
+        });
+        log(`job ${job.job_id} skipped: ${busy}`);
+        continue;
+      }
+
       try {
         await dispatch(job, LOADED);
       } catch (e) {
