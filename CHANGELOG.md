@@ -16,12 +16,52 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-09-30
+
+The fleet stops being something to look at and becomes something to use: a
+coding agent can ask it for a run on real hardware, a PR's build can be sent
+to a phone, and a tool with a hardware nightly nobody could run can borrow a
+device. Three bugs that made its answers untrustworthy are fixed on the way.
+
 ### Added
 
+- **`fleet mcp`.** The lab as MCP tools over stdio -- `fleet_devices`,
+  `fleet_run`, `fleet_job`, `fleet_artifact` (screenshots come back as
+  images) and `fleet_results` -- so a coding session can run a job on real
+  devices and read the verdict without opening the dashboard. Register it with
+  `claude mcp add --scope user fleet -- ~/.fleet/bin/fleet mcp`.
+- **Shared-host pressure limits.** `FLEET_MAX_LOAD` and
+  `FLEET_MIN_FREE_SWAP_MB` let an executor on somebody's workstation refuse
+  heavy work while that machine is under pressure, as a `skipped:` result with
+  the numbers in it. Unset by default.
+- **The `tvloop` workload.** Runs tvloop's hardware suite -- doctor, sideload
+  the checkout's channel, the contract tests, a JUnit replay of its flows --
+  on a Roku the fleet has locked, with the developer password from the
+  Keychain and scrubbed from every uploaded log.
+- **Rokus register.** One host, told `FLEET_ROKU=1`, reports the Rokus on its
+  network as its own devices, with model, `roku-<firmware>`, address and
+  developer mode.
 - **A faster front door for evaluators and contributors.** The README now
   summarizes the system, evidence and engineering scope before the deep dive;
   a structured feature-request form asks for the decision and trust boundary
   behind proposed work.
+
+### Fixed
+
+- **A job for a device on one host could be claimed by another**, which then
+  found nothing to run it on. A host job with no `targets.executor` now goes to
+  an executor that holds a matching device, when one does.
+- **"Nothing ran" posted a commit status.** A skipped result -- no device, a
+  host under pressure -- now posts no `fleet-runner` status, rather than a
+  success for a run that did not happen. No targets is a skip, not a failure.
+- **`ui-test` ignored the build its job named** and ran against whatever was
+  installed. It now installs the job's `app` on each device first.
+- **Simulators registered as iPhones** when simctl's listing timed out; a
+  devicectl entry on `sameMachine` is now a simulator.
+- **Alerts for the personal pool.** A daily laptop's battery is not a fleet
+  incident.
+- **A Roku would have registered as an iPhone** -- it fell through the iOS
+  descriptor's fallback.
 
 ## [0.6.2] — 2026-09-22
 
@@ -870,7 +910,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/addisdev/fleet-runner/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/addisdev/fleet-runner/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/addisdev/fleet-runner/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/addisdev/fleet-runner/compare/v0.5.0...v0.6.0

@@ -14,9 +14,9 @@ and nothing said which of them held the iPhone.
 
 | | What it is | Runs | Reached by |
 |---|---|---|---|
-| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | The brain, a machine agent, and the `fleet-host` executor — one `fleet` service, three components. The executor does Android host work and the web nightlies, in the installed Google Chrome | `ssh fleet-host`, `http://192.168.50.27:8788` |
+| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | The brain, a machine agent, and the `fleet-host` executor — one `fleet` service, three components. The executor does Android host work, the web nightlies in the installed Google Chrome, and tvloop's Roku suite. It owns the Rokus on its network (`FLEET_ROKU=1`) | `ssh fleet-host`, `http://192.168.50.27:8788` |
 | **runner-host** | MacBook Pro (Mac14,10), macOS 26.7, Xcode 27 | **Nothing of Fleet Runner's, since 2026-09-22.** It runs the GitHub Actions runner farm, which is its own project | `ssh runner-host` |
-| **the dev MacBook** | M1 Pro, 16 GB, macOS 27, Xcode 27 | A machine agent and the `mac-dev` executor, plus the SSH tunnel and the alert receiver | it is the machine you are on |
+| **the dev MacBook** | M1 Pro, 16 GB, macOS 27, Xcode 27 | A machine agent and the `mac-dev` executor in pool `personal`, plus the SSH tunnel and the alert receiver. Its executor refuses heavy work above load 50 or under 2 GB of free swap (`FLEET_MAX_LOAD`, `FLEET_MIN_FREE_SWAP_MB`) | it is the machine you are on |
 | **the mini** | Mac mini M4, macOS 15.6.1, up 224 days | Nothing fleet-related | `ssh mini`, over the tailnet |
 
 **Why the brain is the oldest machine.** It is on the shelf's subnet, and it is
@@ -105,6 +105,50 @@ export PATH="$HOME/.fleet/bin:$HOME/.local/platform-tools:$HOME/.local/jdk/Conte
 fleet service install
 ```
 
+## The Roku, lent to tvloop
+
+tvloop has its own hardware nightly (`.github/workflows/hardware.yml`), aimed at
+a self-hosted runner labelled `tvloop-lab` that no machine carries. Rather than
+make fleet-host an Actions runner, the fleet runs the same steps as the
+`tvloop` workload: **tvloop drives, the fleet lends.** The fleet locks the Roku
+(a Roku holds exactly one dev channel, so two things sideloading at once is a
+corrupted run), hands tvloop its address and password, and files what came
+back.
+
+| | |
+|---|---|
+| The device | Roku Express 4K+ at `192.168.50.218`, Roku OS 15.3.4, developer mode on. Registered as `roku-<serial>` by fleet-host |
+| The checkout | `~/tvloop` on fleet-host, **synced from the dev MacBook**, not cloned: the repo is private and fleet-host has no GitHub credential. Re-sync with `rsync -a --delete --exclude node_modules --exclude 'packages/*/dist' --exclude tvloop.toml <tvloop>/ fleet-host:tvloop/`, then `corepack pnpm install --frozen-lockfile && corepack pnpm build` there |
+| `~/tvloop/tvloop.toml` | Not in the repo. Points `[project] source` at `examples/sample-channel`, the channel the flows expect. Keep it out of the rsync |
+| The password | Keychain item `fleet-roku-dev` / account `rokudev` on fleet-host, the same one the dev installer reads. Missing means every run is `skipped:` and says how to add it |
+| The steps | `doctor`, `install` (sideloads the sample channel, **replacing whatever is in the dev slot**), `hardware`, `replay`. A failed doctor or install stops the run |
+
+## Real phones from CI
+
+`taylab-launch-kit`'s `android-ci` has an opt-in lane (v1.14.1): the build job
+uploads its debug APK here, queues a `ui-test` pinned to that exact build, and
+the brain posts a **`fleet-runner`** commit status when it finishes. Nothing in
+CI waits for it and nothing there can go red because of it. greenfolio-android
+is the first caller.
+
+Three things have to be true for a status to appear:
+
+- **The runner reaches the brain** as `http://fleet-host:8788`, over the tailnet.
+  Farm runners are LaunchAgents on macOS 26 and cannot reach a LAN address.
+- **A matching phone is attached to fleet-host.** Otherwise the job is a
+  `skipped:` result, and a skip posts no status on purpose — a green check where
+  nothing ran would be worse than none.
+- **fleet-host has a status token:** `env.FLEET_GITHUB_STATUS 1` and
+  `env.FLEET_GITHUB_TOKEN` (fine-grained, commit statuses: write, on the repos
+  that opt in).
+
+## For a coding agent
+
+`fleet mcp` serves the lab as MCP tools; register it once with
+`claude mcp add --scope user fleet -- ~/.fleet/bin/fleet mcp`. From the dev
+MacBook it reaches the brain through the tunnel, the same as the agent does.
+A result whose error starts with `skipped:` means nothing ran.
+
 ## The suites are not in git
 
 `~/fleet-collector/flows/` and `~/fleet-collector/web-specs/` on fleet-host hold
@@ -135,16 +179,21 @@ the copy is the last known-good state rather than the freshest one.
 
 ## The schedules
 
-Six enabled. All times local to fleet-host.
+Five enabled. All times local to fleet-host.
 
 | | When | Runs on | What red means |
 |---|---|---|---|
 | `nightly-synthetic-shelf` | 02:00 | fanout, pool `machines` | A machine's throughput moved, or an agent is not claiming. This is the comparison table |
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
 | `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** Since 09-16 it is `no targets attached` — the Galaxy S8+ is unplugged |
-| `nightly-aliquant-web` | 04:00 | `fleet-host`, `chromium` and `mobile-chrome` | Green on fleet-host from its first run. It had been red on runner-host since 09-06 — on the three projects that are no longer in it |
 | `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | Green. The baseline was re-accepted on 2026-09-22 from fleet-host's own captures, after Aliquant's sign-in page gained a "Forgot password?" link; the old one had diverged 2.7% on desktop and 6.1% on mobile since 09-10. The `webkit` and `mobile-safari` baselines are still the August ones, because nothing runs those projects now |
-| `nightly-aliquant-audit` | 04:45 | `fleet-host` | Green |
+| `nightly-tvloop-hardware` | 05:00 | `fleet-host`, the Roku, exclusive | tvloop's doctor, install, contract tests and flow replay. `skipped:` until the Roku password is in fleet-host's Keychain. Red from doctor means the Roku is asleep, off the network, or out of developer mode |
+
+**`nightly-aliquant-web` and `nightly-aliquant-audit` are retired** (disabled
+2026-09-29). Aliquant's own CI already runs the same Playwright suite and
+audit on every push, so the fleet running them again nightly on a 2016 laptop
+added a second place to read the same answer. `nightly-aliquant-shots` stays:
+visual baselines are the one thing only the fleet keeps.
 
 **The iOS nightlies are paused**: `nightly-greenfolio-ios`, `nightly-aliquant-ios`
 and `nightly-jerv-ios`. fleet-host cannot run them — it has only the Command Line
@@ -222,12 +271,15 @@ from, so a restore does not have to guess.
 
 - **The shelf is unplugged.** No phone, tablet, TV or stick has been on the
   fleet since 2026-08-18. That needs a powered USB hub and cables.
-- **The Roku Express 4K** answers ECP at `192.168.50.218` and has never run the
-  channel. Developer Mode needs the physical remote.
+- **The Roku's developer password is not in fleet-host's Keychain**, so the
+  tvloop nightly skips. Developer mode is on.
 - **An Apple TV 4K** is paired to the dev MacBook and has never run the tvOS
   target.
 - **fleet-host is not on the tailnet**, which blocks the mini joining and blocks
-  CI publishing builds to the artifact store.
+  the CI lane: every greenfolio-android run says the lab is unreachable and
+  skips.
+- **No commit-status token on fleet-host**, so a CI lane run that does happen
+  posts nothing back to the PR.
 - **Alerts still go to the dev MacBook's local receiver** over the tunnel's
   reverse forward, which fails whenever the tunnel does. An ntfy topic is the
   fix and it needs an account decision.
