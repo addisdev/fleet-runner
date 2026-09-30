@@ -57,6 +57,52 @@ once and then cannot start the fleet.
 is not a broken machine, and a doctor that exited non-zero for it would fail every CI job
 somebody put it in.
 
+## For coding agents: `fleet mcp`
+
+`fleet mcp` serves the lab as MCP tools over stdio, so a coding session can ask
+for a run on real hardware and get the answer -- screenshots included -- back in
+the session:
+
+| Tool | For |
+|---|---|
+| `fleet_devices` | What is attached right now, and what each device can run |
+| `fleet_run` | Run a job spec on real devices and wait for the verdict |
+| `fleet_job` | Follow a job started without waiting |
+| `fleet_artifact` | Open a screenshot, a visual diff, a JUnit report or a log by sha256 |
+| `fleet_results` | Recent results by device or workload -- "has this been flaky on hardware?" |
+
+Register it with Claude Code once, for every project:
+
+```bash
+claude mcp add --scope user fleet -- ~/.fleet/bin/fleet mcp
+```
+
+It finds the brain the way the agent does -- `--url`, then `FLEET_URL`, then the
+config -- and adds nothing the HTTP API does not already do: one scheduler, one
+set of device locks, and nothing an agent can do that curl could not.
+
+Why it exists: nobody opened the dashboard in a week while the fleet ran fifty
+jobs, and most of the code in the repositories it tests is written with coding
+agents. An agent does not open a dashboard. It calls a tool.
+
+**A result whose error starts with `skipped:` means nothing ran** -- no matching
+device, or a host that refused heavy work because it was under pressure. That is
+not a pass, and the tool descriptions say so.
+
+### A workstation that runs an executor
+
+An executor on a shared Mac can refuse heavy work while that Mac is under
+pressure, and say so instead of joining the pile-up:
+
+```bash
+fleet config set env.FLEET_MAX_LOAD 50
+fleet config set env.FLEET_MIN_FREE_SWAP_MB 2048
+```
+
+Unset by default, so a dedicated lab machine is never second-guessed. A refusal
+is a `skipped:` result with the numbers in it, returned at once, rather than a
+job that runs an hour later into a session that has moved on.
+
 ## Where things live
 
 Everything is under `~/.fleet` — config, database, artifacts, logs, and the installed binary

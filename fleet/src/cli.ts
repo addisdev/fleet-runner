@@ -25,6 +25,7 @@ import { paths, selfCommand, isCheckout, repoRoot } from "./paths.js";
 import { supervise, snapshot, type ChildSpec } from "./supervisor.js";
 import { runDoctor } from "./doctor.js";
 import { serviceCommand } from "./service.js";
+import { serveMcp } from "./mcp.js";
 import { VERSION } from "./version.js";
 
 const USAGE = `fleet ${VERSION} -- a device lab you can send work to
@@ -40,6 +41,8 @@ const USAGE = `fleet ${VERSION} -- a device lab you can send work to
   fleet status            What this fleet looks like right now.
   fleet doctor            What this machine can and cannot run, and why.
   fleet dash              Open the dashboard.
+  fleet mcp [--url <brain>]
+                          The lab as MCP tools, over stdio, for coding agents.
 
   fleet service install [--role ...]   Start at login, and stay up.
   fleet service uninstall|start|stop|status|logs
@@ -145,6 +148,9 @@ async function main(): Promise<number> {
 
     case "dash":
       return dash();
+
+    case "mcp":
+      return serveMcp(typeof flags.url === "string" ? flags.url : undefined);
 
     case "service":
       return serviceCommand(positional, flags);

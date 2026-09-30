@@ -10,11 +10,11 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import {
   exec, BASE, NAME, log, postResult, postBeacon, fetchArtifact, uploadArtifact,
-  leaseBudgetS,
-} from "./fleet-client.js";
+  leaseBudgetS, NoTargetsError } from "./fleet-client.js";
 import { runWebUnfurl } from "./web/unfurl.js";
 import { runWebAudit } from "./web/audit.js";
 import { playwrightDir } from "./browser.js";
+import { pressureReason, readPressure } from "./pressure.js";
 import { runArchive } from "./web/archive/index.js";
 import { runDigest } from "./web/digest.js";
 import { countXcodebuildTests, xcodebuildDiagnostics } from "./xcparse.js";
@@ -24,9 +24,10 @@ import {
   type IosDeviceInfo,
 } from "./targets.js";
 import {
-  DRIVERS, adbDriver, simctlDriver, dedupe, devicectlDevices, listAllTargets,
+  DRIVERS, adbDriver, simctlDriver, dedupe, devicectlDevices, listAllTargets, driverNamed,
 } from "./drivers/index.js";
 import { targetsFrom } from "./drivers/devicectl.js";
+import { describeRoku, rokuDevPassword, rokuDevices, rokuPresenceHere, rokuTarget, type RokuDevice } from "./drivers/roku.js";
 import { evalMatch } from "./match.js";
 import { keychainPassword, redact, KEYCHAIN_SERVICE } from "./secrets.js";
 import { parseAmStart, amStartProblem } from "./am-start.js";
@@ -51,6 +52,7 @@ import { ADB, batteryPct, hasApp, launchApp, processAlive } from "./workloads/de
 // executor, which would start a second poll loop. Same move device.ts made.
 import { FLOWS_DIR, MAESTRO, resolveFlow, runFlow } from "./workloads/flows.js";
 import { discoverWorkloads, loadRun, type LoadedWorkload } from "./workloads/registry.js";
+import { prepareInstallable } from "./workloads/install/index.js";
 import type { Target, WorkloadCtx } from "./workloads/types.js";
 
 
@@ -152,11 +154,17 @@ async function releaseLocks(jobId: string) {
  *
  * `ios` still lets a caller that has already paid for a devicectl listing
  * avoid paying again -- reportAttached does, because it wants the unfiltered
- * list for its "why is this phone being ignored" diagnostics.
+ * list for its "why is this phone being ignored" diagnostics. `rokus` is the
+ * same for SSDP discovery, which reportAttached also wants the full answers
+ * from, to describe each Roku without asking the network twice.
+ *
+ * That branch used to leave the Roku driver out altogether, so a Roku was
+ * found for jobs and never reported as present: the shelf never showed one,
+ * and host routing, which follows `attached_to`, had nothing to follow.
  */
-async function listTargets(ios?: IosDeviceInfo[]): Promise<Target[]> {
+async function listTargets(ios?: IosDeviceInfo[], rokus: RokuDevice[] = []): Promise<Target[]> {
   if (ios === undefined) return listAllTargets();
-  return dedupe([await adbDriver.list(), await simctlDriver.list(), targetsFrom(ios)]);
+  return dedupe([await adbDriver.list(), await simctlDriver.list(), targetsFrom(ios), rokus.map(rokuTarget)]);
 }
 
 function parseJunit(xml: string): { passed: number; failed: number } {
@@ -329,7 +337,7 @@ async function runXcuitest(job: Job) {
   });
 
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === "ios"));
-  if (targets.length === 0) throw new Error("no iOS targets matched this job");
+  if (targets.length === 0) throw new NoTargetsError("no iOS targets matched this job");
 
   const granted = job.targets?.exclusive
     ? await acquireLocks(job.job_id, targets.map((t) => t.id))
@@ -507,7 +515,7 @@ async function runUiTest(job: Job) {
   const creds = await resolveCredentials(suite, NAME);
 
   const targets = await selectTargets(job, await listTargets());
-  if (targets.length === 0) throw new Error("no targets attached");
+  if (targets.length === 0) throw new NoTargetsError("no targets attached");
 
   // The appId in the flow decides which pool members can run it; devices
   // without the app are reported as skipped, not failed (registry pools
@@ -529,6 +537,13 @@ async function runUiTest(job: Job) {
   }
   const appId = job.suite?.app_id ?? declared;
 
+  // A job that names a build tests that build. Without this a ui-test ran its
+  // flow against whatever was already on the phone -- so a CI run "pinned to
+  // the exact APK just built" passed or failed on last week's install, and a
+  // phone that had never had the app skipped rather than testing anything.
+  // Fetched once, installed per device, inside the lock.
+  const installable = job.app?.sha256 ? await prepareInstallable(job.app, fetchArtifact) : null;
+
   const granted = job.targets?.exclusive
     ? await acquireLocks(job.job_id, targets.map((t) => t.id))
     : null;
@@ -544,6 +559,33 @@ async function runUiTest(job: Job) {
       });
       log(`ui-test on ${serial}: skipped (locked)`);
       continue;
+    }
+    if (installable && job.app && target.platform !== (job.app.platform ?? "android")) {
+      // The build is for another platform. Running the flow here would test
+      // an old install of something else, which is the bug this block fixes.
+      await postResult({
+        job_id: job.job_id, device_id: serial, iter: 0, ok: true,
+        error: `skipped: this job's build is for ${job.app.platform ?? "android"}, not ${target.platform}`,
+      });
+      continue;
+    }
+    if (installable && job.app) {
+      try {
+        const driver = driverNamed(target.driver);
+        if (!driver?.install) throw new Error(`nothing here can install onto ${serial} (driver ${target.driver ?? "none"})`);
+        await driver.install(target, installable);
+        log(`ui-test on ${serial}: installed ${job.app.name}@${job.app.build ?? job.app.sha256.slice(0, 12)}`);
+      } catch (e) {
+        // A build that will not install is this build's failure, not a skip:
+        // it is exactly what a CI run on real phones is there to catch.
+        allOk = false;
+        await postResult({
+          job_id: job.job_id, device_id: serial, iter: 0, ok: false,
+          error: `install failed: ${(e as Error).message.slice(0, 280)}`,
+        });
+        log(`ui-test on ${serial}: install FAILED`);
+        continue;
+      }
     }
     if (appId && !(await hasApp(target, appId))) {
       await postResult({
@@ -656,7 +698,7 @@ async function runDrain(job: Job) {
   const allowCharging = job.params?.allow_charging === true;
   const platform = job.app?.platform ?? "android";
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   let gpxPath: string | undefined;
   if (gpxSha) {
@@ -1015,7 +1057,7 @@ async function runAppSoak(job: Job) {
   const flow = flowName ? resolveFlow(flowName) : null;
   const platform = job.app?.platform ?? "android";
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   const flowCwd = mkdtempSync(path.join(os.tmpdir(), "fleet-soak-"));
 
@@ -1210,7 +1252,7 @@ async function runLocaleShots(job: Job) {
   const platform = job.app?.platform;
   const attached = (await listTargets()).filter((t) => !platform || t.platform === platform);
   const targets = await selectTargets(job, attached);
-  if (targets.length === 0) throw new Error("no targets matched this job");
+  if (targets.length === 0) throw new NoTargetsError("no targets matched this job");
 
   if (!coversRtl(locales)) {
     // Not a failure -- the job may deliberately cover only LTR markets -- but
@@ -1500,7 +1542,7 @@ async function runA11yAudit(job: Job) {
   const platform = job.app?.platform;
   const attached = (await listTargets()).filter((t) => !platform || t.platform === platform);
   const targets = await selectTargets(job, attached);
-  if (targets.length === 0) throw new Error("no targets matched this job");
+  if (targets.length === 0) throw new NoTargetsError("no targets matched this job");
 
   // Resolved before anything runs, so a mistyped step fails the job with one
   // message rather than half a matrix.
@@ -1767,7 +1809,7 @@ async function runColdStart(job: Job) {
 
   const platform = job.app?.platform ?? "android";
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   let allOk = true;
   for (const target of targets) {
@@ -2512,11 +2554,22 @@ async function diffShot(
  * without one can never be selected by `os ~ 'android'` -- it would show up on
  * the dashboard and silently never be given work.
  */
-async function describeTarget(
+export async function describeTarget(
   t: Target,
   sims: Record<string, { udid: string; name: string }[]> | null,
   ios: IosDeviceInfo[] | null,
+  rokus: RokuDevice[] = [],
 ): Promise<Record<string, unknown>> {
+  if (t.platform === "roku") {
+    // Without this a Roku fell through to the iOS fallback at the bottom and
+    // registered as {model: "iphone", os: "ios"}.
+    const d = rokus.find((r) => rokuTarget(r).id === t.id);
+    return {
+      ...(d ? describeRoku(d) : { model: "roku", os: "roku", kind: "device" }),
+      attached_to: NAME,
+      attached_host: HOST,
+    };
+  }
   if (t.platform === "android") {
     const prop = async (k: string) => {
       try {
@@ -2578,16 +2631,27 @@ async function describeTarget(
   // Physical hardware. `{model: "iphone", os: "ios"}` would register the phone
   // and leave it untargetable -- `os ~ 'ios-18'` matches nothing without the
   // version, and every iPhone on the shelf would look identical.
+  //
+  // devicectl lists simulators as well as hardware, so reaching this line is
+  // not proof of hardware. It used to be treated as proof: when the simctl
+  // lookup above came back empty -- a 20-second `simctl list` timing out on a
+  // shared Mac at load 228 is enough -- every booted simulator fell through to
+  // here and registered as a physical phone. A week of that put an "iPhone 16",
+  // an "iPhone SE" and two "iPhone 17 Pro"s on the shelf, none of them real,
+  // and with no presence TTL (that keys on kind) so they would never leave.
+  // devicectl says which it is: a simulator's transport is `sameMachine`.
   const info = (ios ?? []).find((d) => d.identifier === t.id);
   if (info) {
+    const simulated = info.transport === "sameMachine";
     return {
-      model: info.marketingName ?? info.name ?? "iphone",
+      model: info.marketingName ?? info.name ?? (simulated ? "simulator" : "iphone"),
       os: info.osVersion ? `ios-${info.osVersion}` : "ios",
-      ...(info.productType ? { soc: info.productType } : {}),
+      // Belt and braces, as in the simctl path: isSimulator() reads soc.
+      ...(simulated ? { soc: "simulator" } : info.productType ? { soc: info.productType } : {}),
       serial: t.id,
       attached_to: NAME,
       attached_host: HOST,
-      kind: "device",
+      kind: simulated ? "simulator" : "device",
     };
   }
   return {
@@ -2702,9 +2766,11 @@ async function reportAttached() {
       announcedIos.add(key);
       log(reason);
     }
+    // Only on the host that owns the Rokus; see rokuPresenceHere.
+    const rokus = rokuPresenceHere() ? await rokuDevices().catch(() => [] as RokuDevice[]) : [];
     let targets: Target[] = [];
     try {
-      targets = await listTargets(ios);
+      targets = await listTargets(ios, rokus);
     } catch (e) {
       // Was a bare `return`, which turned any enumerator failure into a host
       // that reports no devices at all and says nothing about why.
@@ -2722,7 +2788,7 @@ async function reportAttached() {
       seen.add(t.id);
       if (!(await fleetOwnedTarget(t, sims))) continue;
       try {
-        const descriptor = await describeTarget(t, sims, ios);
+        const descriptor = await describeTarget(t, sims, ios, rokus);
         // Only virtual devices get a TTL. See VIRTUAL_PRESENCE_TTL_S: a deleted
         // simulator has nothing left to refresh its row, an unplugged phone is
         // something somebody should see.
@@ -2818,7 +2884,8 @@ const CTX: WorkloadCtx = {
   listTargets: () => listTargets(),
   selectTargets,
   leaseBudgetS,
-  secrets: { credentialsFor: resolveCredentials, redact },
+  locks: { acquire: acquireLocks, release: releaseLocks },
+  secrets: { credentialsFor: resolveCredentials, redact, rokuDevPassword },
 };
 
 /**
@@ -2928,9 +2995,31 @@ export async function startExecutor(): Promise<RunningExecutor> {
       }
 
       log(`claimed ${job.job_id} (${job.workload})`);
+
+      // On a host that is somebody's workstation, keep their rule: no heavy
+      // work above the load or below the free swap they set. See pressure.ts.
+      const busy = pressureReason(await readPressure());
+      if (busy) {
+        await postResult({
+          job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: true,
+          error: `skipped: ${busy}`,
+        });
+        log(`job ${job.job_id} skipped: ${busy}`);
+        continue;
+      }
+
       try {
         await dispatch(job, LOADED);
       } catch (e) {
+        if (e instanceof NoTargetsError) {
+          // Nothing attached could run it: skipped, not failed. See the class.
+          await postResult({
+            job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: true,
+            error: `skipped: ${e.message.slice(0, 480)}`,
+          });
+          log(`job ${job.job_id} skipped: ${e.message}`);
+          continue;
+        }
         await postResult({
           job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,
           error: (e as Error).message.slice(0, 500),

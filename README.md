@@ -20,6 +20,20 @@ Built to answer a question I could not otherwise answer: **would on-device
 machine learning actually be good enough to ship in my apps, and on which
 hardware?** It turned out to be yes, and the fleet is how I know.
 
+## At a glance
+
+| | |
+|---|---|
+| **Problem** | Mobile tests and ML benchmarks are only useful when they run on the hardware, under conditions, and with the exact artifacts a product will ship. |
+| **System** | One collector owns the registry, queue, leases, artifacts, results and dashboard; independently implemented agents claim work through one tested JSON protocol. |
+| **Reach** | Five runner implementations across TypeScript, Swift, Kotlin, JavaScript and BrightScript, plus host-driven iOS and Android workloads. |
+| **Workloads** | 28 workload types spanning UI tests, visual regression, llama.cpp, Core ML, LiteRT, battery experiments, builds and deployment. |
+| **Proof** | The first production question found an int8 CPU model faster to load and run than its fp32 GPU alternative while preserving useful accuracy. |
+
+**What this demonstrates:** distributed systems, mobile platforms, protocol
+design, on-device ML evaluation, test infrastructure, and evidence-driven
+trade-offs.
+
 ![The dashboard: llama.cpp benchmark numbers measured on a real phone](docs/img/results.png)
 
 ## Eighteen seconds

@@ -20,7 +20,10 @@ import { runTailnetChecks } from "../src/tailnet.test.js";
 import { runDbChecks } from "../src/db.test.js";
 import { runAlertChecks } from "../src/alerts.test.js";
 import { runBrowserChecks } from "../src/browser.test.js";
+import { runDescribeChecks } from "../src/describe.test.js";
+import { runPressureChecks } from "../src/pressure.test.js";
 import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
+import { runTvloopChecks } from "../src/workloads/tvloop/tvloop.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
@@ -2572,6 +2575,69 @@ runZipChecks(check);
 runTailnetChecks(check);
 
 // The database layer itself: transactions, the open/close lifecycle, the
+
+// 40. an unpinned host job goes to the executor that holds a matching device
+{
+  // Two executors, each with one device attached. The bug: an unpinned host job
+  // went to whichever executor polled first, so a job for a phone cabled to one
+  // Mac was claimed by the other, found nothing, and was skipped.
+  const A = `route-a-${run}`, B = `route-b-${run}`;
+  await json("POST", "/devices/register", {
+    device_id: `route-s9-${run}`, pools: [],
+    descriptor: { model: "SM-G960U1", os: "android-10", kind: "device", attached_to: A },
+  });
+  await json("POST", "/devices/register", {
+    device_id: `route-iphone-${run}`, pools: [],
+    descriptor: { model: "iPhone 12 Pro", os: "ios-18.7.8", kind: "device", attached_to: B },
+  });
+  const ANDROID = `route-android-${run}`, IOS = `route-ios-${run}`, NOBODY = `route-nobody-${run}`;
+  const mk = (job_id: string, match: string) => json("POST", "/jobs", {
+    schema: 1, job_id, workload: "install", executor: "host",
+    app: { name: "x", build: "1", sha256: "0".repeat(64) },
+    targets: { match }, lease: { ttl_s: 60, max_attempts: 1 },
+  });
+  await mk(ANDROID, `device_id == 'route-s9-${run}'`);
+  await mk(IOS, `device_id == 'route-iphone-${run}'`);
+
+  // B polls first. It must skip past the Android job it cannot run and take the
+  // iOS one -- the same "skip past" the pinned-executor test relies on, which
+  // proves the routing without waiting out a 25-second empty poll.
+  const b = await json("GET", `/executor/next-job?name=${B}`);
+  check("an executor without the matching device skips past the job", b.body?.job_id === IOS,
+    JSON.stringify(b.body?.job_id));
+  const a = await json("GET", `/executor/next-job?name=${A}`);
+  check("and the executor holding the phone claims it", a.body?.job_id === ANDROID, JSON.stringify(a.body?.job_id));
+
+  // A match nobody holds is claimable by anyone, so it ends in a prompt
+  // "no targets" skip rather than sitting in the queue for a device that is
+  // not coming.
+  await mk(NOBODY, "os ~ 'webos'");
+  const any = await json("GET", `/executor/next-job?name=${B}`);
+  check("a job no executor can serve is still claimable", any.body?.job_id === NOBODY, JSON.stringify(any.body?.job_id));
+
+  // --- a skip posts no GitHub status ----------------------------------------
+  const STATUS = `route-status-${run}`;
+  await json("POST", "/jobs", {
+    schema: 1, job_id: STATUS, workload: "install", executor: "host",
+    app: { name: "x", build: "1", sha256: "0".repeat(64) },
+    targets: { executor: A }, lease: { ttl_s: 60, max_attempts: 1 },
+    report_to: { github_status: "addisdev/example@deadbeef" },
+  });
+  await json("GET", `/executor/next-job?name=${A}`);
+  await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: STATUS, device_id: `host:${A}`, iter: 0, final: true, ok: true,
+    error: "skipped: no android targets matched this job",
+  });
+  await sleep(300);
+  const reports = ((await json("GET", "/status-reports")).body ?? []) as { job_id: string; detail: string; posted: number }[];
+  const mine = reports.find((r) => r.job_id === STATUS);
+  check("a skipped job records its status as not posted", !!mine && mine.posted === 0 && /nothing ran/.test(mine.detail),
+    JSON.stringify(mine));
+
+  for (const j of [ANDROID, IOS, NOBODY, STATUS]) await json("POST", `/api/jobs/${j}/cancel`, {});
+}
+
+
 // driver's error codes, and the migration path a fresh database never takes.
 runDbChecks(check);
 
@@ -2583,10 +2649,21 @@ runAlertChecks(check);
 // things a released executor on macOS 12 needed to run web work at all.
 await runBrowserChecks(check);
 
+// What an Apple target is when simctl could not say, and a job that found
+// nothing to run on being a skip rather than a failure.
+await runDescribeChecks(check);
+
+// The shared-Mac rule, kept by the executor: no heavy work under pressure.
+runPressureChecks(check);
+
 // The enrol workload's refusals, against a fake context. Every path that
 // decides NOT to enrol, which is where it earns its keep -- the launch itself
 // needs a device and is not covered anywhere.
 await runEnrolChecks(check);
+
+// The tvloop workload's decisions -- steps, refusals, locks and redaction --
+// against a fake context and a step runner that only returns exit codes.
+await runTvloopChecks(check);
 
 // --- the synthetic backend's reference digest ---
 //

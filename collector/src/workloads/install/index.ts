@@ -18,7 +18,7 @@
 import { mkdtempSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { exec } from "../../fleet-client.js";
+import { exec, NoTargetsError } from "../../fleet-client.js";
 import { driverNamed } from "../../drivers/index.js";
 import type { Job, WorkloadCtx } from "../types.js";
 
@@ -33,26 +33,40 @@ import type { Job, WorkloadCtx } from "../types.js";
  */
 const BUNDLE_PLATFORMS = new Set(["ios", "tvos", "watchos", "visionos", "macos", "catalyst"]);
 
+/**
+ * Fetch a build once and return the path a driver installs from: the `.apk`
+ * itself, or the `.app` unpacked from an Apple platform's zip.
+ *
+ * Exported because `ui-test` needs it too. A ui-test that names a build has to
+ * test THAT build, not whatever happened to be installed on the phone already.
+ */
+export async function prepareInstallable(
+  app: NonNullable<Job["app"]>,
+  fetchArtifact: WorkloadCtx["fetchArtifact"],
+): Promise<string> {
+  const platform = app.platform ?? "android";
+  const dir = mkdtempSync(path.join(os.tmpdir(), "fleet-"));
+  if (BUNDLE_PLATFORMS.has(platform)) {
+    const zip = path.join(dir, `${app.name}.zip`);
+    await fetchArtifact(app.sha256, zip);
+    await exec("ditto", ["-x", "-k", zip, dir], { timeout: 120_000 });
+    const appDir = readdirSync(dir).find((f) => f.endsWith(".app"));
+    if (!appDir) throw new Error(`no .app bundle inside the ${platform} artifact zip`);
+    return path.join(dir, appDir);
+  }
+  const apk = path.join(dir, `${app.name}.apk`);
+  await fetchArtifact(app.sha256, apk);
+  return apk;
+}
+
 export async function run(job: Job, ctx: WorkloadCtx): Promise<void> {
   const app = job.app;
   if (!app) throw new Error("install job needs an app ref");
   const platform = app.platform ?? "android";
   const targets = await ctx.selectTargets(job, (await ctx.listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
-  const dir = mkdtempSync(path.join(os.tmpdir(), "fleet-"));
-  let installable: string;
-  if (BUNDLE_PLATFORMS.has(platform)) {
-    const zip = path.join(dir, `${app.name}.zip`);
-    await ctx.fetchArtifact(app.sha256, zip);
-    await exec("ditto", ["-x", "-k", zip, dir], { timeout: 120_000 });
-    const appDir = readdirSync(dir).find((f) => f.endsWith(".app"));
-    if (!appDir) throw new Error(`no .app bundle inside the ${platform} artifact zip`);
-    installable = path.join(dir, appDir);
-  } else {
-    installable = path.join(dir, `${app.name}.apk`);
-    await ctx.fetchArtifact(app.sha256, installable);
-  }
+  const installable = await prepareInstallable(app, ctx.fetchArtifact);
 
   let allOk = true;
   for (const target of targets) {

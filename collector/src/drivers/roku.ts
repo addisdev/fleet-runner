@@ -338,7 +338,7 @@ export async function rokuDevices(timeoutMs = DISCOVERY_MS): Promise<RokuDevice[
  * answer rather than a workaround: a device whose address changed between
  * discovery and enrolment is exactly the case a cached address gets wrong.
  */
-async function targetHost(target: Target): Promise<string> {
+export async function targetHost(target: Target): Promise<string> {
   const found = (await rokuDevices()).find((d) => rokuTargetId(d) === target.id);
   if (found) return found.ip;
   // The id-derived fallback, which is right for a device that never reported a
@@ -348,20 +348,63 @@ async function targetHost(target: Target): Promise<string> {
   throw new Error(`cannot find ${target.id} on this network any more`);
 }
 
+/** A discovered Roku as a target. */
+export function rokuTarget(d: RokuDevice): Target {
+  return {
+    id: rokuTargetId(d),
+    // Named, not guessed. Everything that answers `ST: roku:ecp` is a Roku;
+    // there is no ambiguity here of the kind that makes simctl's runtime
+    // mapping refuse an unknown answer.
+    platform: "roku",
+    kind: "device",
+    driver: "roku",
+  };
+}
+
+/**
+ * Whether this host reports the Rokus on its network as its own.
+ *
+ * A cabled phone has one host by construction. A Roku does not: every
+ * executor on the LAN hears the same SSDP reply, so if each of them registered
+ * what it heard, the device's `attached_to` would flip between hosts every
+ * sweep and host-job routing -- which sends a job to the executor holding the
+ * device -- would follow it back and forth. One host is told it owns the
+ * Rokus (`FLEET_ROKU=1`) and the others keep quiet about them.
+ *
+ * Presence only. A job already routed to a host can still discover a Roku
+ * there, which is how enrol has always worked.
+ */
+export function rokuPresenceHere(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.FLEET_ROKU === "1";
+}
+
+/**
+ * The registry descriptor for a Roku, from its own device-info.
+ *
+ * `os` is `roku-<version>` so `os ~ 'roku'` targets every Roku and
+ * `os ~ 'roku-15'` one firmware line, the same shape `android-14` and
+ * `ios-18.4` have. `ip` is carried because tvloop and the dev installer both
+ * address a Roku by it, and a workload should not have to re-run discovery to
+ * learn what the registry already knew.
+ */
+export function describeRoku(d: RokuDevice): Record<string, unknown> {
+  return {
+    model: d.modelName ?? d.modelNumber ?? "roku",
+    os: d.softwareVersion ? `roku-${d.softwareVersion}` : "roku",
+    ...(d.serial ? { serial: d.serial } : {}),
+    ...(d.deviceType ? { form_factor: d.deviceType } : {}),
+    ...(d.developerEnabled !== undefined ? { developer_enabled: d.developerEnabled } : {}),
+    ip: d.ip,
+    kind: "device",
+  };
+}
+
 export const rokuDriver: Driver = {
   name: "roku",
   describes: "Roku players and Roku TVs on this network, over SSDP and ECP (discovery only -- no install)",
   async list(): Promise<Target[]> {
     try {
-      return (await rokuDevices()).map((d): Target => ({
-        id: rokuTargetId(d),
-        // Named, not guessed. Everything that answers `ST: roku:ecp` is a Roku;
-        // there is no ambiguity here of the kind that makes simctl's runtime
-        // mapping refuse an unknown answer.
-        platform: "roku",
-        kind: "device",
-        driver: "roku",
-      }));
+      return (await rokuDevices()).map(rokuTarget);
     } catch (e) {
       // The contract says list() never throws. discoverEndpoints already
       // resolves rather than rejecting, so this is unreachable -- and an

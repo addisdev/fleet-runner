@@ -51,7 +51,12 @@ function fakeCtx(targets: Target[]): { ctx: WorkloadCtx; rows: Row[]; logs: stri
     // The real one filters by targets.device_id / kind / match. enrol does not
     // exercise that logic, so this hands back everything.
     selectTargets: async (_job, all) => all,
-    secrets: { credentialsFor: async () => null, redact: (s: string) => s },
+    secrets: {
+      credentialsFor: async () => null,
+      redact: (s: string) => s,
+      rokuDevPassword: async () => ({ ok: false, reason: "missing", detail: "not in this test" }),
+    },
+    locks: { acquire: async (_j, ids) => new Set(ids), release: async () => {} },
     leaseBudgetS: () => 570,
   };
   return { ctx, rows, logs };

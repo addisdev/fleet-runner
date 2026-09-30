@@ -6,4 +6,4 @@
  * it. `scripts/version.mjs` keeps it honest with the other seven places --
  * see its header for why the number matters at all.
  */
-export const VERSION = "0.6.2";
+export const VERSION = "0.7.0";
