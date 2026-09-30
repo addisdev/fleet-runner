@@ -115,6 +115,12 @@ export function evaluate(now = new Date(), sizes: { dbBytes: number; logBytes: n
     const b = beaconFields(parse<Record<string, unknown> | null>(d.last_beacon, null));
     if (b?.thermal === "critical")
       out.push({ rule: "thermal-critical", subject: d.device_id, severity: "critical", message: `${label} is thermally critical` });
+    // Not for a laptop somebody carries. `low-battery` exists for phones left on
+    // the shelf, where a flat battery means the next nightly measures a
+    // throttled device. A daily driver running at 14% on a train is normal, and
+    // alerting on it is how the fleet ended up telling its owner about their own
+    // laptop twice in one week. Such a machine goes in the `personal` pool.
+    if (effectivePools(d).includes("personal")) continue;
     if (hasBattery(b?.battery_pct) && b!.battery_pct! < THRESHOLDS.lowBatteryPct && b?.charging === false)
       out.push({
         rule: "low-battery",

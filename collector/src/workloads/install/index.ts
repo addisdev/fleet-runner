@@ -18,7 +18,7 @@
 import { mkdtempSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { exec } from "../../fleet-client.js";
+import { exec, NoTargetsError } from "../../fleet-client.js";
 import { driverNamed } from "../../drivers/index.js";
 import type { Job, WorkloadCtx } from "../types.js";
 
@@ -38,7 +38,7 @@ export async function run(job: Job, ctx: WorkloadCtx): Promise<void> {
   if (!app) throw new Error("install job needs an app ref");
   const platform = app.platform ?? "android";
   const targets = await ctx.selectTargets(job, (await ctx.listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   const dir = mkdtempSync(path.join(os.tmpdir(), "fleet-"));
   let installable: string;

@@ -20,6 +20,7 @@ import { runTailnetChecks } from "../src/tailnet.test.js";
 import { runDbChecks } from "../src/db.test.js";
 import { runAlertChecks } from "../src/alerts.test.js";
 import { runBrowserChecks } from "../src/browser.test.js";
+import { runDescribeChecks } from "../src/describe.test.js";
 import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
@@ -2582,6 +2583,10 @@ runAlertChecks(check);
 // Where a host's Playwright lives and which Chromium it drives: the two
 // things a released executor on macOS 12 needed to run web work at all.
 await runBrowserChecks(check);
+
+// What an Apple target is when simctl could not say, and a job that found
+// nothing to run on being a skip rather than a failure.
+await runDescribeChecks(check);
 
 // The enrol workload's refusals, against a fake context. Every path that
 // decides NOT to enrol, which is where it earns its keep -- the launch itself

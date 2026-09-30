@@ -124,4 +124,28 @@ export function runAlertChecks(check: Check) {
       JSON.stringify(offline.map((f) => f.subject)),
     );
   });
+
+  // A laptop somebody carries is not a shelf phone. `personal` exempts it from
+  // low-battery -- which alerted its owner about their own laptop twice in one
+  // week -- and from nothing else: thermal still counts.
+  inTempDir((dir) => {
+    const db = openDb(dir);
+    const add = (id: string, pools: string, battery: number, thermal = "nominal") =>
+      db.prepare(
+        `INSERT INTO devices (device_id, descriptor, pools, name, last_seen, last_beacon)
+         VALUES (?, '{"model":"AlertTest"}', ?, ?, datetime('now'), ?)`,
+      ).run(id, pools, id, JSON.stringify({ battery_pct: battery, charging: false, thermal }));
+    add("shelf-phone", '["ml-capable"]', 9);
+    add("daily-laptop", '["personal"]', 9);
+    add("hot-daily-laptop", '["personal"]', 9, "critical");
+
+    const found = evaluate(new Date(), NO_SIZES);
+    const battery = found.filter((f) => f.rule === "low-battery").map((f) => f.subject);
+    const thermal = found.filter((f) => f.rule === "thermal-critical").map((f) => f.subject);
+    check("a shelf phone at 9% and not charging still raises low-battery", battery.includes("shelf-phone"),
+      JSON.stringify(battery));
+    check("a laptop in the personal pool does not", !battery.includes("daily-laptop"), JSON.stringify(battery));
+    check("but a personal laptop that is thermally critical still alerts", thermal.includes("hot-daily-laptop"),
+      JSON.stringify(thermal));
+  });
 }

@@ -69,3 +69,24 @@ export function leaseBudgetS(job: { lease?: { ttl_s?: number }; params?: Record<
     : (Number.isFinite(lease) && lease > 30 ? lease - 30 : fallbackS);
   return Math.max(30, budget);
 }
+
+/**
+ * Nothing attached could run this job.
+ *
+ * Thrown where a host workload finds its target list empty, and caught once in
+ * the executor's poll loop, which reports it as a skip rather than a failure --
+ * the same convention as a device that is locked or lacks the app.
+ *
+ * It was a plain Error, which made it a failed job, which raised a `job-failed`
+ * alert. `nightly-fleet-ui-smoke` failed six nights in a row for that reason
+ * alone: its Android phone was unplugged. The unplugged phone is real news, and
+ * `device-offline` already delivers it for every named device; the nightly
+ * failing as well was the same fact twice, every night, and a nightly that is
+ * always red is one nobody reads. A job that could not run has not failed.
+ */
+export class NoTargetsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "NoTargetsError";
+  }
+}
