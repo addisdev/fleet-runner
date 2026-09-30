@@ -91,6 +91,26 @@ export type WorkloadSecrets = {
     who: string,
   ): Promise<SuiteCredentials | null>;
   redact(text: string, secrets: string[]): string;
+  /**
+   * The Roku developer password, from the Keychain item the dev installer
+   * already uses (`fleet-roku-dev`). A result rather than a throw, because a
+   * host with no Rokus set up yet is ordinary and the workload decides what
+   * that means for its job.
+   */
+  rokuDevPassword(): Promise<
+    { ok: true; password: string } | { ok: false; reason: "missing" | "denied"; detail: string }
+  >;
+};
+
+/**
+ * The collector's device locks. `exclusive: true` on a job means it holds them
+ * while it runs, so nothing else is handed the same device mid-run.
+ */
+export type WorkloadLocks = {
+  /** Ask for these devices; resolves to the ones granted. Absent ones are held by another job. */
+  acquire(jobId: string, deviceIds: string[]): Promise<Set<string>>;
+  /** Give back everything this job holds. Never throws. */
+  release(jobId: string): Promise<void>;
 };
 
 /**
@@ -119,6 +139,7 @@ export type WorkloadCtx = {
   /** Narrow those to the ones this job asked for (device_id, kind, match). */
   selectTargets(job: Job, all: Target[]): Promise<Target[]>;
   secrets: WorkloadSecrets;
+  locks: WorkloadLocks;
   /**
    * The per-unit time budget the lease allows, in seconds. A unit of work that
    * does not beacon must finish inside this, or the sweep requeues a job that

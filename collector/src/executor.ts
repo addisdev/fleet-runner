@@ -27,6 +27,7 @@ import {
   DRIVERS, adbDriver, simctlDriver, dedupe, devicectlDevices, listAllTargets, driverNamed,
 } from "./drivers/index.js";
 import { targetsFrom } from "./drivers/devicectl.js";
+import { describeRoku, rokuDevPassword, rokuDevices, rokuPresenceHere, rokuTarget, type RokuDevice } from "./drivers/roku.js";
 import { evalMatch } from "./match.js";
 import { keychainPassword, redact, KEYCHAIN_SERVICE } from "./secrets.js";
 import { parseAmStart, amStartProblem } from "./am-start.js";
@@ -153,11 +154,17 @@ async function releaseLocks(jobId: string) {
  *
  * `ios` still lets a caller that has already paid for a devicectl listing
  * avoid paying again -- reportAttached does, because it wants the unfiltered
- * list for its "why is this phone being ignored" diagnostics.
+ * list for its "why is this phone being ignored" diagnostics. `rokus` is the
+ * same for SSDP discovery, which reportAttached also wants the full answers
+ * from, to describe each Roku without asking the network twice.
+ *
+ * That branch used to leave the Roku driver out altogether, so a Roku was
+ * found for jobs and never reported as present: the shelf never showed one,
+ * and host routing, which follows `attached_to`, had nothing to follow.
  */
-async function listTargets(ios?: IosDeviceInfo[]): Promise<Target[]> {
+async function listTargets(ios?: IosDeviceInfo[], rokus: RokuDevice[] = []): Promise<Target[]> {
   if (ios === undefined) return listAllTargets();
-  return dedupe([await adbDriver.list(), await simctlDriver.list(), targetsFrom(ios)]);
+  return dedupe([await adbDriver.list(), await simctlDriver.list(), targetsFrom(ios), rokus.map(rokuTarget)]);
 }
 
 function parseJunit(xml: string): { passed: number; failed: number } {
@@ -2551,7 +2558,18 @@ export async function describeTarget(
   t: Target,
   sims: Record<string, { udid: string; name: string }[]> | null,
   ios: IosDeviceInfo[] | null,
+  rokus: RokuDevice[] = [],
 ): Promise<Record<string, unknown>> {
+  if (t.platform === "roku") {
+    // Without this a Roku fell through to the iOS fallback at the bottom and
+    // registered as {model: "iphone", os: "ios"}.
+    const d = rokus.find((r) => rokuTarget(r).id === t.id);
+    return {
+      ...(d ? describeRoku(d) : { model: "roku", os: "roku", kind: "device" }),
+      attached_to: NAME,
+      attached_host: HOST,
+    };
+  }
   if (t.platform === "android") {
     const prop = async (k: string) => {
       try {
@@ -2748,9 +2766,11 @@ async function reportAttached() {
       announcedIos.add(key);
       log(reason);
     }
+    // Only on the host that owns the Rokus; see rokuPresenceHere.
+    const rokus = rokuPresenceHere() ? await rokuDevices().catch(() => [] as RokuDevice[]) : [];
     let targets: Target[] = [];
     try {
-      targets = await listTargets(ios);
+      targets = await listTargets(ios, rokus);
     } catch (e) {
       // Was a bare `return`, which turned any enumerator failure into a host
       // that reports no devices at all and says nothing about why.
@@ -2768,7 +2788,7 @@ async function reportAttached() {
       seen.add(t.id);
       if (!(await fleetOwnedTarget(t, sims))) continue;
       try {
-        const descriptor = await describeTarget(t, sims, ios);
+        const descriptor = await describeTarget(t, sims, ios, rokus);
         // Only virtual devices get a TTL. See VIRTUAL_PRESENCE_TTL_S: a deleted
         // simulator has nothing left to refresh its row, an unplugged phone is
         // something somebody should see.
@@ -2864,7 +2884,8 @@ const CTX: WorkloadCtx = {
   listTargets: () => listTargets(),
   selectTargets,
   leaseBudgetS,
-  secrets: { credentialsFor: resolveCredentials, redact },
+  locks: { acquire: acquireLocks, release: releaseLocks },
+  secrets: { credentialsFor: resolveCredentials, redact, rokuDevPassword },
 };
 
 /**

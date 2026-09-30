@@ -197,6 +197,9 @@ const WORKLOADS = new Set([
   // The brain reaching the device, for every screen with no keyboard worth
   // using. See src/workloads/enrol/.
   "enrol",
+  // Another tool's hardware suite, run on a device the fleet lends it. See
+  // src/workloads/tvloop/.
+  "tvloop",
 ]);
 
 function touchDevice(deviceId: string) {
