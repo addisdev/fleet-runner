@@ -49,5 +49,25 @@ for (const name of bundled) {
   check(`${name} loads through the bundled path`, ok, why);
 }
 
+// And dispatch reaches them with nothing discovered, which is exactly what a
+// release looks like: no directory on disk, so an empty map. Every workload
+// that had moved into a directory failed this way in every release until
+// 0.7.1, and the check above passed the whole time, because it called the
+// bundled loader directly instead of going through what dispatch calls.
+{
+  const { resolveRun } = await import("../src/workloads/registry.js");
+  for (const name of bundled) {
+    let ok = false;
+    let why = "";
+    try {
+      ok = typeof (await resolveRun(name, new Map())) === "function";
+    } catch (e) {
+      why = (e as Error).message;
+    }
+    check(`${name} dispatches with nothing on disk, as in a release`, ok, why);
+  }
+  check("an unknown name resolves to nothing", (await resolveRun("no-such-workload", new Map())) === null);
+}
+
 console.log(failed ? "\nworkloads: FAILED" : `\nworkloads: ALL PASS (${bundled.length})`);
 process.exit(failed ? 1 : 0);
