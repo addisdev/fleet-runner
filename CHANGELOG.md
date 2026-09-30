@@ -16,6 +16,22 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-09-30
+
+### Fixed
+
+- **Every directory workload was "not supported" in a release.** `install`,
+  `enrol`, `size-report`, `upgrade-test` and the new `tvloop` live in their
+  own directories under `src/workloads/`, found at startup by walking that
+  directory. A release is one bundled file with no directory to walk, so the
+  walk found nothing -- and dispatch only asked what the walk had found, so it
+  never reached the bundled copies that `static.ts` exists to provide. Every
+  release since the workloads moved out of `executor.ts` has answered those
+  five with "not supported by this executor yet", and said so at startup as
+  "no workload directories found". Found by the first `tvloop` run on
+  fleet-host. `check-workloads` now dispatches each one with nothing on disk,
+  the way a release does.
+
 ## [0.7.0] — 2026-09-30
 
 The fleet stops being something to look at and becomes something to use: a
@@ -910,7 +926,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/addisdev/fleet-runner/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/addisdev/fleet-runner/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/addisdev/fleet-runner/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/addisdev/fleet-runner/compare/v0.6.0...v0.6.1
