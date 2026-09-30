@@ -32,7 +32,7 @@
 import { mkdtempSync, readdirSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { exec } from "../../fleet-client.js";
+import { exec, NoTargetsError } from "../../fleet-client.js";
 import { driverNamed } from "../../drivers/index.js";
 import { hasApp, launchApp } from "../device.js";
 import { resolveFlow, runFlow } from "../flows.js";
@@ -97,7 +97,7 @@ export async function run(job: Job, ctx: WorkloadCtx): Promise<void> {
   const verifyFlow = typeof params.verify_flow === "string" ? params.verify_flow : null;
 
   const targets = await ctx.selectTargets(job, (await ctx.listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   const dir = mkdtempSync(path.join(os.tmpdir(), "fleet-upgrade-"));
   const oldFile = await installable(ctx, path.join(dir, "old"), `${app.name}-old`, fromSha, platform);

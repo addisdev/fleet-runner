@@ -10,8 +10,7 @@ import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 import {
   exec, BASE, NAME, log, postResult, postBeacon, fetchArtifact, uploadArtifact,
-  leaseBudgetS,
-} from "./fleet-client.js";
+  leaseBudgetS, NoTargetsError } from "./fleet-client.js";
 import { runWebUnfurl } from "./web/unfurl.js";
 import { runWebAudit } from "./web/audit.js";
 import { playwrightDir } from "./browser.js";
@@ -329,7 +328,7 @@ async function runXcuitest(job: Job) {
   });
 
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === "ios"));
-  if (targets.length === 0) throw new Error("no iOS targets matched this job");
+  if (targets.length === 0) throw new NoTargetsError("no iOS targets matched this job");
 
   const granted = job.targets?.exclusive
     ? await acquireLocks(job.job_id, targets.map((t) => t.id))
@@ -507,7 +506,7 @@ async function runUiTest(job: Job) {
   const creds = await resolveCredentials(suite, NAME);
 
   const targets = await selectTargets(job, await listTargets());
-  if (targets.length === 0) throw new Error("no targets attached");
+  if (targets.length === 0) throw new NoTargetsError("no targets attached");
 
   // The appId in the flow decides which pool members can run it; devices
   // without the app are reported as skipped, not failed (registry pools
@@ -656,7 +655,7 @@ async function runDrain(job: Job) {
   const allowCharging = job.params?.allow_charging === true;
   const platform = job.app?.platform ?? "android";
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   let gpxPath: string | undefined;
   if (gpxSha) {
@@ -1015,7 +1014,7 @@ async function runAppSoak(job: Job) {
   const flow = flowName ? resolveFlow(flowName) : null;
   const platform = job.app?.platform ?? "android";
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   const flowCwd = mkdtempSync(path.join(os.tmpdir(), "fleet-soak-"));
 
@@ -1210,7 +1209,7 @@ async function runLocaleShots(job: Job) {
   const platform = job.app?.platform;
   const attached = (await listTargets()).filter((t) => !platform || t.platform === platform);
   const targets = await selectTargets(job, attached);
-  if (targets.length === 0) throw new Error("no targets matched this job");
+  if (targets.length === 0) throw new NoTargetsError("no targets matched this job");
 
   if (!coversRtl(locales)) {
     // Not a failure -- the job may deliberately cover only LTR markets -- but
@@ -1500,7 +1499,7 @@ async function runA11yAudit(job: Job) {
   const platform = job.app?.platform;
   const attached = (await listTargets()).filter((t) => !platform || t.platform === platform);
   const targets = await selectTargets(job, attached);
-  if (targets.length === 0) throw new Error("no targets matched this job");
+  if (targets.length === 0) throw new NoTargetsError("no targets matched this job");
 
   // Resolved before anything runs, so a mistyped step fails the job with one
   // message rather than half a matrix.
@@ -1767,7 +1766,7 @@ async function runColdStart(job: Job) {
 
   const platform = job.app?.platform ?? "android";
   const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new Error(`no ${platform} targets matched this job`);
+  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
 
   let allOk = true;
   for (const target of targets) {
@@ -2512,7 +2511,7 @@ async function diffShot(
  * without one can never be selected by `os ~ 'android'` -- it would show up on
  * the dashboard and silently never be given work.
  */
-async function describeTarget(
+export async function describeTarget(
   t: Target,
   sims: Record<string, { udid: string; name: string }[]> | null,
   ios: IosDeviceInfo[] | null,
@@ -2578,16 +2577,27 @@ async function describeTarget(
   // Physical hardware. `{model: "iphone", os: "ios"}` would register the phone
   // and leave it untargetable -- `os ~ 'ios-18'` matches nothing without the
   // version, and every iPhone on the shelf would look identical.
+  //
+  // devicectl lists simulators as well as hardware, so reaching this line is
+  // not proof of hardware. It used to be treated as proof: when the simctl
+  // lookup above came back empty -- a 20-second `simctl list` timing out on a
+  // shared Mac at load 228 is enough -- every booted simulator fell through to
+  // here and registered as a physical phone. A week of that put an "iPhone 16",
+  // an "iPhone SE" and two "iPhone 17 Pro"s on the shelf, none of them real,
+  // and with no presence TTL (that keys on kind) so they would never leave.
+  // devicectl says which it is: a simulator's transport is `sameMachine`.
   const info = (ios ?? []).find((d) => d.identifier === t.id);
   if (info) {
+    const simulated = info.transport === "sameMachine";
     return {
-      model: info.marketingName ?? info.name ?? "iphone",
+      model: info.marketingName ?? info.name ?? (simulated ? "simulator" : "iphone"),
       os: info.osVersion ? `ios-${info.osVersion}` : "ios",
-      ...(info.productType ? { soc: info.productType } : {}),
+      // Belt and braces, as in the simctl path: isSimulator() reads soc.
+      ...(simulated ? { soc: "simulator" } : info.productType ? { soc: info.productType } : {}),
       serial: t.id,
       attached_to: NAME,
       attached_host: HOST,
-      kind: "device",
+      kind: simulated ? "simulator" : "device",
     };
   }
   return {
@@ -2931,6 +2941,15 @@ export async function startExecutor(): Promise<RunningExecutor> {
       try {
         await dispatch(job, LOADED);
       } catch (e) {
+        if (e instanceof NoTargetsError) {
+          // Nothing attached could run it: skipped, not failed. See the class.
+          await postResult({
+            job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: true,
+            error: `skipped: ${e.message.slice(0, 480)}`,
+          });
+          log(`job ${job.job_id} skipped: ${e.message}`);
+          continue;
+        }
         await postResult({
           job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,
           error: (e as Error).message.slice(0, 500),
