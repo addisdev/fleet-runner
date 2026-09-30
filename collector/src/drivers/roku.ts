@@ -157,6 +157,21 @@ export function mSearchDatagram(): Buffer {
  * SSDP is HTTP-shaped and devices spell them however they like; a parser that
  * only accepted `LOCATION:` would silently drop the ones that send `Location:`.
  */
+/**
+ * Whether an SSDP reply is from a Roku at all.
+ *
+ * The search asks for `ST: roku:ecp`, but asking is not filtering: some
+ * devices answer every M-SEARCH whatever it asked for. A Philips Hue bridge
+ * does, and the first night Rokus were registered it joined the shelf as
+ * `roku-ip-192-168-50-100`, a "Roku" with no model that never answered ECP.
+ * A real Roku says `roku:ecp` in its ST or its USN.
+ */
+export function isRokuReply(message: string): boolean {
+  return message
+    .split(/\r?\n/)
+    .some((l) => /^(st|usn)\s*:/i.test(l) && /roku:ecp/i.test(l));
+}
+
 export function parseSsdpLocation(message: string): { ip: string; port: number } | null {
   const line = message.split(/\r?\n/).find((l) => /^location\s*:/i.test(l));
   if (!line) return null;
@@ -278,7 +293,9 @@ export async function discoverEndpoints(timeoutMs = DISCOVERY_MS): Promise<RokuD
     });
 
     socket.on("message", (msg) => {
-      const loc = parseSsdpLocation(msg.toString("utf8"));
+      const text = msg.toString("utf8");
+      if (!isRokuReply(text)) return;
+      const loc = parseSsdpLocation(text);
       // Keyed by ip:port rather than by ip. A device answers the search once
       // per interface it heard it on, and dropping the duplicates here is
       // cheaper than fetching device-info twice for the same box.

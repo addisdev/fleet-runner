@@ -16,6 +16,17 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.7.2] — 2026-09-30
+
+### Fixed
+
+- **A Hue bridge registered as a Roku.** Roku discovery sends an M-SEARCH for
+  `roku:ecp` and trusted every reply, and a Philips Hue bridge answers every
+  M-SEARCH whatever it asks for. The first night Roku presence was on, it
+  joined the shelf as `roku-ip-192-168-50-100` -- and a `tvloop` job matching
+  `os ~ 'roku'` would have pointed tvloop at a light bridge and gone red on
+  its doctor. Only replies naming `roku:ecp` in their ST or USN count now.
+
 ## [0.7.1] — 2026-09-30
 
 ### Fixed
@@ -926,7 +937,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/addisdev/fleet-runner/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/addisdev/fleet-runner/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/addisdev/fleet-runner/compare/v0.6.1...v0.6.2
