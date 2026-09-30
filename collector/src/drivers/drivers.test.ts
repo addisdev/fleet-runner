@@ -14,7 +14,7 @@
 import { parseAdbDevices } from "./adb.js";
 import { bootedFrom } from "./simctl.js";
 import { targetsFrom } from "./devicectl.js";
-import { parseSsdpLocation, parseDeviceInfo, rokuTargetId, mSearchDatagram } from "./roku.js";
+import { parseSsdpLocation, parseDeviceInfo, rokuTargetId, mSearchDatagram, isRokuReply } from "./roku.js";
 import { dedupe, listAllTargets, driverNamed, DRIVERS } from "./index.js";
 import { applePlatform, simulatorPlatform, physicalApple, type IosDeviceInfo } from "../targets.js";
 import { devicePlatform, deviceKind } from "../api/shared.js";
@@ -118,6 +118,21 @@ export function runDriverChecks(check: Check) {
     "",
   ].join("\r\n");
   check("roku: LOCATION yields ip and port", parseSsdpLocation(ssdp)?.ip === "192.168.1.44");
+  check("roku: a roku:ecp reply is a Roku", isRokuReply(ssdp));
+  // What a Hue bridge sends back to a roku:ecp search. It registered as a Roku
+  // the first night presence was on.
+  const hue = [
+    "HTTP/1.1 200 OK",
+    "CACHE-CONTROL: max-age=100",
+    "LOCATION: http://192.168.50.100:80/description.xml",
+    "SERVER: Hue/1.0 UPnP/1.0 IpBridge/1.65.0",
+    "hue-bridgeid: 001788FFFE24F970",
+    "ST: upnp:rootdevice",
+    "USN: uuid:2f402f80-da50-11e1-9b23-00178824f970::upnp:rootdevice",
+    "",
+  ].join("\r\n");
+  check("roku: a device that answers every search is not a Roku", !isRokuReply(hue));
+  check("roku: the USN alone is enough", isRokuReply("HTTP/1.1 200 OK\r\nUSN: uuid:roku:ecp:X\r\n"));
   check("roku: the ECP port is read, not assumed", parseSsdpLocation(ssdp)?.port === 8060);
   check(
     "roku: a header spelled LOCATION is the same header",
