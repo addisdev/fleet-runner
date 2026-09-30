@@ -1,0 +1,30 @@
+{
+  "name": "tvloop",
+  "capability": "devices",
+  "executor": "host",
+  "description": "Run tvloop's hardware suite against a Roku on this host's network: doctor, the contract tests, and a JUnit replay of its flows.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "steps": {
+        "type": "array",
+        "items": { "enum": ["doctor", "spike", "hardware", "replay"] },
+        "description": "What to run, in order. Default doctor, hardware, replay -- tvloop's own nightly without the spike, which sideloads ten times and is slow. A failed doctor stops the rest: nothing is worth trusting from a device that is asleep or has lost developer mode."
+      },
+      "flows": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Flow names or paths for replay. Default: every flow in the checkout's tests/flows."
+      },
+      "dir": {
+        "type": "string",
+        "description": "The tvloop checkout, built. Default FLEET_TVLOOP_DIR, then ~/tvloop."
+      }
+    }
+  },
+  "example": {
+    "targets": { "match": "os ~ 'roku'", "exclusive": true },
+    "params": { "steps": ["doctor", "hardware", "replay"] }
+  }
+}

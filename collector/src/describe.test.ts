@@ -34,6 +34,26 @@ export async function runDescribeChecks(check: Check) {
   check("a wired devicectl entry is still hardware", d2.kind === "device", JSON.stringify(d2));
   check("and keeps its product type as the soc", d2.soc === "iPhone17,1", JSON.stringify(d2));
 
+  // --- a Roku is a Roku ------------------------------------------------------
+  // It used to fall through to the iOS fallback and register as an iPhone.
+  const express = {
+    ip: "192.168.50.218", port: 8060, serial: "YJ00AB123456", modelName: "Roku Express 4K+",
+    deviceType: "STB", softwareVersion: "15.1.4", developerEnabled: true,
+  };
+  const r1 = await describeTarget(
+    { id: "roku-YJ00AB123456", platform: "roku", kind: "device", driver: "roku" } as never, null, null, [express]);
+  check("a Roku registers under its own model and firmware",
+    r1.model === "Roku Express 4K+" && r1.os === "roku-15.1.4", JSON.stringify(r1));
+  check("and carries the address tvloop is pointed at", r1.ip === "192.168.50.218" && r1.developer_enabled === true,
+    JSON.stringify(r1));
+  check("and is attached to this host, which host routing follows", typeof r1.attached_to === "string");
+  const r2 = await describeTarget({ id: "roku-gone", platform: "roku", kind: "device" } as never, null, null, []);
+  check("a Roku discovery lost track of is still a Roku, not an iPhone", r2.os === "roku", JSON.stringify(r2));
+
+  const { rokuPresenceHere } = await import("./drivers/roku.js");
+  check("Roku presence is off unless this host is told it owns them",
+    !rokuPresenceHere({}) && rokuPresenceHere({ FLEET_ROKU: "1" }));
+
   // --- no targets is a skip ------------------------------------------------
   const e = new NoTargetsError("no targets attached");
   check("an empty target list has its own error type", e instanceof NoTargetsError && e instanceof Error);

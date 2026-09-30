@@ -23,6 +23,7 @@ import { runBrowserChecks } from "../src/browser.test.js";
 import { runDescribeChecks } from "../src/describe.test.js";
 import { runPressureChecks } from "../src/pressure.test.js";
 import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
+import { runTvloopChecks } from "../src/workloads/tvloop/tvloop.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
@@ -2596,6 +2597,10 @@ runPressureChecks(check);
 // decides NOT to enrol, which is where it earns its keep -- the launch itself
 // needs a device and is not covered anywhere.
 await runEnrolChecks(check);
+
+// The tvloop workload's decisions -- steps, refusals, locks and redaction --
+// against a fake context and a step runner that only returns exit codes.
+await runTvloopChecks(check);
 
 // --- the synthetic backend's reference digest ---
 //
