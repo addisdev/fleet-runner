@@ -9,8 +9,8 @@
     "properties": {
       "steps": {
         "type": "array",
-        "items": { "enum": ["doctor", "spike", "hardware", "replay"] },
-        "description": "What to run, in order. Default doctor, hardware, replay -- tvloop's own nightly without the spike, which sideloads ten times and is slow. A failed doctor stops the rest: nothing is worth trusting from a device that is asleep or has lost developer mode."
+        "items": { "enum": ["doctor", "install", "spike", "hardware", "replay"] },
+        "description": "What to run, in order. Default doctor, install, hardware, replay -- tvloop's own nightly, plus sideloading the checkout's channel (the Roku's one dev slot may hold something else), minus the spike, which sideloads ten times and is slow. A failed doctor or install stops the rest."
       },
       "flows": {
         "type": "array",
@@ -25,6 +25,6 @@
   },
   "example": {
     "targets": { "match": "os ~ 'roku'", "exclusive": true },
-    "params": { "steps": ["doctor", "hardware", "replay"] }
+    "params": { "steps": ["doctor", "install", "hardware", "replay"] }
   }
 }

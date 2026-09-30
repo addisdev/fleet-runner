@@ -82,7 +82,7 @@ function fakeRunner(codes: Record<string, number>, junit?: string) {
   const calls: { step: string; args: string[]; env: NodeJS.ProcessEnv }[] = [];
   const runStep: StepRunner = async (_cmd, args, { env }) => {
     const step = args.includes("doctor") ? "doctor" : args.includes("replay") ? "replay"
-      : args.some((a) => a.includes("vitest")) ? "hardware" : "spike";
+      : args.includes("install") ? "install" : args.some((a) => a.includes("vitest")) ? "hardware" : "spike";
     calls.push({ step, args, env });
     if (step === "replay" && junit !== undefined) {
       writeFileSync(args[args.indexOf("--out") + 1], junit);
@@ -107,8 +107,11 @@ const JUNIT_FAIL = '<testsuites name="tvloop" tests="3" failures="1" errors="1">
 
 export async function runTvloopChecks(check: Check): Promise<void> {
   // --- pure pieces --------------------------------------------------------
-  check("tvloop: default steps are doctor, hardware, replay",
-    JSON.stringify(stepsFor(job())) === '["doctor","hardware","replay"]');
+  check("tvloop: default steps are doctor, install, hardware, replay",
+    JSON.stringify(stepsFor(job())) === '["doctor","install","hardware","replay"]');
+  check("tvloop: install forces the sideload onto the locked Roku",
+    commandFor("install", { host: "10.0.0.9", outDir: "/o", flows: [], node: "node" }).args.join(" ") ===
+      `${CLI} install --force --device 10.0.0.9`);
   check("tvloop: an unknown step is refused by name", String(stepsFor(job({ steps: ["doctor", "reboot"] }))).includes('"reboot"'));
   const doctor = commandFor("doctor", { host: "10.0.0.9", outDir: "/o", flows: [], node: "node" });
   check("tvloop: doctor is pointed at the locked Roku by address",
@@ -172,8 +175,8 @@ export async function runTvloopChecks(check: Check): Promise<void> {
     const r = fakeRunner({}, JUNIT_PASS);
     await runWith(job(), ctx, deps(checkout(), r.runStep));
     const dev = rows.find((x) => x.device_id === "roku-X1") ?? {};
-    check("tvloop: runs the three default steps in order",
-      r.calls.map((c) => c.step).join(",") === "doctor,hardware,replay", r.calls.map((c) => c.step).join(","));
+    check("tvloop: runs the default steps in order",
+      r.calls.map((c) => c.step).join(",") === "doctor,install,hardware,replay", r.calls.map((c) => c.step).join(","));
     check("tvloop: hands tvloop the password in its env", r.calls.every((c) => c.env.TVLOOP_PASSWORD === SECRET));
     check("tvloop: the password never reaches an artifact",
       uploads.length > 0 && uploads.every((u) => !u.text.includes(SECRET)), uploads.map((u) => u.name).join(","));
@@ -193,6 +196,16 @@ export async function runTvloopChecks(check: Check): Promise<void> {
     check("tvloop: ...and the row says why", dev.ok === false && /doctor failed/.test(String(dev.error)), JSON.stringify(dev));
     check("tvloop: ...and the lock is still released", lockCalls.at(-1) === "release");
     check("tvloop: ...and the job is not ok", rows.at(-1)?.ok === false);
+  }
+
+  // --- a failed sideload stops the run too ---------------------------------
+  {
+    const { ctx, rows } = fakeCtx({});
+    const r = fakeRunner({ install: 1 });
+    await runWith(job(), ctx, deps(checkout(), r.runStep));
+    const dev = rows.find((x) => x.device_id === "roku-X1") ?? {};
+    check("tvloop: nothing is replayed against a channel that did not install",
+      r.calls.map((c) => c.step).join(",") === "doctor,install" && /sideload/.test(String(dev.error)), JSON.stringify(dev));
   }
 
   // --- a failing flow fails the row even if replay's exit code lied -------

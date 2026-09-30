@@ -16,9 +16,19 @@
 // The steps are the workflow's, run from a built checkout on the host:
 //
 //   doctor    tvloop doctor --json          stop here if it fails
+//   install   tvloop install --force        sideload the checkout's channel
 //   spike     tools/m0-spike.mjs --full     opt-in: ten sideloads, slow
 //   hardware  vitest --testNamePattern hardware   (pnpm test:hardware)
 //   replay    tvloop replay --reporter junit     JUnit becomes the row's counts
+//
+// `install` is the one step tvloop's own workflow does not have. Its flows
+// launch "the sideloaded app", and the workflow assumed a lab Roku that only
+// ever held tvloop's sample channel. This one is shared -- its single dev slot
+// held another channel when the fleet first found it -- so the run puts the
+// channel it is about to test there itself. `--force` because tvloop skips an
+// install whose package is unchanged since ITS last one, and cannot know that
+// something else was sideloaded in between. Which channel is the checkout's
+// tvloop.toml `[project] source`; fleet-host's points at the sample channel.
 //
 // Every step's output is uploaded, scrubbed of the password first, because the
 // artifact store is readable by anyone who can open the dashboard.
@@ -30,9 +40,9 @@ import { NoTargetsError } from "../../fleet-client.js";
 import { targetHost } from "../../drivers/roku.js";
 import type { Job, Target, WorkloadCtx } from "../types.js";
 
-export const STEPS = ["doctor", "spike", "hardware", "replay"] as const;
+export const STEPS = ["doctor", "install", "spike", "hardware", "replay"] as const;
 export type Step = (typeof STEPS)[number];
-const DEFAULT_STEPS: Step[] = ["doctor", "hardware", "replay"];
+const DEFAULT_STEPS: Step[] = ["doctor", "install", "hardware", "replay"];
 
 /** The built CLI, relative to the checkout. Its presence is what "built" means here. */
 export const CLI = "packages/cli/dist/bin.js";
@@ -84,6 +94,8 @@ export function commandFor(
   switch (step) {
     case "doctor":
       return { cmd: node, args: [CLI, "doctor", "--json", "--device", opts.host] };
+    case "install":
+      return { cmd: node, args: [CLI, "install", "--force", "--device", opts.host] };
     case "spike":
       return {
         cmd: node,
@@ -257,7 +269,9 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
         }
         if (res.code !== 0) {
           failedSteps.push(step);
-          if (step === "doctor") break;
+          // Nothing after a failed doctor or install is about this build:
+          // replay would drive whatever channel was already there.
+          if (step === "doctor" || step === "install") break;
         }
       }
 
@@ -269,8 +283,11 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
         ...(failedSteps.length
           ? {
               error: failedSteps[0] === "doctor"
-                ? "tvloop doctor failed, so nothing after it ran: the device is asleep, unreachable, or out of developer mode"
-                : `tvloop step(s) failed: ${failedSteps.join(", ")}`,
+                ? "tvloop doctor failed, so nothing after it ran: see doctor.log -- the device is asleep, " +
+                  "unreachable, out of developer mode, or the password is wrong"
+                : failedSteps[0] === "install"
+                  ? "tvloop could not sideload the channel, so nothing after it ran: see install.log"
+                  : `tvloop step(s) failed: ${failedSteps.join(", ")}`,
             }
           : {}),
         metrics: { steps: steps.length, failed_steps: failedSteps.length },
