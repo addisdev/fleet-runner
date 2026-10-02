@@ -2,7 +2,7 @@
   "name": "tvloop",
   "capability": "devices",
   "executor": "host",
-  "description": "Run tvloop's hardware suite against a Roku on this host's network: doctor, the contract tests, and a JUnit replay of its flows.",
+  "description": "Run tvloop's hardware suite against a Roku on this host's network: doctor, the contract tests, and a JUnit replay of its flows. With params.androidtv, Fire TV and Android TV devices over adb replay the flows too.",
   "params": {
     "type": "object",
     "additionalProperties": false,
@@ -20,6 +20,23 @@
       "dir": {
         "type": "string",
         "description": "The tvloop checkout, built. Default FLEET_TVLOOP_DIR, then ~/tvloop."
+      },
+      "androidtv": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["package"],
+        "properties": {
+          "package": {
+            "type": "string",
+            "description": "The app's Android application id, e.g. com.taylab.dozehound.debug. tvloop launches it and filters its logs by it."
+          },
+          "flows": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Flows to replay on the TVs. Default: the same as flows above."
+          }
+        },
+        "description": "Opt in to Fire TV / Android TV: adb targets that declare leanback run too. Only doctor and replay run on them -- install, spike and hardware are the Roku adapter's -- and they need no Roku password."
       }
     }
   },

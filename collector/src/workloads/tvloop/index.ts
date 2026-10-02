@@ -32,12 +32,45 @@
 //
 // Every step's output is uploaded, scrubbed of the password first, because the
 // artifact store is readable by anyone who can open the dashboard.
+//
+// ## Fire TV and Android TV
+//
+// tvloop has an Android TV adapter too (adb underneath, the same Platform
+// interface as the Roku one), so a flow written once can be replayed on a
+// Fire TV. A job opts in with `params.androidtv: { package }`; then the adb
+// targets it selects that declare leanback -- AndroidActuator.isTv(), the same
+// test the explore workload uses -- are run alongside the Rokus. Without that
+// param nothing about this workload changes: an existing job selects Rokus
+// and only Rokus, exactly as before.
+//
+// Three differences, each forced by tvloop rather than chosen:
+//
+//   - tvloop takes an Android device from a tvloop.toml, not from `--device`
+//     (a bare `--device` is assumed to be a Roku's address). So each TV gets a
+//     generated config in its own run directory, pointing at the checkout's
+//     flows and goldens, and is addressed as `--cwd <run dir> --device fleet`.
+//   - Only doctor and replay mean anything there. tvloop's `install` builds a
+//     ROKU package from the checkout's channel source and hands that zip to
+//     `adb install`; the spike and the hardware suite are the Roku adapter's.
+//     Those steps are skipped on a TV, and the row says which.
+//   - No password. adb is the trust boundary; nothing is read from the
+//     Keychain for a TV, and a host with no Roku password still runs its TVs.
+//
+// Two things about tvloop's Android TV adapter that a TV row does NOT catch,
+// both seen on the dozehound-tv AVD (and written up in explore/replay-tvloop.ts):
+// a flow's `launch` is `monkey -p <pkg> 1`, whose one event is random, so a
+// replay can start with a stray key; and `assert noErrors` never fails there,
+// because tvloop reads no logcat. A green TV row says the flows' keys went in,
+// not that nothing crashed. And a flow asserting focus or visibility always
+// FAILS there (tvloop has no Android tree) -- the checkout's own smoke flow
+// asserts `visible: PlayButton` -- which is what params.androidtv.flows is for.
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import { NoTargetsError } from "../../fleet-client.js";
 import { targetHost } from "../../drivers/roku.js";
+import { AndroidActuator } from "../explore/actuators/android.js";
 import type { Job, Target, WorkloadCtx } from "../types.js";
 
 export const STEPS = ["doctor", "install", "spike", "hardware", "replay"] as const;
@@ -66,7 +99,70 @@ export type Deps = {
   /** A Roku's address. Discovery, in the real one; a test has no network. */
   hostOf: (t: Target) => Promise<string>;
   env: NodeJS.ProcessEnv;
+  /**
+   * Whether an adb target is a TV. adb in the real one; absent means "no adb
+   * target is a TV", which is what every test written before Fire TV support
+   * gets, so none of them changed.
+   */
+  isTv?: (t: Target) => Promise<boolean>;
 };
+
+/** The steps that mean anything on an Android TV; the rest are the Roku adapter's. */
+export const ANDROIDTV_STEPS: readonly Step[] = ["doctor", "replay"];
+
+/** The alias every generated config names its one device by. */
+export const TV_ALIAS = "fleet";
+
+/** What `params.androidtv` asked for, or why it is not usable. Null when absent. */
+export function androidTvParams(job: Job): { package: string; flows: string[] | null } | string | null {
+  const raw = job.params?.androidtv;
+  if (raw === undefined) return null;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return "params.androidtv must be an object: { package, flows? }";
+  const o = raw as Record<string, unknown>;
+  if (typeof o.package !== "string" || !/^[A-Za-z][\w]*(\.[A-Za-z][\w]*)+$/.test(o.package)) {
+    return "params.androidtv.package must be an Android application id, like com.taylab.dozehound";
+  }
+  if (o.flows !== undefined && !(Array.isArray(o.flows) && o.flows.every((f) => typeof f === "string"))) {
+    return "params.androidtv.flows must be a list of flow names or paths";
+  }
+  return { package: o.package, flows: Array.isArray(o.flows) ? (o.flows as string[]) : null };
+}
+
+/** One device tvloop can be pointed at. */
+export type TvloopDevice =
+  | { platform: "roku"; host: string; ports?: { ecp?: number; dev?: number; console?: number; agent?: number } }
+  | { platform: "androidtv"; serial: string; package: string };
+
+/**
+ * A tvloop.toml naming exactly one device, `fleet`.
+ *
+ * Pure, so the tests pin it. Strings are written as JSON strings, which TOML's
+ * basic strings accept as-is for everything an adb serial, a package or a
+ * path can contain. The Roku password is a reference (`env:TVLOOP_PASSWORD`)
+ * and never the value, because this file sits in a temp directory and tvloop's
+ * own doctor flags a literal.
+ */
+export function deviceToml(device: TvloopDevice, dirs: { flows?: string; goldens?: string } = {}): string {
+  const q = (s: string) => JSON.stringify(s);
+  const lines = ["# Written by the fleet for one run. Do not edit; it is regenerated each time.", ""];
+  if (dirs.flows) lines.push("[flows]", `dir = ${q(dirs.flows)}`, "");
+  if (dirs.goldens) lines.push("[goldens]", `dir = ${q(dirs.goldens)}`, "");
+  lines.push(`[device.${TV_ALIAS}]`);
+  if (device.platform === "roku") {
+    lines.push('platform = "roku"', `host = ${q(device.host)}`, 'password = "env:TVLOOP_PASSWORD"');
+    const p = device.ports ?? {};
+    if (p.ecp) lines.push(`ecp_port = ${p.ecp}`);
+    if (p.dev) lines.push(`dev_port = ${p.dev}`);
+    if (p.console) lines.push(`console_port = ${p.console}`);
+    if (p.agent) lines.push(`agent_port = ${p.agent}`);
+  } else {
+    // host is what tvloop shows; serial is what it passes to `adb -s`.
+    lines.push('platform = "androidtv"', `host = ${q(device.serial)}`, `serial = ${q(device.serial)}`,
+      `package = ${q(device.package)}`);
+  }
+  lines.push("default = true", "");
+  return lines.join("\n");
+}
 
 /** The checkout, by the same precedence as every other path a host is told about. */
 export function tvloopDir(job: Job, env: NodeJS.ProcessEnv = process.env): string {
@@ -85,17 +181,23 @@ export function stepsFor(job: Job): Step[] | string {
   return raw as Step[];
 }
 
-/** One step as a command line. Pure, so the argv is what the tests pin. */
+/**
+ * One step as a command line. Pure, so the argv is what the tests pin.
+ *
+ * `configDir` is set for a device that needs a generated tvloop.toml (an
+ * Android TV); the device is then the config's `fleet` rather than an address.
+ */
 export function commandFor(
   step: Step,
-  opts: { host: string; outDir: string; flows: string[]; node?: string },
+  opts: { host: string; outDir: string; flows: string[]; node?: string; configDir?: string },
 ): { cmd: string; args: string[]; env?: Record<string, string> } {
   const node = opts.node ?? process.execPath;
+  const device = opts.configDir ? ["--cwd", opts.configDir, "--device", TV_ALIAS] : ["--device", opts.host];
   switch (step) {
     case "doctor":
-      return { cmd: node, args: [CLI, "doctor", "--json", "--device", opts.host] };
+      return { cmd: node, args: [CLI, "doctor", "--json", ...device] };
     case "install":
-      return { cmd: node, args: [CLI, "install", "--force", "--device", opts.host] };
+      return { cmd: node, args: [CLI, "install", "--force", ...device] };
     case "spike":
       return {
         cmd: node,
@@ -114,7 +216,7 @@ export function commandFor(
       return {
         cmd: node,
         args: [CLI, "replay", ...opts.flows, "--reporter", "junit", "--out", path.join(opts.outDir, "flows.xml"),
-          "--device", opts.host],
+          ...device],
       };
   }
 }
@@ -161,7 +263,7 @@ export const spawnStep: StepRunner = (cmd, args, { cwd, env, timeoutMs }) =>
     });
   });
 
-const REAL: Deps = { runStep: spawnStep, hostOf: targetHost, env: process.env };
+const REAL: Deps = { runStep: spawnStep, hostOf: targetHost, env: process.env, isTv: AndroidActuator.isTv };
 
 export function run(job: Job, ctx: WorkloadCtx): Promise<void> {
   return runWith(job, ctx, REAL);
@@ -171,9 +273,24 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
   const steps = stepsFor(job);
   if (typeof steps === "string") throw new Error(steps);
   const flows = Array.isArray(job.params?.flows) ? (job.params.flows as unknown[]).map(String) : [];
+  const tv = androidTvParams(job);
+  if (typeof tv === "string") throw new Error(tv);
 
-  const targets = await ctx.selectTargets(job, (await ctx.listTargets()).filter((t) => t.platform === "roku"));
-  if (targets.length === 0) throw new NoTargetsError("no Roku targets matched this job");
+  const all = await ctx.listTargets();
+  // Android TVs only when the job asked for them AND the host can tell a TV
+  // from a phone. A job without params.androidtv sees exactly the Rokus it
+  // always saw.
+  const tvCandidates = tv && deps.isTv
+    ? all.filter((t) => t.driver === "adb" || (t.driver === undefined && t.platform === "android"))
+    : [];
+  const tvs: Target[] = [];
+  for (const t of tvCandidates) if (await deps.isTv!(t)) tvs.push(t);
+  const targets = await ctx.selectTargets(job, [...all.filter((t) => t.platform === "roku"), ...tvs]);
+  if (targets.length === 0) {
+    throw new NoTargetsError(tv ? "no Roku or Android TV targets matched this job" : "no Roku targets matched this job");
+  }
+  const isAndroidTv = (t: Target) => t.platform !== "roku";
+  const rokus = targets.filter((t) => !isAndroidTv(t));
 
   // A host told to run tvloop and not given a built checkout is misconfigured,
   // which is a failure somebody should see -- unlike a missing password below,
@@ -186,21 +303,26 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
     );
   }
 
-  const pw = await ctx.secrets.rokuDevPassword();
-  if (!pw.ok) {
-    if (pw.reason === "denied") {
+  // The password is the Rokus' alone. A job with no Roku in it never asks the
+  // Keychain, and a job whose Rokus cannot run (no password yet) still runs
+  // its TVs; only a job that is ALL Rokus skips whole, as it always did.
+  const NO_PASSWORD = "skipped: no Roku developer password on this host; add it with " +
+    "`security add-generic-password -s fleet-roku-dev -a rokudev -w`";
+  let password: string | null = null;
+  if (rokus.length > 0) {
+    const pw = await ctx.secrets.rokuDevPassword();
+    if (pw.ok) password = pw.password;
+    else if (pw.reason === "denied") {
       throw new Error(`could not read the Roku developer password from the Keychain: ${pw.detail}`);
+    } else if (rokus.length === targets.length) {
+      await ctx.postResult({
+        job_id: job.job_id, device_id: `host:${ctx.host}`, iter: 0, final: true, ok: true, error: NO_PASSWORD,
+      });
+      ctx.log("tvloop: skipped, no Roku developer password in the Keychain");
+      return;
     }
-    await ctx.postResult({
-      job_id: job.job_id, device_id: `host:${ctx.host}`, iter: 0, final: true, ok: true,
-      error: "skipped: no Roku developer password on this host; add it with " +
-        "`security add-generic-password -s fleet-roku-dev -a rokudev -w`",
-    });
-    ctx.log("tvloop: skipped, no Roku developer password in the Keychain");
-    return;
   }
-  const password = pw.password;
-  const scrub = (text: string) => ctx.secrets.redact(text, [password]);
+  const scrub = (text: string) => (password ? ctx.secrets.redact(text, [password]) : text);
 
   const granted = job.targets?.exclusive ? await ctx.locks.acquire(job.job_id, targets.map((t) => t.id)) : null;
   let allOk = true;
@@ -213,10 +335,16 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
         });
         continue;
       }
+      const androidTv = isAndroidTv(target);
+      if (!androidTv && password === null) {
+        await ctx.postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: NO_PASSWORD });
+        continue;
+      }
 
       let host: string;
       try {
-        host = await deps.hostOf(target);
+        // An adb serial is its own address; only a Roku needs discovery.
+        host = androidTv ? target.id : await deps.hostOf(target);
       } catch (e) {
         allOk = false;
         await ctx.postResult({
@@ -227,6 +355,24 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
       }
 
       const outDir = mkdtempSync(path.join(os.tmpdir(), "fleet-tvloop-"));
+      if (androidTv && tv) {
+        writeFileSync(path.join(outDir, "tvloop.toml"), deviceToml(
+          { platform: "androidtv", serial: target.id, package: tv.package },
+          // Absolute, so a config living in a temp directory still finds the
+          // checkout's flows and goldens.
+          { flows: path.join(dir, "tests", "flows"), goldens: path.join(dir, "tests", "goldens") },
+        ));
+      }
+      const targetSteps = androidTv ? steps.filter((s) => ANDROIDTV_STEPS.includes(s)) : steps;
+      const skippedSteps = steps.filter((s) => !targetSteps.includes(s));
+      if (skippedSteps.length) {
+        ctx.log(`tvloop: ${skippedSteps.join(", ")} skipped on ${target.id}: Roku-only steps, and this is an Android TV`);
+      }
+      // A flow name resolves against the flows directory; a relative PATH has
+      // to be made absolute here, because a TV's tvloop runs with --cwd set to
+      // its own run directory rather than the checkout.
+      const absolute = (f: string) => (/[\\/]/.test(f) && !path.isAbsolute(f) ? path.join(dir, f) : f);
+      const targetFlows = androidTv ? (tv?.flows ?? flows).map(absolute) : flows;
       const artifacts: string[] = [];
       const failedSteps: string[] = [];
       let counts: { passed: number; failed: number } | null = null;
@@ -238,16 +384,21 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
         }
       };
 
-      for (const step of steps) {
+      for (const step of targetSteps) {
         // Each step renews the lease. A replay of every flow can outlast the
         // TTL on its own, and a lease that lapses mid-run requeues a job that
         // is still holding the Roku.
         await ctx.postBeacon(job.job_id, target.id, { step }).catch(() => {});
-        const { cmd, args, env } = commandFor(step, { host, outDir, flows });
+        const { cmd, args, env } = commandFor(step, {
+          host, outDir, flows: targetFlows, ...(androidTv ? { configDir: outDir } : {}),
+        });
         const t0 = Date.now();
         const res = await deps.runStep(cmd, args, {
           cwd: dir,
-          env: { ...deps.env, ...env, TVLOOP_PASSWORD: password, NO_COLOR: "1", CI: "1" },
+          env: {
+            ...deps.env, ...env, NO_COLOR: "1", CI: "1",
+            ...(androidTv ? {} : { TVLOOP_PASSWORD: password! }),
+          },
           timeoutMs: ctx.leaseBudgetS(job, 1800) * 1000,
         });
         const logFile = path.join(outDir, `${step}.log`);
@@ -283,14 +434,20 @@ export async function runWith(job: Job, ctx: WorkloadCtx, deps: Deps): Promise<v
         ...(failedSteps.length
           ? {
               error: failedSteps[0] === "doctor"
-                ? "tvloop doctor failed, so nothing after it ran: see doctor.log -- the device is asleep, " +
-                  "unreachable, out of developer mode, or the password is wrong"
+                ? androidTv
+                  ? "tvloop doctor failed, so nothing after it ran: see doctor.log -- adb cannot reach the TV, " +
+                    "or the app is not installed"
+                  : "tvloop doctor failed, so nothing after it ran: see doctor.log -- the device is asleep, " +
+                    "unreachable, out of developer mode, or the password is wrong"
                 : failedSteps[0] === "install"
                   ? "tvloop could not sideload the channel, so nothing after it ran: see install.log"
                   : `tvloop step(s) failed: ${failedSteps.join(", ")}`,
             }
           : {}),
-        metrics: { steps: steps.length, failed_steps: failedSteps.length },
+        metrics: {
+          steps: targetSteps.length, failed_steps: failedSteps.length,
+          ...(skippedSteps.length ? { skipped_steps: skippedSteps.length } : {}),
+        },
       });
     }
   } finally {

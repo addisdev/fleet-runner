@@ -1,0 +1,21 @@
+{
+  "id": "bench-focus-meadow",
+  "app": "dozehound-tv",
+  "title": "Highlight Meadow",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the channel bar and highlight the Meadow channel, without choosing it. The bar hides itself six seconds after the last key press, so stop with it open.",
+  "success": "the Meadow tile has focus in the channel bar",
+  "budget": {
+    "steps": 6,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "channel_bar"
+  ],
+  "check": {
+    "focused_label": "Meadow"
+  }
+}

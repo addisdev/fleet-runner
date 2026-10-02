@@ -77,7 +77,17 @@ export function escapeInputText(text: string): { ok: true; arg: string } | { ok:
  * which is the question being asked. Both are read, app first.
  */
 export function parseForeground(dumpsysWindow: string): string | null {
-  const text = dumpsysWindow.replace(/\r/g, "");
+  // `dumpsys window` OPENS with the "LAST ANR" section, a frozen copy of the
+  // window state at the last ANR -- mFocusedApp included. Read first, it names
+  // whatever was in front minutes ago: on the dozehound-tv AVD it reported
+  // Dozehound while the Google TV launcher was in front, after an ANR. So that
+  // section is cut out before anything is matched. The snapshot carries its
+  // own "DISPLAY CONTENTS" header, so it runs to the POLICY STATE section that
+  // always follows it, not to the next header of any kind.
+  const raw = dumpsysWindow.replace(/\r/g, "");
+  const text = raw.includes("\nWINDOW MANAGER POLICY STATE")
+    ? raw.replace(/WINDOW MANAGER LAST ANR[\s\S]*?(?=\nWINDOW MANAGER POLICY STATE)/, "")
+    : raw.replace(/WINDOW MANAGER LAST ANR[\s\S]*?(?=\nWINDOW MANAGER |$)/, "");
   const app = /mFocusedApp=.*?\s([\w.]+)\/[\w.$]+/.exec(text);
   if (app) return app[1];
   const focus = /mCurrentFocus=Window\{[^}]*\s([\w.]+)\/[\w.$]+/.exec(text);
@@ -119,7 +129,7 @@ export function focusLine(nodes: A11yNode[] | null): string | null {
   if (!nodes) return null;
   const i = nodes.findIndex((n) => n.focused);
   if (i < 0) return "nothing has focus";
-  const name = (n: A11yNode) => (n.label || n.text || n.id.split("/").pop() || n.cls.split(".").pop() || "?").trim();
+  const name = (n: A11yNode) => (focusedText(nodes) || n.id.split("/").pop() || n.cls.split(".").pop() || "?").trim();
   const f = nodes[i];
   const chain: string[] = [];
   let depth = f.depth;
@@ -132,6 +142,41 @@ export function focusLine(nodes: A11yNode[] | null): string | null {
   }
   const where = f.bounds ? ` at ${f.bounds.x},${f.bounds.y} ${f.bounds.w}x${f.bounds.h}` : "";
   return [...chain, `'${name(f)}' (focused${where})`].join(" > ");
+}
+
+/**
+ * What the focused element says, as a person would read it off the screen.
+ *
+ * Its own label or text when it has one. Compose usually gives it neither: a
+ * `Modifier.focusable()` tile is an unlabelled View whose words are in the
+ * Text children nested inside it (Dozehound's channel tiles are exactly this:
+ * the focused node is a bare View, "Meadow" is its child). So the fallback is
+ * the text of the nodes after it in the dump that are deeper and inside its
+ * bounds -- its descendants -- joined, the title first. Without this the
+ * focus line on a Compose TV app reads `'View' (focused ...)` on every
+ * screen, and a model is back to finding a highlight ring in the picture.
+ */
+export function focusedText(nodes: A11yNode[] | null): string {
+  if (!nodes) return "";
+  const i = nodes.findIndex((n) => n.focused);
+  if (i < 0) return "";
+  const f = nodes[i];
+  const own = (f.label || f.text || "").trim();
+  if (own) return own;
+  // A focused node the size of the whole window is the app's root holding
+  // focus (Dozehound's player does, whenever its bar is closed). Everything on
+  // screen is "inside" it, so borrowing its children's text would name the
+  // focus after a banner. It stays unnamed.
+  const screen = nodes[0]?.bounds;
+  if (screen && f.bounds && f.bounds.w >= screen.w && f.bounds.h >= screen.h) return "";
+  const parts: string[] = [];
+  for (let j = i + 1; j < nodes.length && nodes[j].depth > f.depth; j++) {
+    const n = nodes[j];
+    const t = (n.label || n.text || "").trim();
+    if (t && (!f.bounds || !n.bounds || contains(f.bounds, n.bounds))) parts.push(t);
+  }
+  const joined = parts.join(" / ");
+  return joined.length > 120 ? `${joined.slice(0, 117)}...` : joined;
 }
 
 const contains = (o: NonNullable<A11yNode["bounds"]>, i: NonNullable<A11yNode["bounds"]>) =>
@@ -248,19 +293,23 @@ export class AndroidActuator implements Actuator {
   }
 
   async observe(): Promise<Observation> {
-    const png = (await execBuf(ADB, ["-s", this.target.id, "exec-out", "screencap", "-p"],
-      { timeout: 30_000, maxBuffer: 64 * 1024 * 1024, encoding: "buffer" })).stdout;
+    // The picture and the tree are taken at once, not one after the other.
+    // On a 1080p Android TV emulator playing video, screencap takes ~1.7 s and
+    // uiautomator ~3.4 s; in sequence that is over five seconds a step, and
+    // Dozehound's channel bar hides itself after six seconds without a key --
+    // so an explorer that looked in sequence never saw the bar it had opened.
+    const [shot, treeResult] = await Promise.all([
+      execBuf(ADB, ["-s", this.target.id, "exec-out", "screencap", "-p"],
+        { timeout: 30_000, maxBuffer: 64 * 1024 * 1024, encoding: "buffer" }),
+      this.tree().then((n) => ({ nodes: n, error: null }), (e: Error) => ({ nodes: null, error: e })),
+    ]);
+    const png = shot.stdout;
     const size = pngSize(png);
     if (!size) throw new Error(`screencap returned ${png.length} bytes that are not a PNG`);
 
-    let nodes: A11yNode[] | null = null;
-    let treeSource: string | null = null;
-    try {
-      nodes = await this.tree();
-      treeSource = "uiautomator dump";
-    } catch (e) {
-      this.log(`tree unavailable this step: ${(e as Error).message.slice(0, 160)}`);
-    }
+    const nodes: A11yNode[] | null = treeResult.nodes;
+    const treeSource: string | null = nodes ? "uiautomator dump" : null;
+    if (treeResult.error) this.log(`tree unavailable this step: ${treeResult.error.message.slice(0, 160)}`);
 
     const [win, ime] = await Promise.all([
       this.shell(["dumpsys", "window"]).then((r) => r.stdout, () => ""),
