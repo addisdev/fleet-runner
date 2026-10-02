@@ -35,6 +35,15 @@ export type ModelConfig = {
   maxPixels?: number;
   /** Screenshots kept in the conversation; older ones become a line of text. Default 3. */
   keepShots?: number;
+  /**
+   * How many extra screenshots may pile up before the old ones are trimmed,
+   * all at once. Default 4. Trimming changes the conversation's prefix, and a
+   * server's prefix cache can only reuse what comes before the first change:
+   * trimming one screenshot every step invalidates the cache every step (seen
+   * on the first real run: cached tokens fell from 3,600 to 1,500 once
+   * trimming began). Trimming in batches keeps the prefix stable between them.
+   */
+  trimEvery?: number;
   /** Model turns kept in full; older turns are dropped. Default 40. */
   keepTurns?: number;
   temperature?: number;
@@ -321,6 +330,7 @@ export class Conversation {
 
   private trim() {
     const keep = this.cfg.keepShots ?? 3;
+    if (this.shotsIndex.length <= keep + (this.cfg.trimEvery ?? 4)) return this.trimTurns();
     while (this.shotsIndex.length > keep) {
       const i = this.shotsIndex.shift()!;
       const m = this.messages[i];
@@ -328,6 +338,10 @@ export class Conversation {
         m.content = m.content.map((p) => (p.type === "image_url" ? { type: "text" as const, text: "[earlier screenshot omitted]" } : p));
       }
     }
+    this.trimTurns();
+  }
+
+  private trimTurns() {
     // Whole turns past keepTurns go, oldest first, never splitting an
     // assistant call from its tool answers.
     const maxTurns = this.cfg.keepTurns ?? 40;
