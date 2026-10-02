@@ -37,6 +37,7 @@ import { confirm, fingerprint, runMission, type Candidate, type Confirmed, type 
 import { changedFiles, changedWords, loadMissions, orderMissions } from "./missions.js";
 import type { ModelConfig } from "./model.js";
 import { replayThrough, toMaestro } from "./replay.js";
+import { tvloopFlow, tvloopFlowFile } from "./replay-tvloop.js";
 import { stepsInWords, trajectorySheet } from "./report.js";
 import { ScreenMap } from "./screenmap.js";
 import type { Actuator, CheckName, ExploreFinding, Mission } from "./types.js";
@@ -427,11 +428,28 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
     const dir = path.join(runDir, `finding-${fp.slice(0, 8)}`);
     mkdirSync(dir, { recursive: true });
     const words = stepsInWords(r.steps, r.executed, c.upTo, names);
-    const flow = toMaestro({
-      appId: p.app_id, executed: r.executed, upTo: c.upTo, screen: r.screen, title: c.title,
-      setupFlow: o.mission.setup_flow ?? null, launchArgs: o.mission.launch_args,
-    });
-    writeFileSync(path.join(dir, "replay.yaml"), flow);
+    // A Roku replays through tvloop; everything else through Maestro, which
+    // also drives Android TV's D-pad. A tvloop flow refuses anything but keys,
+    // typing and waits, so a trajectory that somehow holds a tap gets the
+    // Maestro file instead of a flow with a step missing.
+    let replayFile = path.join(dir, "replay.yaml");
+    let replayKind: "maestro" | "tvloop" = "maestro";
+    if (o.t.platform === "roku") {
+      try {
+        const keys = r.executed.slice(0, c.upTo).flatMap((e) => (e.kind === "action" ? [e.action] : []));
+        writeFileSync(path.join(dir, "replay.json"), tvloopFlowFile(tvloopFlow(keys, { name: c.title.slice(0, 80) })));
+        replayFile = path.join(dir, "replay.json");
+        replayKind = "tvloop";
+      } catch (e) {
+        ctx.log(`tvloop flow for "${c.title}": ${(e as Error).message}`);
+      }
+    }
+    if (replayKind === "maestro") {
+      writeFileSync(replayFile, toMaestro({
+        appId: p.app_id, executed: r.executed, upTo: c.upTo, screen: r.screen, title: c.title,
+        setupFlow: o.mission.setup_flow ?? null, launchArgs: o.mission.launch_args,
+      }));
+    }
     const sheet = trajectorySheet({
       title: c.title, subtitle: `${o.t.id} · ${o.condName} · step ${c.step}`, runDir, steps: r.steps, screenNames: names,
       from: Math.max(1, c.step - 11), to: c.step, highlight: c.step,
@@ -443,14 +461,13 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
       shot: await up(path.join(runDir, "shots", c.shot), `${tag}.png`),
       sheet: await up(path.join(dir, "sheet.html"), `${tag}.html`),
       trajectory: await up(path.join(runDir, "trajectory.json"), `${tag}-trajectory.json`),
-      replay: await up(path.join(dir, "replay.yaml"), `${tag}.yaml`),
+      replay: await up(replayFile, `${tag}${replayKind === "tvloop" ? ".json" : ".yaml"}`),
     };
     if (c.logExcerpt) {
       writeFileSync(path.join(dir, "log.txt"), c.logExcerpt);
       artifacts.log = await up(path.join(dir, "log.txt"), `${tag}.log`);
     }
     const condition = o.condName === "baseline" ? "" : ` Condition: ${o.condName}.`;
-    const replayKind: "maestro" | "tvloop" | "none" = o.t.platform === "roku" ? "tvloop" : "maestro";
     return {
       fingerprint: fp,
       app: o.appKey,

@@ -3,13 +3,16 @@
 // no collector -- which is why it is a step of its own in `npm test` rather
 // than part of the smoke run.
 import { runExploreChecks } from "../src/workloads/explore/explore.test.js";
+import { runRokuActuatorChecks } from "../src/workloads/explore/actuators/roku.test.js";
 
 let failed = 0;
 let passed = 0;
-await runExploreChecks((name, cond, detail = "") => {
+const check = (name: string, cond: boolean, detail = "") => {
   if (cond) { passed++; return; }
   failed++;
   console.error(`  FAIL ${name}${detail ? `\n       ${detail.slice(0, 600)}` : ""}`);
-});
+};
+await runExploreChecks(check);
+await runRokuActuatorChecks(check);
 console.log(failed ? `  ${failed} of ${passed + failed} explore checks failed` : `  ok — ${passed} explore checks`);
 process.exit(failed ? 1 : 0);
