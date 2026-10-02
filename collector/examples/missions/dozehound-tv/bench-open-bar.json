@@ -1,0 +1,22 @@
+{
+  "id": "bench-open-bar",
+  "app": "dozehound-tv",
+  "title": "Bring up the channel bar",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Bring up the list of channels. The bar hides itself six seconds after the last key press, so stop with it open.",
+  "success": "the channel bar is open with the Naptime tile focused",
+  "budget": {
+    "steps": 4,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "player",
+    "channel_bar"
+  ],
+  "check": {
+    "focused_label": "Naptime"
+  }
+}

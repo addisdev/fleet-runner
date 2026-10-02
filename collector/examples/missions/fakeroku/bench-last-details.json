@@ -1,0 +1,23 @@
+{
+  "id": "bench-last-details",
+  "app": "fakeroku",
+  "title": "Open the last tile",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the details of the last tile in the row.",
+  "success": "the details screen is open with PlayButton focused",
+  "budget": {
+    "steps": 10,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home",
+    "details"
+  ],
+  "check": {
+    "screen": "details",
+    "focused_label": "PlayButton"
+  }
+}

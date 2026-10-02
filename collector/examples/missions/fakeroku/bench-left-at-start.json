@@ -1,0 +1,22 @@
+{
+  "id": "bench-left-at-start",
+  "app": "fakeroku",
+  "title": "Press Left on the first tile",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "With the first tile focused, press Left once. Focus should stay on the first tile.",
+  "success": "Tile0 still has focus on the home row",
+  "budget": {
+    "steps": 4,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home"
+  ],
+  "check": {
+    "screen": "home",
+    "focused_label": "Tile0"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "explore-guest-exit",
+  "app": "dozehound-tv",
+  "title": "A guest wants to get out",
+  "persona": "A house guest who switched the TV on, found a dog channel playing, and just wants to get back to the TV's home screen to watch something else. They have never seen this app.",
+  "goal": "Get out of this app to the TV's home screen.",
+  "success": "the TV's launcher is in front and Dozehound is not -- leaving is the goal here, so the left-app check is expected to fire",
+  "budget": {
+    "steps": 15,
+    "minutes": 8
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "player",
+    "channel_bar"
+  ]
+}

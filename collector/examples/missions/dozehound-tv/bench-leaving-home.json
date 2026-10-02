@@ -1,0 +1,24 @@
+{
+  "id": "bench-leaving-home",
+  "app": "dozehound-tv",
+  "title": "Use Leaving Home",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "You are going out. Use the app's Leaving Home button.",
+  "success": "a banner says \"Leaving Home — Naptime is on until you're back.\"",
+  "budget": {
+    "steps": 8,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "channel_bar",
+    "leaving_home"
+  ],
+  "check": {
+    "text": [
+      "Leaving Home — Naptime is on until you're back."
+    ]
+  }
+}
