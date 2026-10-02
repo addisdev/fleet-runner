@@ -415,6 +415,7 @@ const WORKLOAD_ICON: Record<string, IconName> = {
   // Another tool's test suite, on a device the fleet lends it: a UI test by
   // any other name.
   tvloop: "uitest",
+  explore: "uitest",
   benchmark: "benchmark",
   batch: "batch",
   soak: "soak",

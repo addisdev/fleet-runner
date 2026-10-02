@@ -200,6 +200,9 @@ const WORKLOADS = new Set([
   // Another tool's hardware suite, run on a device the fleet lends it. See
   // src/workloads/tvloop/.
   "tvloop",
+  // Overnight exploratory QA: a vision model drives tonight's build and files
+  // reproduced findings. See src/workloads/explore/.
+  "explore",
 ]);
 
 function touchDevice(deviceId: string) {
