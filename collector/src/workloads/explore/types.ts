@@ -228,7 +228,17 @@ export type TrajectoryStep = {
 
 export type CheckName =
   | "crash" | "anr" | "frozen" | "blank" | "left_app" | "a11y"
-  | "visual" | "goal" | "regression" | "agent_stuck";
+  | "visual" | "goal" | "regression" | "agent_stuck"
+  /** A control the tree calls tappable that changed nothing when tapped, twice. */
+  | "dead_control"
+  /** The leash refused something the screen talked the agent into (a planted instruction). */
+  | "leash";
+
+/** Every CheckName, for validation on the collector side. */
+export const CHECK_NAMES: readonly CheckName[] = [
+  "crash", "anr", "frozen", "blank", "left_app", "a11y", "visual", "goal",
+  "regression", "agent_stuck", "dead_control", "leash",
+];
 
 /**
  * A finding, as the executor posts it to the collector's `POST /findings`.
