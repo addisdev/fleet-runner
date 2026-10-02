@@ -250,6 +250,9 @@ export function tableCounts(): Record<string, number> {
     "device_locks",
     "events",
     "status_reports",
+    // Night QA findings: one row per problem, so it grows with distinct bugs
+    // rather than with nights, but it is still a table someone will ask about.
+    "findings",
   ];
   const out: Record<string, number> = {};
   for (const t of tables) {

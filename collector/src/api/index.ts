@@ -12,6 +12,7 @@ import { registerDevices } from "./devices.js";
 import { registerMirror } from "./mirror.js";
 import { registerEnroll } from "./enroll.js";
 import { registerEvals } from "./evals.js";
+import { registerFindings } from "./findings.js";
 import { registerJobs } from "./jobs.js";
 import { registerMutations } from "./mutations.js";
 import { registerOverview } from "./overview.js";
@@ -40,6 +41,9 @@ export function registerApi(app: FastifyInstance, announce: Announce, matchingDe
   registerJobs(app);
   registerResults(app);
   registerEvals(app);
+  // Night QA. Takes announce because executors post here and the Findings
+  // page should hear about it without polling.
+  registerFindings(app, announce);
   registerSystem(app);
   registerVisual(app);
   registerPeers(app);
