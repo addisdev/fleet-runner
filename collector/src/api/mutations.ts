@@ -595,6 +595,10 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
       ...(db.prepare("SELECT payload AS blob FROM results").all() as { blob: string }[]),
       ...(db.prepare("SELECT template AS blob FROM schedules").all() as { blob: string }[]),
       ...(db.prepare("SELECT spec AS blob FROM job_templates").all() as { blob: string }[]),
+      // A finding links its screenshot, contact sheet, trajectory, log and
+      // replay file from the artifact store, and nothing else references them:
+      // without this, GC would offer the evidence for every open finding.
+      ...(db.prepare("SELECT artifacts || ' ' || COALESCE(replay, '') AS blob FROM findings").all() as { blob: string }[]),
     ]) {
       for (const sha of sha256Refs(blob)) referenced.add(sha);
     }

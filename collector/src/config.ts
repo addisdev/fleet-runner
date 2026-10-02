@@ -16,6 +16,7 @@
 // run before anything *uses* a value it changes, which is why it refuses once
 // the collector has started rather than quietly having no effect.
 import path from "node:path";
+import { hostname } from "node:os";
 
 /** Everything settable, and the shape `fleet up` hands over. */
 export type Settings = {
@@ -44,7 +45,49 @@ export type Settings = {
   peers: string[];
   /** This brain's display name. Null means "read it from the data directory". */
   name: string | null;
+  /**
+   * Where people open this dashboard, for links the collector sends OUT of
+   * itself: the night-QA digest on a phone, an issue body on GitHub. The
+   * dashboard's own links are relative and never need it.
+   */
+  dashUrl: string;
+  /** Night QA (src/findings.ts): app name -> "owner/repo" an issue would go to. */
+  findingsRepos: Record<string, string>;
+  /** Why FLEET_FINDINGS_REPOS was ignored, when it was. Said, not swallowed. */
+  findingsReposError: string | null;
+  /** Filing issues is BUILT BUT OFF, exactly like commit statuses. */
+  githubIssuesArmed: boolean;
+  /** "HH:MM" local time to send the night-QA digest, or null for never. */
+  findingsDigestAt: string | null;
+  /** How far back the daily digest looks, in hours. */
+  findingsDigestHours: number;
 };
+
+/**
+ * FLEET_FINDINGS_REPOS, read strictly: a JSON object of app -> "owner/repo".
+ *
+ * A malformed value is not guessed at. It maps nothing and the reason is kept,
+ * because the cost of being lenient here is an issue filed against whichever
+ * repository a typo happened to spell.
+ */
+export function parseFindingsRepos(raw: string | undefined): { repos: Record<string, string>; error: string | null } {
+  if (!raw || !raw.trim()) return { repos: {}, error: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    return { repos: {}, error: `FLEET_FINDINGS_REPOS is not JSON: ${(e as Error).message}` };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return { repos: {}, error: 'FLEET_FINDINGS_REPOS must be a JSON object of app -> "owner/repo"' };
+  const repos: Record<string, string> = {};
+  const bad: string[] = [];
+  for (const [app, repo] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(repo)) repos[app] = repo;
+    else bad.push(app);
+  }
+  return { repos, error: bad.length ? `FLEET_FINDINGS_REPOS: not "owner/repo" for ${bad.join(", ")}` : null };
+}
 
 const list = (raw: string | undefined, fallback = "") =>
   (raw ?? fallback)
@@ -108,6 +151,25 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): Settings {
     discovery: env.FLEET_DISCOVERY === "1",
     peers: list(env.FLEET_PEERS),
     name: env.FLEET_NAME ?? null,
+    // The host's own name rather than an address: it is what a phone on the
+    // same network can usually resolve, and a link with a raw 192.168 address
+    // in it is wrong the day DHCP hands out a different one.
+    dashUrl: (env.FLEET_DASH_URL ?? `http://${hostname()}:${Number(env.FLEET_PORT ?? 8788)}`).replace(/\/+$/, ""),
+    findingsRepos: parseFindingsRepos(env.FLEET_FINDINGS_REPOS).repos,
+    findingsReposError: parseFindingsRepos(env.FLEET_FINDINGS_REPOS).error,
+    // Fleet Runner stays disconnected from the app repositories until the owner
+    // says otherwise. Issues are composed and recorded (dry_run) unless BOTH
+    // are set: FLEET_GITHUB_ISSUES=1 arms filing, FLEET_GITHUB_TOKEN
+    // authenticates it. Arming commit statuses does not arm this, nor the
+    // reverse: they are separate decisions about separate kinds of noise.
+    githubIssuesArmed: env.FLEET_GITHUB_ISSUES === "1",
+    // Anything that is not a plain 24-hour HH:MM is off rather than guessed at:
+    // "7:00" or "7am" sending at a surprising hour is worse than not sending.
+    findingsDigestAt: /^([01]\d|2[0-3]):[0-5]\d$/.test(env.FLEET_FINDINGS_DIGEST_AT ?? "")
+      ? (env.FLEET_FINDINGS_DIGEST_AT as string)
+      : null,
+    // A day, so a daily send covers every finding exactly once.
+    findingsDigestHours: Math.min(168, Math.max(1, Number(env.FLEET_FINDINGS_DIGEST_HOURS ?? 24) || 24)),
   };
 }
 
@@ -156,6 +218,12 @@ export let DASH_DIST: string;
 export let DISCOVERY: boolean;
 export let PEERS: string[];
 export let NAME: string | null;
+export let DASH_URL: string;
+export let FINDINGS_REPOS: Record<string, string>;
+export let FINDINGS_REPOS_ERROR: string | null;
+export let GITHUB_ISSUES_ARMED: boolean;
+export let FINDINGS_DIGEST_AT: string | null;
+export let FINDINGS_DIGEST_HOURS: number;
 
 function apply(): void {
   PORT = settings.port;
@@ -174,6 +242,12 @@ function apply(): void {
   DISCOVERY = settings.discovery;
   PEERS = settings.peers;
   NAME = settings.name;
+  DASH_URL = settings.dashUrl;
+  FINDINGS_REPOS = settings.findingsRepos;
+  FINDINGS_REPOS_ERROR = settings.findingsReposError;
+  GITHUB_ISSUES_ARMED = settings.githubIssuesArmed;
+  FINDINGS_DIGEST_AT = settings.findingsDigestAt;
+  FINDINGS_DIGEST_HOURS = settings.findingsDigestHours;
 }
 
 apply();

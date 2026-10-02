@@ -46,6 +46,8 @@ import { registerDashStatic } from "./dash-static.js";
 import { registerRunnerWeb } from "./runner-web.js";
 import { startPowerSampler } from "./power.js";
 import { endMirror } from "./api/mirror.js";
+import { digestTick, digestTickOptions } from "./findings.js";
+import { FINDINGS_REPOS_ERROR } from "./config.js";
 
 
 /** Every fleet-state change fans out to connected dashboards and drops the
@@ -1691,6 +1693,23 @@ export async function listen(): Promise<{ port: number; addresses: string[]; id:
       alertTick().catch((e) => app.log.error(e, "alert tick failed"));
     }, ALERT_TICK_MS).unref(),
   );
+  // The night-QA morning digest (src/findings.ts). Checked every minute and
+  // sent at most once per local day, only when FLEET_FINDINGS_DIGEST_AT and
+  // FLEET_ALERT_WEBHOOK are both set -- the same channel alerts use.
+  // A malformed repo map files nothing; said once here rather than discovered
+  // when the first issue that should have been composed is not.
+  if (FINDINGS_REPOS_ERROR) app.log.warn(FINDINGS_REPOS_ERROR);
+  {
+    const opts = digestTickOptions((o, m) => app.log.warn(o, m));
+    if (opts.at && opts.webhook) {
+      const tick = () => digestTick(new Date(), opts).catch((e) => app.log.error(e, "findings digest failed"));
+      void tick();
+      running.timers.push(setInterval(tick, 60_000).unref());
+      app.log.info(`night-QA digest daily at ${opts.at} local, covering ${opts.hours}h`);
+    } else if (opts.at) {
+      app.log.warn("FLEET_FINDINGS_DIGEST_AT is set but FLEET_ALERT_WEBHOOK is not; the digest has nowhere to go");
+    }
+  }
   return { port: PORT, addresses: BIND, id: me.id, name: me.name };
 }
 
