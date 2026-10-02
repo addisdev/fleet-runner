@@ -1,0 +1,23 @@
+# Probe BG-06: Invite screen is blank in German.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends on a white screen; the script checks the tree has no text.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "option_lang_de"
+    direction: DOWN
+- tapOn:
+    id: "option_lang_de"
+- back
+- tapOn:
+    id: "button_profile"
+- tapOn:
+    id: "button_invite"

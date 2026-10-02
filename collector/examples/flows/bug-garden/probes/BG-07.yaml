@@ -1,0 +1,14 @@
+# Probe BG-07: Water now does nothing.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends after the tap; 'Watered 2 days ago' is still there.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn: "Fern"
+- tapOn:
+    id: "button_water"
+- assertVisible: "Watered 2 days ago"

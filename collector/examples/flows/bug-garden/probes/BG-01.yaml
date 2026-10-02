@@ -1,0 +1,18 @@
+# Probe BG-01: Saving a plant with no species crashes.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. The tap at the end crashes the app; the script reads `adb logcat -b crash`.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_add"
+- tapOn:
+    id: "field_name"
+- inputText: "Basil"
+- hideKeyboard
+- tapOn:
+    id: "button_save"

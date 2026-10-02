@@ -1,0 +1,18 @@
+# Probe BG-15: Clear-search button is a 20dp tap target.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends with text in the search field; the script measures button_clear_search.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_search"
+- tapOn:
+    id: "field_search"
+- inputText: "f"
+- hideKeyboard
+- assertVisible:
+    id: "button_clear_search"
