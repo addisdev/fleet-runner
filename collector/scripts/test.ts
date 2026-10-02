@@ -183,6 +183,12 @@ if (!(await run(process.execPath, [TSX, "scripts/check-metrics.ts"]))) failed = 
 step("workload table matches the directories");
 if (!(await run(process.execPath, [TSX, "scripts/check-workloads.ts"]))) failed = true;
 
+// The shelf picks each device's drawing from its model string; the real
+// fleet's strings are the fixtures, so a regex change cannot quietly redraw
+// a device that is actually on the shelf.
+step("each device gets the right drawing");
+if (!(await run(process.execPath, [TSX, "scripts/check-device-art.ts"]))) failed = true;
+
 // --- 5. the collector starts and stops on demand -------------------------
 // Before the smoke run, because if the collector cannot be started from code
 // the smoke run's failure would be a much more confusing way to learn it.
