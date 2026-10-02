@@ -221,8 +221,14 @@ function nodeText(n: TvNode): string {
  */
 export function nodesFromTree(tree: TvTree, scale: { x: number; y: number } = { x: 1, y: 1 }): A11yNode[] {
   const out: A11yNode[] = [];
+  const holdsFocus = (n: TvNode): boolean => n.focused === true || (n.children ?? []).some(holdsFocus);
   const walk = (n: TvNode, depth: number) => {
-    if (n.visible === false) return;
+    // ...except the one holding focus. A focused node the scene calls
+    // invisible is exactly the state worth seeing (the fake Roku's details
+    // screen is one: PlayButton takes focus while still marked hidden), and
+    // dropping it would leave the tree saying nothing has focus while the
+    // focus chain says otherwise.
+    if (n.visible === false && !holdsFocus(n)) return;
     const text = nodeText(n);
     out.push({
       cls: n.type,

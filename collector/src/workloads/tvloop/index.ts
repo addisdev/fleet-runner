@@ -55,6 +55,15 @@
 //     Those steps are skipped on a TV, and the row says which.
 //   - No password. adb is the trust boundary; nothing is read from the
 //     Keychain for a TV, and a host with no Roku password still runs its TVs.
+//
+// Two things about tvloop's Android TV adapter that a TV row does NOT catch,
+// both seen on the dozehound-tv AVD (and written up in explore/replay-tvloop.ts):
+// a flow's `launch` is `monkey -p <pkg> 1`, whose one event is random, so a
+// replay can start with a stray key; and `assert noErrors` never fails there,
+// because tvloop reads no logcat. A green TV row says the flows' keys went in,
+// not that nothing crashed. And a flow asserting focus or visibility always
+// FAILS there (tvloop has no Android tree) -- the checkout's own smoke flow
+// asserts `visible: PlayButton` -- which is what params.androidtv.flows is for.
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import os from "node:os";

@@ -31,6 +31,22 @@
  * REPRODUCES when the replay FAILS on that assertion. The runner reports the
  * failing step and its message, and the caller -- which knows what it was
  * trying to reproduce -- decides.
+ *
+ * ## Three things tvloop does that a caller has to know (seen, not guessed)
+ *
+ *   - On a Roku the console hands a new client its recent backlog, and
+ *     noErrors counts from the flow's start rather than the app run's. A
+ *     replay run straight after a crash "reproduces" it with no crash at all
+ *     (explore-tv-check.ts shows it on the fake). Reset and let the console
+ *     go quiet before replaying, or read `failedStep` with that in mind.
+ *   - On Android TV, noErrors cannot fail: tvloop's daemon fills its log ring
+ *     from the Roku console only, and never reads logcat. `errorsWatched` is
+ *     false there; take the actuator's crashes() before and after instead.
+ *   - On Android TV, tvloop's `launch` is `monkey -p <pkg> 1`, and monkey's
+ *     one event is a RANDOM one. On the dozehound-tv AVD it once left the
+ *     Google TV launcher in front, and the replay's keys drove the launcher.
+ *     So for Android TV, launch with the actuator (`am start`) and build the
+ *     flow with `launch: false`.
  */
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -160,6 +176,12 @@ export type TvloopReplayResult = {
   failedStep: string | null;
   message: string | null;
   durationMs: number;
+  /**
+   * Whether `assert noErrors` could have failed. False on Android TV, where
+   * tvloop reads no device logs (see the header); a pass there says the keys
+   * went in, not that nothing crashed.
+   */
+  errorsWatched: boolean;
   /** tvloop's own JSON result, when it produced one. */
   raw: unknown;
 };
@@ -172,7 +194,7 @@ export type TvloopReplayResult = {
  * a stray warning on stdout from a future version does not turn a real result
  * into an "error".
  */
-export function parseReplayOutput(stdout: string, exitCode: number): TvloopReplayResult {
+export function parseReplayOutput(stdout: string, exitCode: number): Omit<TvloopReplayResult, "errorsWatched"> {
   const at = stdout.search(/\{\s*"results"\s*:/);
   if (at < 0) {
     return {
@@ -249,5 +271,5 @@ export async function runTvloopFlow(file: string, opts: RunTvloopFlowOptions): P
     });
   });
   const r = parseReplayOutput(stdout, code);
-  return { ...r, durationMs: r.durationMs || Date.now() - t0 };
+  return { ...r, durationMs: r.durationMs || Date.now() - t0, errorsWatched: opts.device.platform === "roku" };
 }

@@ -113,6 +113,19 @@ export async function runRokuActuatorChecks(check: Check): Promise<void> {
   check("roku: exactly the agent's focused node is focused, and nothing on a Roku is tappable",
     nodes.filter((n) => n.focused).map((n) => n.id).join() === "Tile2" && nodes.every((n) => !n.tappable));
   check("roku: a node's title field becomes its text and label", nodes[4].text === "Rain on the porch" && nodes[4].label === "Rain on the porch");
+  const details: TvTree = {
+    ...TREE,
+    focusChain: ["MainScene", "PlayButton"],
+    root: {
+      ...TREE.root,
+      children: [
+        { ...TREE.root.children![0], children: TREE.root.children![0].children!.map((c) => ({ ...c, focused: false })) },
+        { id: "PlayButton", type: "Button", visible: false, focusable: true, focused: true },
+      ],
+    },
+  };
+  check("roku: a focused node marked invisible is kept (the fake's details screen), still focused",
+    nodesFromTree(details).filter((n) => n.focused).map((n) => n.id).join() === "PlayButton");
   const scaled = nodesFromTree(TREE, { x: 1.5, y: 1.5 });
   check("roku: bounds scale into screenshot pixels (720p tree, 1080p picture)",
     JSON.stringify(scaled[4].bounds) === JSON.stringify({ x: 759, y: 360, w: 320, h: 270 }), JSON.stringify(scaled[4].bounds));
