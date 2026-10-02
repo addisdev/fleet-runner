@@ -52,6 +52,14 @@ export type A11yNode = {
   bounds: { x: number; y: number; w: number; h: number } | null;
   /** Depth in the subtree, for naming a finding usefully. */
   depth: number;
+  /**
+   * Holds input focus. Only a TV is driven by focus rather than by touch, so
+   * this is what tells a remote-control driver where it is; absent means the
+   * source does not say, not false.
+   */
+  focused?: boolean;
+  /** Scrolls, per the tree. Lets a driver tell a list from a page. */
+  scrollable?: boolean;
 };
 
 /**
@@ -129,6 +137,8 @@ export function parseUiautomatorDump(xml: string): { nodes: A11yNode[]; problem:
       enabled: a["enabled"] !== "false",
       bounds: parseBoundsRect(a["bounds"]),
       depth,
+      focused: a["focused"] === "true",
+      scrollable: a["scrollable"] === "true",
     });
     if (m[2] !== "/") depth += 1;
   }
@@ -284,6 +294,9 @@ export function parseXcuiDebugDescription(out: string): { nodes: A11yNode[]; pro
       enabled: !/,\s*Disabled\b/.test(rest),
       bounds: f ? { x: Number(f[1]), y: Number(f[2]), w: Number(f[3]), h: Number(f[4]) } : null,
       depth,
+      // tvOS prints `Focused` after the frame on the element holding focus;
+      // iOS never prints it, which is why the field is optional.
+      ...(/,\s*Focused\b/.test(rest) ? { focused: true } : {}),
     });
   }
   indents = [];
