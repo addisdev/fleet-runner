@@ -1,0 +1,31 @@
+# Bench mission bench-rename: Rename Pothos to Golden Pothos.
+#
+# The scripted answer to collector/examples/missions/bug-garden/bench-rename.json,
+# for checking that the mission's `check` block is right: run this, dump the
+# tree, and the check must pass. It is also the shortest path a model could
+# take, which makes it the step-count baseline for the bench.
+#
+# Runs on the clean build: Maestro passes `arguments` as intent extras, and
+# garden_defects=false turns every planted defect off.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- runFlow: ../sign-in.yaml
+- scrollUntilVisible:
+    element:
+      text: "Pothos"
+    direction: DOWN
+- tapOn: "Pothos"
+- tapOn:
+    id: "button_edit"
+- tapOn:
+    id: "field_name"
+- eraseText: 40
+- inputText: "Golden Pothos"
+- hideKeyboard
+- tapOn:
+    id: "button_save"
+- assertVisible: "Golden Pothos"

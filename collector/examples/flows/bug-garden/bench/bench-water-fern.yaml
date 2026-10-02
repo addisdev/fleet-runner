@@ -1,0 +1,20 @@
+# Bench mission bench-water-fern: Water the Fern.
+#
+# The scripted answer to collector/examples/missions/bug-garden/bench-water-fern.json,
+# for checking that the mission's `check` block is right: run this, dump the
+# tree, and the check must pass. It is also the shortest path a model could
+# take, which makes it the step-count baseline for the bench.
+#
+# Runs on the clean build: Maestro passes `arguments` as intent extras, and
+# garden_defects=false turns every planted defect off.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- runFlow: ../sign-in.yaml
+- tapOn: "Fern"
+- tapOn:
+    id: "button_water"
+- assertVisible: "Watered today"

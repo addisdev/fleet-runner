@@ -1,0 +1,21 @@
+{
+  "id": "explore-searcher",
+  "app": "bug-garden",
+  "title": "Someone who only ever uses search",
+  "persona": "Someone who never scrolls a list and always reaches for the search box, typing in lowercase.",
+  "goal": "Find these plants by searching for them, one at a time: fern, monstera, basil, rosemary, cactus. Open each one you find and go back to the plant list between searches.",
+  "success": "the agent searched for every name on the list",
+  "budget": {
+    "steps": 45,
+    "minutes": 20
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "search",
+    "detail"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml"
+}

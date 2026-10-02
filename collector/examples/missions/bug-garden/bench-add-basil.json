@@ -1,0 +1,29 @@
+{
+  "id": "bench-add-basil",
+  "app": "bug-garden",
+  "title": "Add Basil with quantity 3",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Add a plant named Basil, species Ocimum basilicum, with quantity 3.",
+  "success": "Basil is in the plant list with 'Qty 3'",
+  "budget": {
+    "steps": 20,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "edit"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Basil",
+      "Qty 3"
+    ]
+  }
+}

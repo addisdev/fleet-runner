@@ -1,0 +1,31 @@
+# Bench mission bench-water-interval: Water the Peace Lily every 10 days.
+#
+# The scripted answer to collector/examples/missions/bug-garden/bench-water-interval.json,
+# for checking that the mission's `check` block is right: run this, dump the
+# tree, and the check must pass. It is also the shortest path a model could
+# take, which makes it the step-count baseline for the bench.
+#
+# Runs on the clean build: Maestro passes `arguments` as intent extras, and
+# garden_defects=false turns every planted defect off.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- runFlow: ../sign-in.yaml
+- scrollUntilVisible:
+    element:
+      text: "Peace Lily"
+    direction: DOWN
+- tapOn: "Peace Lily"
+- tapOn:
+    id: "button_edit"
+- tapOn:
+    id: "field_every"
+- eraseText: 40
+- inputText: "10"
+- hideKeyboard
+- tapOn:
+    id: "button_save"
+- assertVisible: "Qty 1 · Office · every 10 days"
