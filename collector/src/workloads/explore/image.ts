@@ -68,25 +68,36 @@ export function shrinkForModel(png: Buffer, maxPixels: number): { png: Buffer; w
   const px = src.width * src.height;
   if (px <= maxPixels) return { png, width: src.width, height: src.height };
   const k = Math.sqrt(maxPixels / px);
-  const w = Math.max(1, Math.round(src.width * k)), h = Math.max(1, Math.round(src.height * k));
+  // Floor, not round: rounding both sides up can land a few pixels over the
+  // budget, and the budget is the point.
+  const w = Math.max(1, Math.floor(src.width * k)), h = Math.max(1, Math.floor(src.height * k));
   const small = boxResize(src, w, h);
   const out = new PNG({ width: w, height: h });
   small.data.copy(out.data);
   return { png: PNG.sync.write(out), width: w, height: h };
 }
 
-/** 64-bit difference hash as 16 hex characters. */
+/**
+ * 128-bit difference hash as 32 hex characters: 64 bits of left-right
+ * gradient and 64 of top-bottom.
+ *
+ * The usual dHash is the first half only, and it is blind to exactly the
+ * change a phone screen makes most: a new row appearing in a list is a
+ * horizontal band, which has no left-right gradient at all. The vertical half
+ * is what sees it.
+ */
 export function dhash(png: Buffer): string {
-  const t = boxResize(decodePng(png), 9, 8);
+  // The status and navigation bars are cut off first: a clock that ticks
+  // between two looks is not the app changing.
+  const full = decodePng(png);
+  const top = Math.floor(full.height * 0.04), bottom = Math.ceil(full.height * 0.96);
+  const src = { width: full.width, height: bottom - top, data: full.data.subarray(top * full.width * 4, bottom * full.width * 4) };
+  const h9 = boxResize(src, 9, 8), v9 = boxResize(src, 8, 9);
   let bits = "";
-  for (let y = 0; y < 8; y++) {
-    for (let x = 0; x < 8; x++) {
-      const a = lum(t, x, y), b = lum(t, x + 1, y);
-      bits += a > b ? "1" : "0";
-    }
-  }
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) bits += lum(h9, x, y) > lum(h9, x + 1, y) ? "1" : "0";
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) bits += lum(v9, x, y) > lum(v9, x, y + 1) ? "1" : "0";
   let hex = "";
-  for (let i = 0; i < 64; i += 4) hex += parseInt(bits.slice(i, i + 4), 2).toString(16);
+  for (let i = 0; i < 128; i += 4) hex += parseInt(bits.slice(i, i + 4), 2).toString(16);
   return hex;
 }
 
@@ -95,9 +106,9 @@ const lum = (r: Raster, x: number, y: number) => {
   return 0.299 * r.data[i] + 0.587 * r.data[i + 1] + 0.114 * r.data[i + 2];
 };
 
-/** Bits that differ between two dhashes; 0 is identical, under ~5 is "the same screen". */
+/** Bits that differ between two dhashes; 0 is identical, under ~8 (of 128) is "the same screen". */
 export function hamming(a: string, b: string): number {
-  if (a.length !== b.length) return 64;
+  if (a.length !== b.length) return a.length * 4;
   let d = 0;
   for (let i = 0; i < a.length; i++) {
     let x = parseInt(a[i], 16) ^ parseInt(b[i], 16);

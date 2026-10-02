@@ -120,7 +120,7 @@ export class ScreenMap {
     for (const s of this.data.screens) {
       const score = tokens.length && s.tokens.length
         ? jaccard(tokens, s.tokens)
-        : (s.hash && hamming(hash, s.hash) <= 6 ? 0.99 : 0);
+        : (s.hash && hamming(hash, s.hash) <= 10 ? 0.99 : 0);
       if (score > bestScore) { bestScore = score; best = s; }
     }
     const now = new Date().toISOString();

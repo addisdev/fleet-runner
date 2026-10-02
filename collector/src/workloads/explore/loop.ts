@@ -121,6 +121,22 @@ export function normalizeMessage(s: string): string {
     .replace(/'[^']*'|"[^"]*"/g, "'…'").replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
+/**
+ * What the tree says the screen's state is: every element's text, value and
+ * on/off state. Two looks with the same picture hash and the same state are
+ * "nothing happened"; a switch that toggled changes the state even when it is
+ * too small to move the hash.
+ */
+export function stateSig(nodes: A11yNode[] | null): string {
+  if (!nodes) return "";
+  return createHash("sha1").update(nodes.map((n) => `${n.cls}|${n.text}|${n.label}|${n.value}|${n.checked ? 1 : 0}|${n.focused ? 1 : 0}|${n.enabled ? 1 : 0}`).join("\n")).digest("hex");
+}
+
+/** Nothing happened between two looks. */
+export function unchanged(h1: string, s1: string, h2: string, s2: string): boolean {
+  return hamming(h1, h2) <= 2 && s1 === s2;
+}
+
 export function fingerprint(app: string, surface: string, screen: string, check: string, key: string): string {
   // Crashes are fingerprinted without the screen: the same exception reached
   // from two screens is one bug, and splitting it would double the morning
@@ -197,7 +213,8 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
   let consecutiveErrors = 0;
   let sameScreenRun = 0;
   let prevHash: string | null = null;
-  let pending: { tapKey: string; hashBefore: string; point: { x: number; y: number }; label: string } | null = null;
+  let pending: { tapKey: string; hashBefore: string; sigBefore: string; point: { x: number; y: number }; label: string } | null = null;
+  let prevSig = "";
   let lastObs: Observation | null = null;
 
   for (let i = 1; i <= maxSteps; i++) {
@@ -218,6 +235,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     const shotName = `${String(i).padStart(3, "0")}.png`;
     writeFileSync(path.join(shotsDir, shotName), obs.png);
     const hash = dhash(obs.png);
+    const sig = stateSig(obs.nodes);
     const place = d.map.identify(obs.nodes, hash, obs.height, d.night);
     if (place.newEver) stats.newScreensEver++;
     if (place.newThisRun) { lastNewStep = i; stats.screensThisRun++; }
@@ -231,7 +249,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
 
     // A dead control: the previous step tapped something tappable and the
     // screen did not change at all. Twice on the same control is a candidate.
-    if (pending && hamming(pending.hashBefore, hash) <= 1) {
+    if (pending && unchanged(pending.hashBefore, pending.sigBefore, hash, sig)) {
       const n = (deadTaps.get(pending.tapKey) ?? 0) + 1;
       deadTaps.set(pending.tapKey, n);
       if (n === 2) {
@@ -245,8 +263,9 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     pending = null;
 
     // Frozen: nothing has changed for four steps in which something was done.
-    sameScreenRun = prevHash && hamming(prevHash, hash) <= 1 ? sameScreenRun + 1 : 0;
+    sameScreenRun = prevHash && unchanged(prevHash, prevSig, hash, sig) ? sameScreenRun + 1 : 0;
     prevHash = hash;
+    prevSig = sig;
     if (sameScreenRun === 4) {
       flag({
         check: "frozen", severity: "high", source: "oracle", key: place.entry.id,
@@ -414,7 +433,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
           answers.push(snapped.miss ? "ok (nothing tappable at that point)" : "ok");
           if ((snapped.action.kind === "tap") && snapped.node && !snapped.miss) {
             const label = (snapped.node.label || snapped.node.text || snapped.node.id.split("/").pop() || snapped.node.cls).trim();
-            pending = { tapKey: `${place.entry.id}:${label}:${snapped.node.id}`, hashBefore: before, point: { x: snapped.action.x, y: snapped.action.y }, label };
+            pending = { tapKey: `${place.entry.id}:${label}:${snapped.node.id}`, hashBefore: before, sigBefore: sig, point: { x: snapped.action.x, y: snapped.action.y }, label };
           }
         } catch (e) {
           answers.push(`error: ${(e as Error).message.slice(0, 200)}`);
@@ -541,7 +560,7 @@ async function checkAgain(c: Candidate, d: LoopDeps): Promise<{ hit: boolean; no
       await a.act({ kind: "key", key: a.caps.keys.includes("back") ? "back" : "home" }).catch(() => {});
       await sleep(1500);
       const o2 = await a.observe();
-      return { hit: o2.foreground === d.appId && hamming(dhash(o1.png), dhash(o2.png)) <= 1 };
+      return { hit: o2.foreground === d.appId && unchanged(dhash(o1.png), stateSig(o1.nodes), dhash(o2.png), stateSig(o2.nodes)) };
     }
     case "dead_control": {
       if (!c.point) return { hit: false, note: "no point recorded" };
@@ -549,7 +568,7 @@ async function checkAgain(c: Candidate, d: LoopDeps): Promise<{ hit: boolean; no
       await a.act({ kind: "tap", ...c.point });
       await sleep(1200);
       const o2 = await a.observe();
-      return { hit: hamming(dhash(o1.png), dhash(o2.png)) <= 1 };
+      return { hit: unchanged(dhash(o1.png), stateSig(o1.nodes), dhash(o2.png), stateSig(o2.nodes)) };
     }
     case "a11y": {
       const o = await a.observe();

@@ -60,6 +60,8 @@ export type A11yNode = {
   focused?: boolean;
   /** Scrolls, per the tree. Lets a driver tell a list from a page. */
   scrollable?: boolean;
+  /** A switch or checkbox that is on. Lets "nothing changed" notice a toggle. */
+  checked?: boolean;
 };
 
 /**
@@ -139,6 +141,7 @@ export function parseUiautomatorDump(xml: string): { nodes: A11yNode[]; problem:
       depth,
       focused: a["focused"] === "true",
       scrollable: a["scrollable"] === "true",
+      checked: a["checked"] === "true",
     });
     if (m[2] !== "/") depth += 1;
   }
