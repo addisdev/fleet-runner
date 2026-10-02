@@ -82,9 +82,9 @@ function PrecisionTable({ app }: { app: string }) {
             <th />
           </tr>
           {shown.map((c) => (
-            <tr key={`${c.app}/${c.check}`}>
+            <tr key={`${c.app}/${c.check}/${c.subclass ?? ""}`}>
               <td>{c.app}</td>
-              <td><CheckChip check={c.check} /></td>
+              <td><CheckChip check={c.check} />{c.subclass ? <span class="faint"> {c.subclass.replace("_", " ")}</span> : null}</td>
               <td class="num">{c.judged}</td>
               <td class="num">{c.real}</td>
               <td class="num">{c.not_a_bug}</td>

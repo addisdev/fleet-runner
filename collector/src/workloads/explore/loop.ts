@@ -57,6 +57,8 @@ export type LoopDeps = {
   onStep?(step: TrajectoryStep, obs: Observation): Promise<void>;
   /** Visual classes the owner's verdicts have switched off. */
   disabledVisual?: string[];
+  /** Whole checks the owner's verdicts have switched off (never crash or anr). */
+  disabledChecks?: string[];
   /** Language the app should be in tonight, for the untranslated check. */
   language?: string | null;
   /** Lines added to the mission prompt: today's changes, the condition in force. */
@@ -246,6 +248,8 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     const stepChecks: TrajectoryStep["checks"] = [];
     const notices: string[] = [];
     const flag = (c: Omit<Candidate, "step" | "screen" | "upTo" | "shot">) => {
+      if (d.disabledChecks?.includes(c.check)) return;
+      if (c.check === "visual" && c.visualClass && d.disabledVisual?.includes(c.visualClass)) return;
       candidates.push({ ...c, step: i, screen: place.entry, upTo: executed.length, shot: shotName });
       stepChecks.push({ check: c.check, detail: c.detail });
     };
@@ -321,7 +325,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
       }
     }
 
-    if (d.judge && place.newThisRun && !judged.has(place.entry.id)) {
+    if (d.judge && place.newThisRun && !judged.has(place.entry.id) && !d.disabledChecks?.includes("visual")) {
       judged.add(place.entry.id);
       const v = await judgeVisual(d.judge, obs.png, { language: d.language, disabled: d.disabledVisual });
       if (v.error) d.log(`visual judge: ${v.error.slice(0, 160)}`);
@@ -482,7 +486,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     writeFileSync(path.join(shotsDir, "final.png"), final.png);
     const finalScreen = d.map.identify(final.nodes, dhash(final.png), final.height, d.night).entry;
     if (m.check) bench = benchCheck(m.check, final.nodes, finalScreen.name);
-    if (d.judge && m.success && !m.check) {
+    if (d.judge && m.success && !m.check && !d.disabledChecks?.includes("goal")) {
       const g = await judgeGoal(d.judge, final.png, m.goal, m.success, final.nodes);
       goal = { met: g.met, reason: g.reason };
       if (g.met === false) {

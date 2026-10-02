@@ -154,15 +154,29 @@ async function postFinding(f: ExploreFinding): Promise<{ id?: number; new?: bool
   }
 }
 
-/** Visual classes the owner's verdicts have switched off (O4: under 30% after ten verdicts). */
-async function disabledClasses(app: string): Promise<string[]> {
+/**
+ * What the owner's verdicts have switched off for this app (O4: precision under
+ * 30% after ten verdicts). A visual row with a subclass switches off that one
+ * judge class; any other row switches off its whole check. Crashes and ANRs are
+ * never switched off: their evidence is the platform's own log, not a judgement.
+ */
+export function switchedOff(body: { disabled?: { check: string; subclass?: string | null }[] }): { visual: string[]; checks: string[] } {
+  const visual: string[] = [], checks: string[] = [];
+  for (const d of body.disabled ?? []) {
+    if (d.check === "crash" || d.check === "anr") continue;
+    if (d.check === "visual" && d.subclass) visual.push(d.subclass);
+    else checks.push(d.check);
+  }
+  return { visual, checks };
+}
+
+async function disabledClasses(app: string): Promise<{ visual: string[]; checks: string[] }> {
   try {
     const res = await fetch(`${BASE}/api/findings/precision?app=${encodeURIComponent(app)}`, { signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return [];
-    const body = await res.json() as { rows?: { check: string; class?: string; disabled?: boolean }[] };
-    return (body.rows ?? []).filter((r) => r.disabled).map((r) => r.class ?? r.check);
+    if (!res.ok) return { visual: [], checks: [] };
+    return switchedOff(await res.json() as { disabled?: { check: string; subclass?: string | null }[] });
   } catch {
-    return [];
+    return { visual: [], checks: [] };
   }
 }
 
@@ -212,13 +226,15 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
   let words: string[] = [];
   if (p.changed?.files) words = changedWords(p.changed.files);
   else if (p.changed?.repo) {
-    try { words = changedWords(await changedFiles(p.changed.repo, p.changed.since ?? "24 hours ago")); }
+    try { words = changedWords(await changedFiles(p.changed.repo.replace(/^~(?=\/)/, os.homedir()), p.changed.since ?? "24 hours ago")); }
     catch (e) { ctx.log(`changed files: ${(e as Error).message.slice(0, 160)}`); }
   }
 
   const conditions = parseConditions(p.conditions);
-  const disabled = p.bench ? [] : await disabledClasses(appKey);
-  if (disabled.length) ctx.log(`visual classes switched off by verdicts: ${disabled.join(", ")}`);
+  const disabled = p.bench ? { visual: [], checks: [] } : await disabledClasses(appKey);
+  if (disabled.visual.length || disabled.checks.length) {
+    ctx.log(`switched off by verdicts: ${[...disabled.checks, ...disabled.visual.map((v) => `visual/${v}`)].join(", ")}`);
+  }
 
   let setupEnv: Record<string, string> = {};
   if (p.credentials) {
@@ -291,7 +307,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
         ];
         const deps: LoopDeps = {
           actuator, appId: p.app_id, appName, appFile, model, judge, map, runDir, night: job.job_id,
-          log: (msg) => ctx.log(`[${t.id}] ${msg}`), disabledVisual: disabled, language: cond.language, hints,
+          log: (msg) => ctx.log(`[${t.id}] ${msg}`), disabledVisual: disabled.visual, disabledChecks: disabled.checks, language: cond.language, hints,
           setupEnv, canRunFlows: t.platform === "android" || t.kind === "simulator", deadline,
           backgroundAt: cond.backgroundAt,
           onStep: async (step, obs) => {
@@ -444,6 +460,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
       job_id: o.job.job_id,
       mission_id: o.mission.id,
       check: c.check as CheckName,
+      subclass: c.visualClass ?? null,
       severity: c.severity,
       title: c.title.slice(0, 200),
       detail: `${c.detail}${condition}${o.previously ? ` ${o.previously[0].toUpperCase()}${o.previously.slice(1)}.` : ""} Replays: ${c.replayNotes.join("; ")}.`.slice(0, 4000),

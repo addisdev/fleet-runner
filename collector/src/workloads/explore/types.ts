@@ -263,6 +263,13 @@ export type ExploreFinding = {
   job_id: string;
   mission_id: string;
   check: CheckName;
+  /**
+   * Finer than the check, where one exists: the visual judge's class
+   * (overlap, clipped, raw_error...). Precision is kept per check AND
+   * subclass, so a judge that is wrong about contrast can be switched off
+   * without losing the one that is right about raw error text.
+   */
+  subclass?: string | null;
   severity: "high" | "medium" | "low";
   title: string;
   detail: string;

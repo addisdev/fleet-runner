@@ -431,6 +431,7 @@ export type FindingPrecision = {
   classes: {
     app: string;
     check: string;
+    subclass: string | null;
     open: number;
     real: number;
     duplicate: number;
@@ -440,5 +441,5 @@ export type FindingPrecision = {
     precision: number | null;
     disabled: boolean;
   }[];
-  disabled: { app: string; check: string; precision: number | null; judged: number }[];
+  disabled: { app: string; check: string; subclass: string | null; precision: number | null; judged: number }[];
 };

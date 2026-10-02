@@ -610,6 +610,7 @@ CREATE TABLE IF NOT EXISTS findings (
   last_job_id  TEXT,                   -- the job that most recently saw it again
   mission_id   TEXT NOT NULL,
   check_name   TEXT NOT NULL,
+  subclass     TEXT,                   -- the visual judge's class, for per-class precision
   severity     TEXT NOT NULL CHECK (severity IN ('high','medium','low')),
   title        TEXT NOT NULL,
   detail       TEXT NOT NULL DEFAULT '',

@@ -142,6 +142,8 @@ export function validateFinding(body: unknown): { ok: true; finding: ExploreFind
     if ((b[key] as string).length > max) return bad(`${key} is longer than ${max} characters`);
   }
 
+  if (b.subclass !== undefined && b.subclass !== null && (typeof b.subclass !== "string" || !/^[a-z_]{1,40}$/.test(b.subclass)))
+    return bad("subclass must be a short lowercase name like overlap or raw_error");
   if (!CHECK_NAMES.includes(b.check as CheckName))
     return bad(`unknown check ${JSON.stringify(b.check)}; expected one of ${CHECK_NAMES.join(", ")}`);
   if (!SEVERITIES.includes(b.severity as (typeof SEVERITIES)[number]))
@@ -196,6 +198,7 @@ export function validateFinding(body: unknown): { ok: true; finding: ExploreFind
     job_id: b.job_id as string,
     mission_id: b.mission_id as string,
     check: b.check as CheckName,
+    subclass: (b.subclass as string | null | undefined) ?? null,
     severity: b.severity as ExploreFinding["severity"],
     title: b.title as string,
     detail: b.detail as string,
@@ -420,13 +423,13 @@ export const storeFinding = db.transaction((f: ExploreFinding, opts: IssueOption
     const info = db
       .prepare(
         `INSERT INTO findings (fingerprint, app, build, platform, device_id, job_id, last_job_id, mission_id,
-                               check_name, severity, title, detail, screen, screen_name, steps, replay,
+                               check_name, subclass, severity, title, detail, screen, screen_name, steps, replay,
                                artifacts, builds_seen)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         f.fingerprint, f.app, f.build, f.platform, f.device_id, f.job_id, f.job_id, f.mission_id,
-        f.check, f.severity, f.title, f.detail, f.screen, f.screen_name, JSON.stringify(f.steps),
+        f.check, f.subclass ?? null, f.severity, f.title, f.detail, f.screen, f.screen_name, JSON.stringify(f.steps),
         f.replay ? JSON.stringify(f.replay) : null, JSON.stringify(f.artifacts), JSON.stringify([f.build]),
       );
     id = Number(info.lastInsertRowid);
@@ -749,6 +752,8 @@ export function findingDetail(id: number) {
 export type PrecisionClass = {
   app: string;
   check: CheckName;
+  /** The visual judge's class, or null for a check that has none. */
+  subclass: string | null;
   open: number;
   real: number;
   duplicate: number;
@@ -773,18 +778,18 @@ export function precision(opts: { app?: string; min?: number } = {}) {
   const min = Math.max(1, Math.floor(opts.min ?? PRECISION_MIN_JUDGED));
   const rows = db
     .prepare(
-      `SELECT app, check_name, verdict, COUNT(*) AS n FROM findings
+      `SELECT app, check_name, COALESCE(subclass, '') AS subclass, verdict, COUNT(*) AS n FROM findings
        ${opts.app ? "WHERE app = ?" : ""}
-       GROUP BY app, check_name, verdict ORDER BY app, check_name`,
+       GROUP BY app, check_name, subclass, verdict ORDER BY app, check_name, subclass`,
     )
-    .all(...(opts.app ? [opts.app] : [])) as { app: string; check_name: CheckName; verdict: Verdict | null; n: number }[];
+    .all(...(opts.app ? [opts.app] : [])) as { app: string; check_name: CheckName; subclass: string; verdict: Verdict | null; n: number }[];
 
   const byKey = new Map<string, PrecisionClass>();
   for (const r of rows) {
-    const key = `${r.app}\u0000${r.check_name}`;
+    const key = `${r.app}\u0000${r.check_name}\u0000${r.subclass}`;
     let c = byKey.get(key);
     if (!c) {
-      c = { app: r.app, check: r.check_name, open: 0, real: 0, duplicate: 0, not_a_bug: 0, agent_mistake: 0, judged: 0, precision: null, disabled: false };
+      c = { app: r.app, check: r.check_name, subclass: r.subclass || null, open: 0, real: 0, duplicate: 0, not_a_bug: 0, agent_mistake: 0, judged: 0, precision: null, disabled: false };
       byKey.set(key, c);
     }
     c[r.verdict ?? "open"] += r.n;
@@ -799,7 +804,7 @@ export function precision(opts: { app?: string; min?: number } = {}) {
     min,
     classes,
     // What the workload actually reads at the start of a night.
-    disabled: classes.filter((c) => c.disabled).map((c) => ({ app: c.app, check: c.check, precision: c.precision, judged: c.judged })),
+    disabled: classes.filter((c) => c.disabled).map((c) => ({ app: c.app, check: c.check, subclass: c.subclass, precision: c.precision, judged: c.judged })),
   };
 }
 
