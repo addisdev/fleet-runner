@@ -233,7 +233,12 @@ const TAPPABLE_IOS = new Set([
   "datepicker", "picker", "pickerwheel", "icon", "image",
 ]);
 
-function isTappableType(t: string): boolean {
+/**
+ * Exported for the explore workload's Apple actuator, which builds nodes from
+ * the FleetDriver's JSON tree and has to call a Button tappable by the same
+ * rule this parser does.
+ */
+export function isTappableType(t: string): boolean {
   return TAPPABLE_IOS.has(t.replace(/^XCUIElementType/, "").toLowerCase());
 }
 
