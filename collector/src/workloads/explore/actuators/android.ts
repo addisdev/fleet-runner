@@ -77,7 +77,17 @@ export function escapeInputText(text: string): { ok: true; arg: string } | { ok:
  * which is the question being asked. Both are read, app first.
  */
 export function parseForeground(dumpsysWindow: string): string | null {
-  const text = dumpsysWindow.replace(/\r/g, "");
+  // `dumpsys window` OPENS with the "LAST ANR" section, a frozen copy of the
+  // window state at the last ANR -- mFocusedApp included. Read first, it names
+  // whatever was in front minutes ago: on the dozehound-tv AVD it reported
+  // Dozehound while the Google TV launcher was in front, after an ANR. So that
+  // section is cut out before anything is matched. The snapshot carries its
+  // own "DISPLAY CONTENTS" header, so it runs to the POLICY STATE section that
+  // always follows it, not to the next header of any kind.
+  const raw = dumpsysWindow.replace(/\r/g, "");
+  const text = raw.includes("\nWINDOW MANAGER POLICY STATE")
+    ? raw.replace(/WINDOW MANAGER LAST ANR[\s\S]*?(?=\nWINDOW MANAGER POLICY STATE)/, "")
+    : raw.replace(/WINDOW MANAGER LAST ANR[\s\S]*?(?=\nWINDOW MANAGER |$)/, "");
   const app = /mFocusedApp=.*?\s([\w.]+)\/[\w.$]+/.exec(text);
   if (app) return app[1];
   const focus = /mCurrentFocus=Window\{[^}]*\s([\w.]+)\/[\w.$]+/.exec(text);
