@@ -124,6 +124,7 @@ nav:
       - Headless hosts: deploy/headless.md
       - Networking: deploy/networking.md
       - The iOS executor: deploy/ios-executor.md
+      - Exploratory QA on ultra: deploy/explore-on-ultra.md
       - Alerts: deploy/alerts.md
       - This lab: lab.md
   - Brand: brand.md
