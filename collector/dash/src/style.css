@@ -639,21 +639,66 @@ main .panel:nth-of-type(n + 6) { animation-delay: 160ms; }
 .dev-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem 0.9rem; margin-top: 0.55rem; font-size: 0.8rem; }
 .dev-doing { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 
-/* The silhouette carries battery as a fill level, so a shelf of phones reads
-   as a shelf of phones — charge visible before any number is. */
-.dev-glyph { flex: none; display: block; }
-.dev-glyph .body { fill: var(--panel); stroke: var(--ink-faint); stroke-width: 1.5; }
-.dev-glyph.simulator .body { stroke-dasharray: 3 2.4; }
-.dev-glyph .screen { fill: var(--line); }
-.dev-glyph.online .screen { fill: var(--ok); opacity: 0.85; }
-.dev-glyph.stale .screen { fill: var(--warn); opacity: 0.3; }
-.dev-glyph .pulse { stroke: var(--bg); stroke-width: 1.5; fill: none; }
-.dev-glyph .chin { stroke: var(--ink-faint); stroke-width: 1.5; }
+/* Device art (deviceArt.tsx). Hardware is dark glass and grey metal in both
+   themes, because that is what the objects are; only the light theme's greys
+   lift a little so the outlines still read on a pale card. The screen fill is
+   currentColor, so status is one `color` on the <svg>. */
+:root {
+  --da-bezel: #1c2025;
+  --da-plastic: #3a4048;
+  --da-box: #2a2e35;
+  --da-metal: #b8bec7;
+  --da-edge: #7a828e;
+  --da-sensor: #4a515b;
+  --da-off: #3a4048;
+  --da-pulse: #f7f8fa;
+  --da-cable: #c3c8cf;
+  --da-puck: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --da-bezel: #0d0f12;
+    --da-plastic: #262a31;
+    --da-box: #1a1c20;
+    --da-metal: #aab1bb;
+    --da-edge: #6b7380;
+    --da-sensor: #3a4048;
+    --da-off: #31363e;
+    --da-pulse: #16181c;
+    --da-cable: #d5d9df;
+    --da-puck: #e6e8ec;
+  }
+}
+.dev-art { flex: none; display: block; color: var(--da-off); }
+.dev-art.online { color: var(--ok); }
+.dev-art.stale { color: color-mix(in srgb, var(--warn) 55%, var(--da-bezel)); }
+.dev-art.offline { opacity: 0.75; }
+.dev-art .sc { fill: currentColor; }
+.dev-art .bz { fill: var(--da-bezel); }
+.dev-art .pl { fill: var(--da-plastic); }
+.dev-art .bx { fill: var(--da-box); }
+.dev-art .mt { fill: var(--da-metal); }
+.dev-art .bt { fill: var(--da-edge); }
+.dev-art .sn { fill: var(--da-sensor); }
+.dev-art .puck { fill: var(--da-puck); }
+.dev-art .glint { fill: #fff; opacity: 0.2; }
+.dev-art .e { stroke: var(--da-edge); stroke-width: 1.5; }
+.dev-art .em { stroke: var(--da-metal); stroke-width: 1.5; }
+.dev-art .thin { stroke-width: 1.3; }
+.dev-art .ln { fill: none; stroke-linecap: round; }
+.dev-art .strap { stroke: var(--da-edge); stroke-width: 2.6; }
+.dev-art .cable { stroke: var(--da-cable); stroke-width: 3; }
+.dev-art .keys { stroke: var(--da-edge); stroke-width: 1.4; stroke-dasharray: 1.5 2.5; }
+.dev-art .vent { stroke: var(--da-sensor); stroke-width: 1.6; }
+.dev-art .groove { stroke: var(--da-sensor); stroke-width: 1.4; }
+.dev-art .pulse { fill: none; stroke: var(--da-pulse); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+/* A simulator is not an object on the shelf, so its outline is not solid. */
+.dev-art.simulator .e, .dev-art.simulator .em { stroke-dasharray: 5 4; }
 
 /* A device that is running a job breathes. This is the only loop on the
    Devices screen, and it stops the moment the job does. */
 @keyframes screen-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-.dev-glyph.busy .screen { animation: screen-breathe 2.4s ease-in-out infinite; }
+.dev-art.busy .sc { animation: screen-breathe 2.4s ease-in-out infinite; }
 
 /* Inline battery meter beside the percentage. */
 .batt-track { width: 34px; height: 4px; border-radius: 2px; background: var(--panel); overflow: hidden; display: inline-block; vertical-align: middle; }
@@ -732,7 +777,7 @@ main .panel:nth-of-type(n + 6) { animation-delay: 160ms; }
   main .panel,
   .stat.changed b,
   .sk,
-  .dev-glyph.busy .screen,
+  .dev-art.busy .sc,
   .art-pulse.blip,
   .art-ok.check {
     animation: none;
