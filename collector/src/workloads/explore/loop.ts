@@ -234,6 +234,9 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     screen = { w: obs.width, h: obs.height };
     const shotName = `${String(i).padStart(3, "0")}.png`;
     writeFileSync(path.join(shotsDir, shotName), obs.png);
+    // The tree beside the picture: the pointing bench (B1) harvests its
+    // targets from these, so every night's run grows the benchmark.
+    if (obs.nodes) writeFileSync(path.join(shotsDir, shotName.replace(/\.png$/, ".nodes.json")), JSON.stringify(obs.nodes));
     const hash = dhash(obs.png);
     const sig = stateSig(obs.nodes);
     const place = d.map.identify(obs.nodes, hash, obs.height, d.night);
