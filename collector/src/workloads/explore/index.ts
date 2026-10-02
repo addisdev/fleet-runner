@@ -260,7 +260,10 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
     const lastRun: Record<string, string> = existsSync(lastRunFile) ? JSON.parse(readFileSync(lastRunFile, "utf8")) as Record<string, string> : {};
     const problems: string[] = [];
     const cards = loadMissions(appKey, p.missions_dir, (m) => problems.push(m));
-    const missions = orderMissions(cards, { surface, words, lastRun, only: p.missions, bench: p.bench });
+    // A card that signs in needs credentials; without them it would fail at
+    // its setup flow every night and spend the budget learning nothing.
+    const missions = orderMissions(cards, { surface, words, lastRun, only: p.missions, bench: p.bench })
+      .filter((m) => !m.setup_flow || !/sign-?in/i.test(m.setup_flow) || Object.keys(setupEnv).length > 0);
     if (missions.length === 0) {
       await actuator.close();
       return { ok: false, error: `no ${p.bench ? "bench " : ""}missions for ${appKey} on a ${surface} device (looked in ${p.missions_dir ?? "examples/missions"}/${appKey})${problems.length ? `; problems: ${problems.join("; ")}` : ""}` };

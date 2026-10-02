@@ -184,6 +184,12 @@ export type Mission = {
   screens?: string[];
   /** Leash exceptions this mission is allowed: "delete", "purchase", "invite", "sign_out". */
   allow?: string[];
+  /**
+   * Extra controls this mission must not touch, as case-insensitive regular
+   * expressions over the control's label: a build that talks to a production
+   * backend blocks "create account" so the explorer cannot make real accounts.
+   */
+  block?: string[];
   /** A Maestro flow (relative to the flows dir) that signs in before the model starts. */
   setup_flow?: string;
   /** Launch arguments, for apps with a UI-test mode (-uiTestSignedOut and friends). */

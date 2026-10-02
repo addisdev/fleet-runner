@@ -112,7 +112,7 @@ export type LeashVerdict = { ok: true } | { ok: false; reason: string; danger: s
  * thing: no field whose label says password gets anything typed into it,
  * because the model has no business knowing one.
  */
-export function leash(a: Action, target: A11yNode | null, nodes: A11yNode[] | null, allow: string[] = []): LeashVerdict {
+export function leash(a: Action, target: A11yNode | null, nodes: A11yNode[] | null, allow: string[] = [], block: string[] = []): LeashVerdict {
   if (!target) return { ok: true };
   const texts = [target.label, target.text, target.value, target.id.split("/").pop() ?? ""];
   if (target.bounds && nodes) {
@@ -127,6 +127,11 @@ export function leash(a: Action, target: A11yNode | null, nodes: A11yNode[] | nu
     return { ok: false, danger: "credentials", reason: "the harness does not type into password fields" };
   }
   if (a.kind !== "tap" && a.kind !== "long_press" && !(a.kind === "key" && a.key === "select")) return { ok: true };
+  for (const pattern of block) {
+    let re: RegExp;
+    try { re = new RegExp(pattern, "i"); } catch { continue; }
+    if (re.test(words)) return { ok: false, danger: "blocked", reason: `"${words.trim().slice(0, 60)}" is blocked for this mission` };
+  }
   for (const [cls, re] of Object.entries(DANGER)) {
     if (allow.includes(cls)) continue;
     if (re.test(words)) {

@@ -28,7 +28,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { a11yFindings, type A11yGeometry, type A11yNode } from "../../a11y-tree.js";
-import { runFlow } from "../flows.js";
+import { resolveFlow, runFlow } from "../flows.js";
 import type { Target } from "../types.js";
 import { dhash, hamming, isBlank } from "./image.js";
 import { judgeGoal, judgeVisual } from "./judge.js";
@@ -193,7 +193,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
   await actuator.reset(appId, { file: d.appFile ?? undefined, launchArgs: m.launch_args });
   if (m.setup_flow) {
     if (!d.canRunFlows) throw new Error(`mission ${m.id} needs setup flow ${m.setup_flow}, and Maestro cannot reach ${actuator.target.id}`);
-    const err = await runFlow(actuator.target, m.setup_flow, path.join(d.runDir, "maestro"), d.setupEnv ?? {}, 180_000);
+    const err = await runFlow(actuator.target, resolveFlow(m.setup_flow), path.join(d.runDir, "maestro"), { APP_ID: appId, ...d.setupEnv }, 180_000);
     if (err) throw new Error(`setup flow ${m.setup_flow} failed: ${err.slice(-200)}`);
   }
   await actuator.crashes(appId);
@@ -417,7 +417,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
         if (snapped.miss) { step.misses++; stats.misses++; }
         const focusedNode = caps.surface === "dpad" && c.action.kind === "key" && c.action.key === "select"
           ? obs.nodes?.find((n) => n.focused) ?? null : null;
-        const verdict = leash(snapped.action, snapped.node ?? focusedNode, obs.nodes, m.allow ?? []);
+        const verdict = leash(snapped.action, snapped.node ?? focusedNode, obs.nodes, m.allow ?? [], m.block ?? []);
         if (!verdict.ok) {
           stats.refused++;
           stats.refusedByClass[verdict.danger] = (stats.refusedByClass[verdict.danger] ?? 0) + 1;
@@ -528,7 +528,7 @@ export async function confirm(
     try {
       await d.actuator.reset(d.appId, { file: d.appFile ?? undefined, launchArgs: m.launch_args });
       if (m.setup_flow && d.canRunFlows) {
-        const err = await runFlow(d.actuator.target, m.setup_flow, path.join(d.runDir, "maestro"), d.setupEnv ?? {}, 180_000);
+        const err = await runFlow(d.actuator.target, resolveFlow(m.setup_flow), path.join(d.runDir, "maestro"), { APP_ID: d.appId, ...d.setupEnv }, 180_000);
         if (err) { notes.push(`attempt ${k + 1}: setup failed`); continue; }
       }
       await d.actuator.crashes(d.appId);
