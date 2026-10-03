@@ -107,6 +107,20 @@ nav:
       - On the device: workloads/device.md
       - On a host: workloads/host.md
       - On a machine: workloads/machine.md
+  - Exploratory QA:
+      - Overview: explore/index.md
+      - Try it on a laptop: explore/quickstart.md
+      - How a night works: explore/how-it-works.md
+      - Mission cards: explore/missions.md
+      - The job spec: explore/job.md
+      - Models and the gateway: explore/models.md
+      - Devices: explore/surfaces.md
+      - The leash: explore/safety.md
+      - Findings and verdicts: explore/findings.md
+      - Measuring a model: explore/measuring.md
+      - Troubleshooting: explore/troubleshooting.md
+      - Internals: explore/internals.md
+      - Running it on ultra: deploy/explore-on-ultra.md
   - Integration:
       - Wire in your app: integration/index.md
       - Your first job: integration/first-job.md

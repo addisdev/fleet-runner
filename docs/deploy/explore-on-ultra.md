@@ -1,6 +1,6 @@
 # Overnight exploratory QA on ultra
 
-Everything the [`explore` workload](../workloads/host.md#explore) needs on the
+Everything the [`explore` workload](../explore/index.md) needs on the
 Mac Studio, in the order it happens. It starts only after the day-one setup:
 ultra answers over SSH and its gateway is up (the day-one plan's phases 1 to 5).
 

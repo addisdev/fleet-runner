@@ -23,6 +23,7 @@ spec, and which agent claims it is decided by
 | [`app-soak`](host.md#app-soak) | host | Memory, jank and crashes over hours |
 | [`a11y-audit`](host.md#a11y-audit) | host | The accessibility tree diffed against a baseline at the largest dynamic type |
 | [`locale-shots`](host.md#locale-shots) | host | A screenshot flow under every locale, including RTL, as a contact sheet |
+| [`explore`](host.md#explore) | host | A vision model explores tonight's build; reproduced crashes, hangs, dead controls, accessibility and visual defects, filed as findings |
 | [`web-test`](host.md#web-test) | host | Playwright suites, including on real phone screens |
 | [`web-shots`](host.md#web-shots) | host | Visual regression captures diffed against an accepted baseline |
 | [`web-audit`](host.md#web-audit) | host | Crawl-and-audit with a real browser |

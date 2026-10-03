@@ -96,96 +96,27 @@ With nothing attached, the job is claimed and fails cleanly with
 ## `explore`
 
 A vision model uses tonight's build the way a person would, and leaves a short
-list of reproduced bugs for the morning. EXPANSION-PLAN called it "a monkey
-test with a memory"; the model was the part that did not exist yet.
+list of reproduced bugs for the morning: crashes, hangs, blank screens, controls
+that do nothing, accessibility gaps, visual defects and goals that did not hold.
+Every candidate is replayed on a clean install before it is filed, and your
+verdicts on the [Findings page](../explore/findings.md) decide which checks keep
+running.
 
 ```json
 { "schema": 1, "workload": "explore", "executor": "host",
   "app": { "name": "greenfolio-android", "build": "nightly", "sha256": "latest" },
   "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
-  "lease": { "ttl_s": 900, "max_attempts": 1 },
   "params": { "app_id": "com.taylab.greenfolio.debug", "app_key": "greenfolio",
               "minutes": 100, "conditions": ["baseline", "dark", "locale:es"] } }
 ```
 
-**What it does, per device, per mission card.** Reset the app (install, clear
-data, relaunch), sign in with the card's setup flow if it has one, then loop:
-screenshot and UI tree, ask the model, check the answer against the leash, act,
-read the crash and ANR logs. Each step the model hears whether the screen is
-new and, after ten steps without a new one, which screens it has not reached
-yet. The mission ends on the model's `answer`, its step or minute budget, or
-eighteen steps without a new screen.
-
-**The model** is any OpenAI-compatible endpoint that sees images and makes tool
-calls. The tools are Holo4's own published Android set (`mobile_click`,
-`mobile_write`, `mobile_scroll`... on a 0-1000 grid), plus `report_issue`, and
-`tv_press` on a TV, where Holo4's tools have nothing. `params.model` names the
-endpoint and model; by default it is `pilot` on ultra's gateway. The key comes
-from the Keychain item `fleet-explore-gateway` (account `gateway`) or
-`FLEET_EXPLORE_API_KEY`, never from the spec.
-
-**The leash** reads the element under every tap from the tree, not from the
-model's explanation. A tap within a few pixels of a control snaps onto it; a tap
-near nothing is the agent's miss and never becomes a finding. Controls that
-delete the account, pay, invite or sign out are refused unless the card's
-`allow` names the class, and a card's `block` adds its own patterns (the
-GreenFolio cards block account creation, because the debug build talks to
-production). Nothing is typed into a password field.
-
-**The checks**, and what each costs:
-
-| Check | Evidence | Needs a model? |
-|---|---|---|
-| `crash`, `anr` | logcat's crash and events buffers; the simulator's log | no |
-| `blank` | the app in front and one flat colour edge to edge | no |
-| `frozen` | four steps of input and nothing changed, picture or tree | no |
-| `dead_control` | the same tappable control tapped twice, nothing changed | no |
-| `a11y` | an unlabelled control, once per new screen | no |
-| `visual` | the judge model, once per new screen (overlap, clipped, raw error text, untranslated, placeholder copy, low contrast...) | the judge |
-| `goal` | the judge reads the last screen against the card's `success` | the judge |
-
-The judge is a different model from the driver (by default `vision` on the
-gateway), so the run is not graded by the model that made it.
-
-**Nothing is a finding until it replays.** Every candidate is replayed from a
-clean install, twice, through the same actuator that made it, and the same
-check is asked again. A crash is filed on its log even when a replay misses it;
-anything else that never reproduces is dropped and counted as
-`explore_not_reproduced`. What is filed goes to `POST /findings` with its steps
-in words, the screenshot, a trajectory sheet and a Maestro flow that replays it.
-The collector merges repeats on the fingerprint, so a crash seen again tomorrow
-raises a count rather than a second report. At most `findings_per_night` new
-ones (default 5) per app per night.
-
-**Your verdicts steer it.** The Findings page has four buttons: real,
-duplicate, not a bug, agent's mistake. Per app, check and visual class, once ten
-are judged, a class under 30% precision is switched off at the start of the
-next night. Crashes are never switched off.
-
-**Conditions** rotate across a night's missions: `baseline`, `dark`,
-`large-text`, `bold-text`, `locale:<tag>`, `network:<offline|3g|lossy>`,
-`rotate` (Android) and `background` (home and back mid-mission). They are set
-through the same journalled modules a11y-audit and locale-shots use, so a
-device is never left in Spanish at the largest text.
-
-**Today's changes go first.** `params.changed: {repo, since}` reads the day's
-commits, turns file names into screen words (`PlantDetailScreen.kt` is "plant",
-"detail") and ranks the cards whose `screens` match; the words are also given
-to the model as a hint.
-
-**Is it already broken?** `params.previous_app: {sha256}` replays each
-reproduced finding on the previous build too, and the finding says whether it is
-new in this build.
-
-**Bench mode.** `params.bench: true` runs only the `bench-` cards, files
-nothing, and counts how many end states (`check` on the card: text on the final
-screen, the focused element, the screen's name) the model reached. That number
-and the pointing test in `scripts/explore-bench/` are how models are compared.
-
-Mission cards live in `examples/missions/<app>/*.json`. The surfaces it can
-drive are the actuators under `src/workloads/explore/actuators/`: adb for phones
-and Android TV / Fire TV (D-pad), the FleetDriver XCUITest bundle for iOS and
-tvOS, and tvloop for a Roku.
+It drives Android phones and TVs over adb, iOS and tvOS through the FleetDriver
+UI-test bundle, and a Roku through tvloop. It has a
+[section of its own](../explore/index.md): a
+[laptop quickstart](../explore/quickstart.md),
+[how a night works](../explore/how-it-works.md),
+[mission cards](../explore/missions.md), and the full
+[job spec](../explore/job.md).
 
 ## `upgrade-test`
 

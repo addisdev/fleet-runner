@@ -21,6 +21,7 @@ running whether or not anyone has a token in a browser.
 | `POST /results` | Result rows and beacons. `final: true` closes the job |
 | `POST /artifacts` | Upload bytes; returns `sha256` |
 | `GET /artifacts/:sha256` | Download, supports Range |
+| `POST /findings` | An `explore` finding from an executor; merged on its fingerprint. See [Findings and verdicts](explore/findings.md#the-api) |
 
 ## Queue
 
@@ -80,6 +81,20 @@ clients should refetch everything.
 
 Topics: `job`, `device`, `beacon`, `result`, `lock`, `schedule`, `artifact`,
 `pipeline-event`.
+
+## Findings
+
+From the [`explore`](explore/index.md) workload. Full shapes and replies are in
+[Findings and verdicts](explore/findings.md#the-api).
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/findings` | The list: `?app= &check= &status=open\|triaged\|all &since= &limit=` |
+| `GET /api/findings/:id` | One finding, with its duplicates |
+| `GET /api/findings/precision` | How often each check and visual class was judged real; which are switched off |
+| `GET /api/findings/digest?hours=` | The morning digest, as text and as data |
+| `GET /api/findings/issues` | Every GitHub issue composed, dry run or filed |
+| `POST /api/findings/:id/verdict` | Real, duplicate, not a bug, agent's mistake, or reopen. Guarded |
 
 ## Mutations
 
