@@ -93,6 +93,31 @@ it guards — see [Publish on merge](../integration/publish-on-merge.md).
 With nothing attached, the job is claimed and fails cleanly with
 `no android targets attached`, which is the correct answer rather than a hang.
 
+## `explore`
+
+A vision model uses tonight's build the way a person would, and leaves a short
+list of reproduced bugs for the morning: crashes, hangs, blank screens, controls
+that do nothing, accessibility gaps, visual defects and goals that did not hold.
+Every candidate is replayed on a clean install before it is filed, and your
+verdicts on the [Findings page](../explore/findings.md) decide which checks keep
+running.
+
+```json
+{ "schema": 1, "workload": "explore", "executor": "host",
+  "app": { "name": "greenfolio-android", "build": "nightly", "sha256": "latest" },
+  "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
+  "params": { "app_id": "com.taylab.greenfolio.debug", "app_key": "greenfolio",
+              "minutes": 100, "conditions": ["baseline", "dark", "locale:es"] } }
+```
+
+It drives Android phones and TVs over adb, iOS and tvOS through the FleetDriver
+UI-test bundle, and a Roku through tvloop. It has a
+[section of its own](../explore/index.md): a
+[laptop quickstart](../explore/quickstart.md),
+[how a night works](../explore/how-it-works.md),
+[mission cards](../explore/missions.md), and the full
+[job spec](../explore/job.md).
+
 ## `upgrade-test`
 
 Does the version users already have survive becoming this one? Almost no app

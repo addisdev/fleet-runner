@@ -76,6 +76,7 @@ curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.
 |---|---|
 | **[Install](https://addisdev.github.io/fleet-runner/install/)** | Getting `fleet` onto macOS, Windows, Linux or Docker, and getting a phone, a television, a Roku or a browser to join it. |
 | **[Get started](https://addisdev.github.io/fleet-runner/getting-started/)** | `fleet up`, a real job, and a result on the dashboard. Needs Node 22.13 and nothing else -- no Xcode, no NDK, no phone. |
+| **[Exploratory QA](https://addisdev.github.io/fleet-runner/explore/)** | A vision model explores tonight's build on phones, simulators and TVs, and files only the bugs that reproduce on a clean install. |
 | **[Wire in your own app](https://addisdev.github.io/fleet-runner/integration/)** | Publish builds on merge, run a nightly on your own devices, and block a pull request on the verdict. |
 | **[The protocol](https://addisdev.github.io/fleet-runner/protocol/)** | Register, long-poll, claim, beacon, report. Enough to write a runner in a language none of these are in. |
 

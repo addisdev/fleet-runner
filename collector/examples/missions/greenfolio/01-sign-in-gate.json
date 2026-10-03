@@ -1,0 +1,12 @@
+{
+  "id": "greenfolio-sign-in-gate",
+  "app": "greenfolio",
+  "title": "The sign-in gate, typed badly",
+  "persona": "A careless typist on a small phone who has never used GreenFolio, trying to get in without reading anything.",
+  "goal": "Try the sign-in form the way a careless person would: leave fields empty, type an email with no @, a very long email, a short password, tick and untick the terms box, and press Sign in each time. Open the Terms and Privacy links and come back. Do not create an account.",
+  "success": "Every invalid attempt shows a clear message next to the right field, and the app is still on the sign-in screen with nothing broken.",
+  "budget": { "steps": 40, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["SignIn", "Auth", "Terms"],
+  "block": ["\\bcreate account\\b", "\\bsign up\\b", "\\bregister\\b", "fingerprint"]
+}

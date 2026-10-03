@@ -1,0 +1,23 @@
+# Probe BG-02: Recently viewed card crashes after the last plant is deleted.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. The tap at the end crashes the app; the script reads `adb logcat -b crash`.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- scrollUntilVisible:
+    element:
+      text: "Fiddle Leaf Fig"
+    direction: DOWN
+- tapOn: "Fiddle Leaf Fig"
+- tapOn:
+    id: "button_delete"
+- tapOn:
+    id: "button_confirm_delete"
+- assertVisible:
+    id: "card_recent"
+- tapOn:
+    id: "card_recent"

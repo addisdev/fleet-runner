@@ -1,0 +1,29 @@
+{
+  "id": "bench-add-thyme",
+  "app": "bug-garden",
+  "title": "Add a plant with every detail",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Add a plant named Thyme, species Thymus vulgaris, quantity 2, location Balcony, watered every 4 days.",
+  "success": "Thyme is in the plant list with 'Qty 2 · Balcony · every 4 days'",
+  "budget": {
+    "steps": 25,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "edit"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Thyme",
+      "Qty 2 · Balcony · every 4 days"
+    ]
+  }
+}

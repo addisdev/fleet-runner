@@ -14,6 +14,9 @@ import { isValidMatch } from "../match.js";
 import { requireToken } from "./guard.js";
 import { iso, parse, sha256Refs } from "./shared.js";
 
+/** How long explore keeps a whole night's trajectories before only the findings' remain (plan, phase 5). */
+const EXPLORE_RUN_KEEP_DAYS = 7;
+
 type Announce = (event: { type: string; [k: string]: unknown }) => void;
 type MatchingDevices = (
   pool?: string, match?: string, workload?: string, backend?: string | null,
@@ -590,11 +593,19 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
    *  the scan would have offered every one of them for collection. */
   function protectedShas(): Set<string> {
     const referenced = new Set<string>();
+    // explore's whole-night trajectories are referenced by their own result
+    // row forever, which would keep every night's screenshots forever. The
+    // rule the plan set is seven nights, then only what a finding links to --
+    // so those artifacts are judged separately, by explorationKept() below.
     for (const { blob } of [
       ...(db.prepare("SELECT spec AS blob FROM jobs").all() as { blob: string }[]),
       ...(db.prepare("SELECT payload AS blob FROM results").all() as { blob: string }[]),
       ...(db.prepare("SELECT template AS blob FROM schedules").all() as { blob: string }[]),
       ...(db.prepare("SELECT spec AS blob FROM job_templates").all() as { blob: string }[]),
+      // A finding links its screenshot, contact sheet, trajectory, log and
+      // replay file from the artifact store, and nothing else references them:
+      // without this, GC would offer the evidence for every open finding.
+      ...(db.prepare("SELECT artifacts || ' ' || COALESCE(replay, '') AS blob FROM findings").all() as { blob: string }[]),
     ]) {
       for (const sha of sha256Refs(blob)) referenced.add(sha);
     }
@@ -610,16 +621,35 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
    *  reference to may still be referenced by something it never indexed. */
   function gcCandidates(olderThanDays: number) {
     const referenced = protectedShas();
-    return (
-      db
-        .prepare(
-          `SELECT sha256, name, size, created_at FROM artifacts
-           WHERE created_at <= datetime('now', ?) ORDER BY size DESC`,
-        )
-        .all(`-${olderThanDays} days`) as { sha256: string; name: string | null; size: number; created_at: string }[]
-    )
-      .filter((a) => !referenced.has(a.sha256))
-      .map((a) => ({ ...a, created_at: iso(a.created_at) }));
+    const kept = explorationKept();
+    const rows = db
+      .prepare(
+        `SELECT sha256, name, size, created_at FROM artifacts
+         WHERE created_at <= datetime('now', ?) ORDER BY size DESC`,
+      )
+      .all(`-${olderThanDays} days`) as { sha256: string; name: string | null; size: number; created_at: string }[];
+    // A night's run artifacts past their seven days are offered even though a
+    // result row names them, unless a finding or a pin keeps them.
+    const runs = db
+      .prepare(
+        `SELECT sha256, name, size, created_at FROM artifacts
+         WHERE name LIKE 'explore-run-%' AND created_at <= datetime('now', ?) ORDER BY size DESC`,
+      )
+      .all(`-${EXPLORE_RUN_KEEP_DAYS} days`) as typeof rows;
+    const out = new Map<string, (typeof rows)[number]>();
+    for (const a of rows) if (!referenced.has(a.sha256)) out.set(a.sha256, a);
+    for (const a of runs) if (!kept.has(a.sha256)) out.set(a.sha256, a);
+    return [...out.values()].map((a) => ({ ...a, created_at: iso(a.created_at) }));
+  }
+
+  /** What keeps an explore-run artifact past its seven days: a finding naming it, or a pin. */
+  function explorationKept(): Set<string> {
+    const kept = new Set<string>();
+    for (const { blob } of db.prepare("SELECT artifacts || ' ' || COALESCE(replay, '') AS blob FROM findings").all() as { blob: string }[])
+      for (const sha of sha256Refs(blob)) kept.add(sha);
+    for (const a of db.prepare("SELECT sha256 FROM artifacts WHERE pinned = 1").all() as { sha256: string }[])
+      kept.add(a.sha256);
+    return kept;
   }
 
   app.get("/api/artifacts/gc-candidates", async (req) => {

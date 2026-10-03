@@ -584,6 +584,72 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_jobs_parent ON jobs (parent_job_id);
 `);
 
+// Night QA findings (the explore workload; see src/findings.ts).
+//
+// One row per PROBLEM, not per sighting: the executor computes a fingerprint
+// (app, surface, screen, check, and the message with its numbers stripped) and
+// the collector upserts on it, so the fourth night that finds the same crash
+// raises seen_count instead of adding a fourth row somebody has to triage.
+//
+// The column is `check_name`, not `check`: CHECK is a keyword in SQL, and a
+// column that has to be quoted in every statement is one forgotten pair of
+// quotes away from a syntax error. The API calls it `check`, as the contract
+// in src/workloads/explore/types.ts does.
+//
+// status is not stored. Open means "no verdict yet", and a stored copy of that
+// fact would be one more thing a verdict could forget to update.
+db.exec(`
+CREATE TABLE IF NOT EXISTS findings (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  fingerprint  TEXT NOT NULL UNIQUE,
+  app          TEXT NOT NULL,
+  build        TEXT NOT NULL,          -- the build it was FIRST seen on
+  platform     TEXT NOT NULL,
+  device_id    TEXT NOT NULL,
+  job_id       TEXT NOT NULL,          -- the job that first found it
+  last_job_id  TEXT,                   -- the job that most recently saw it again
+  mission_id   TEXT NOT NULL,
+  check_name   TEXT NOT NULL,
+  subclass     TEXT,                   -- the visual judge's class, for per-class precision
+  severity     TEXT NOT NULL CHECK (severity IN ('high','medium','low')),
+  title        TEXT NOT NULL,
+  detail       TEXT NOT NULL DEFAULT '',
+  screen       TEXT NOT NULL DEFAULT '',
+  screen_name  TEXT NOT NULL DEFAULT '',
+  steps        TEXT NOT NULL DEFAULT '[]',   -- JSON array of strings
+  replay       TEXT,                         -- JSON, or NULL for a crash with no replay
+  artifacts    TEXT NOT NULL DEFAULT '{}',   -- JSON: shot, sheet, trajectory, log, replay
+  first_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen    TEXT NOT NULL DEFAULT (datetime('now')),
+  seen_count   INTEGER NOT NULL DEFAULT 1,
+  builds_seen  TEXT NOT NULL DEFAULT '[]',   -- JSON array of distinct builds
+  verdict      TEXT CHECK (verdict IS NULL OR verdict IN ('real','duplicate','not_a_bug','agent_mistake')),
+  verdict_note TEXT,
+  verdict_at   TEXT,
+  duplicate_of INTEGER,
+  -- The issue this finding would file, or did. JSON; see planIssue(). The two
+  -- columns beside it are copies of two of its fields, kept so the per-app
+  -- daily cap is an indexed count rather than a JSON parse of every row.
+  issue        TEXT,
+  issue_state  TEXT,
+  issue_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_findings_last_seen ON findings (last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_findings_app_check ON findings (app, check_name);
+CREATE INDEX IF NOT EXISTS idx_findings_issue ON findings (app, issue_state, issue_at);
+
+-- One row per local day the digest timer has run, sent or not. It is what makes
+-- "once a day" survive a restart: without it a collector restarted at 09:00
+-- would send the 07:00 digest a second time.
+CREATE TABLE IF NOT EXISTS findings_digests (
+  day      TEXT PRIMARY KEY,           -- local YYYY-MM-DD
+  ran_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  count    INTEGER NOT NULL,
+  posted   INTEGER NOT NULL DEFAULT 0,
+  detail   TEXT
+);
+`);
+
 // Jobs claimed before leases existed have no deadline and would never be swept.
 // Treat them as claimed right now: they get one lease window to report in.
 db.prepare(

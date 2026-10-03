@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-executor-ultra</string>
+
+  <!-- The executor on ultra, the Mac Studio. It claims the `explore` jobs
+       (targets.executor = "ultra"): the model it talks to is on this machine,
+       behind the gateway, and so are the emulator and simulator it drives.
+
+       Talks to the brain on fleet-host through com.addisdev.fleet-tunnel-ultra,
+       for two reasons that both point at loopback: ultra sits on the Mini's
+       192.168.1.x side and cannot route to fleet-host's 192.168.50.x at all,
+       and a launchd process has no local-network grant anyway. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__FLEET_HOME__/node_modules/tsx/dist/cli.mjs</string>
+    <string>src/executor.ts</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__FLEET_HOME__</string>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__NODE_BIN_DIR__:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:__ANDROID_PLATFORM_TOOLS__</string>
+    <key>FLEET_URL</key>
+    <string>http://127.0.0.1:18788</string>
+    <key>FLEET_EXECUTOR_NAME</key>
+    <string>ultra</string>
+    <key>FLEET_IOS_PROJECT</key>
+    <string>__IOS_PROJECT__</string>
+    <key>MAESTRO_BIN</key>
+    <string>__MAESTRO_BIN__</string>
+    <key>MAESTRO_CLI_NO_ANALYTICS</key>
+    <string>1</string>
+    <key>FLEET_FLOWS_DIR</key>
+    <string>__FLEET_HOME__/examples/flows</string>
+    <key>FLEET_MISSIONS_DIR</key>
+    <string>__FLEET_HOME__/examples/missions</string>
+    <!-- The gateway on this machine. `pilot` is Holo4 with no cloud fallback;
+         `vision` is the resident general model, used as the judge. The key is
+         read from the Keychain item fleet-explore-gateway, never from here. -->
+    <key>FLEET_EXPLORE_BASE_URL</key>
+    <string>http://127.0.0.1:4000</string>
+    <key>FLEET_EXPLORE_MODEL</key>
+    <string>pilot</string>
+    <key>FLEET_EXPLORE_JUDGE_MODEL</key>
+    <string>vision</string>
+    <!-- Shared with whatever else ultra runs at night: no host job starts
+         above this load, so a stuck render cannot be made worse by QA. -->
+    <key>FLEET_MAX_LOAD</key>
+    <string>40</string>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/fleet-executor-ultra.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fleet-executor-ultra.log</string>
+</dict>
+</plist>

@@ -172,7 +172,24 @@
         "avg_position": { "type": "number", "description": "archive(gsc): impression-weighted average position" },
         "reviews_count": { "type": "integer", "description": "archive(asc/play) and digest: reviews pulled / digested" },
         "avg_rating": { "type": "number", "description": "archive(asc/play) and digest: mean star rating over those reviews" },
-        "clusters": { "type": "integer", "description": "digest: topic clusters in the assembled digest" }
+        "clusters": { "type": "integer", "description": "digest: topic clusters in the assembled digest" },
+        "explore_missions": { "type": "integer", "description": "explore: missions run on this device tonight" },
+        "explore_steps": { "type": "integer", "description": "explore: model steps taken (one model call each, however many actions it chained)" },
+        "explore_actions": { "type": "integer", "description": "explore: actions performed on the device after the leash" },
+        "explore_screens": { "type": "integer", "description": "explore: distinct screens reached tonight" },
+        "explore_new_screens": { "type": "integer", "description": "explore: screens no earlier night had reached" },
+        "explore_candidates": { "type": "integer", "description": "explore: candidates the checks raised, before replay" },
+        "explore_findings": { "type": "integer", "description": "explore: findings filed (reproduced on replay, or a crash)" },
+        "explore_findings_new": { "type": "integer", "description": "explore: findings the collector had never seen before" },
+        "explore_not_reproduced": { "type": "integer", "description": "explore: candidates dropped because no replay reproduced them" },
+        "explore_misses": { "type": "integer", "description": "explore: taps that landed on nothing tappable (the agent's misses, not app bugs)" },
+        "explore_refused": { "type": "integer", "description": "explore: actions the leash refused" },
+        "explore_step_ms_p50": { "type": "number", "description": "explore: median wall time of one step (observe, model, act, checks), ms" },
+        "explore_model_ms_p50": { "type": "number", "description": "explore: median model latency per step, ms" },
+        "explore_prompt_tokens_mean": { "type": "number", "description": "explore: mean prompt tokens per model call" },
+        "explore_cached_tokens_mean": { "type": "number", "description": "explore: mean prompt tokens served from the prefix cache per call" },
+        "explore_bench_passed": { "type": "integer", "description": "explore (bench mode): missions whose end-state check passed" },
+        "explore_bench_total": { "type": "integer", "description": "explore (bench mode): bench missions run" }
       }
     },
     "upgrade": {

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-explore-devices-down</string>
+  <!-- Shuts down only what com.addisdev.fleet-explore-devices booted, at 01:05,
+       after the explore window closes. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__FLEET_HOME__/deploy/explore/night-devices.sh</string>
+    <string>down</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>5</integer></dict>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/fleet-explore-devices.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fleet-explore-devices.log</string>
+</dict>
+</plist>

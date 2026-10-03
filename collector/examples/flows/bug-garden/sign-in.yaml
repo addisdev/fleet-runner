@@ -1,0 +1,34 @@
+# Bug garden: sign in with the built-in test account.
+#
+# The explore harness runs this as a mission's `setup_flow`, AFTER it has
+# reset the app and launched it with the mission's launch_args. So this flow
+# must not restart the app: `stopApp: false` brings it to the front if it is
+# running (keeping the garden_defects setting the harness launched it with)
+# and starts it plainly if it is not.
+#
+# Everything is found by resource-id rather than by text, because the bug
+# garden can be in English, Spanish or German and the ids are the same in all
+# three. Every screen's root is tagged screen_<name>.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible:
+      id: "screen_sign_in"
+    timeout: 20000
+- tapOn:
+    id: "field_email"
+- inputText: "garden@example.test"
+- tapOn:
+    id: "field_password"
+- inputText: "garden-pass-1"
+# No hideKeyboard: on an image with no soft keyboard (the ATD emulators)
+# Maestro hides it by pressing Back, and Back on the sign-in screen closes the
+# app. The button is near the top of the screen and stays above a keyboard.
+- tapOn:
+    id: "button_sign_in"
+- extendedWaitUntil:
+    visible:
+      id: "screen_home"
+    timeout: 10000

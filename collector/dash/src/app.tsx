@@ -17,6 +17,7 @@ import { AlertBanner, Alerts } from "./pages/Alerts.js";
 import { Artifacts } from "./pages/Artifacts.js";
 import { Evals, EvalSetPage } from "./pages/Evals.js";
 import { Events } from "./pages/Events.js";
+import { FindingPage, Findings } from "./pages/Findings.js";
 import { Results } from "./pages/Results.js";
 import { Visual } from "./pages/Visual.js";
 
@@ -29,6 +30,7 @@ const NAV = [
   ["/results", "Results"],
   ["/evals", "Evals"],
   ["/visual", "Visual"],
+  ["/findings", "Findings"],
   ["/schedules", "Schedules"],
   ["/artifacts", "Artifacts"],
   ["/events", "Events"],
@@ -87,6 +89,7 @@ function Router() {
   if (match("/results", route)) return <Results />;
   if (match("/evals", route)) return <Evals />;
   if (match("/visual", route)) return <Visual />;
+  if (match("/findings", route)) return <Findings />;
   if (match("/artifacts", route)) return <Artifacts />;
   if (match("/events", route)) return <Events />;
   if (match("/schedules", route)) return <Schedules />;
@@ -101,6 +104,8 @@ function Router() {
   // /devices/:id — a literal segment must never be read as an id.
   const evalSet = match("/evals/:sha", route);
   if (evalSet) return <EvalSetPage key={evalSet.sha} sha={evalSet.sha} />;
+  const finding = match("/findings/:id", route);
+  if (finding) return <FindingPage key={finding.id} id={finding.id} />;
 
 
   return <NotFound route={route} />;

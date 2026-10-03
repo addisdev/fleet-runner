@@ -24,6 +24,7 @@ import { runDescribeChecks } from "../src/describe.test.js";
 import { runPressureChecks } from "../src/pressure.test.js";
 import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
 import { runTvloopChecks } from "../src/workloads/tvloop/tvloop.test.js";
+import { runFindingsChecks } from "../src/findings.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
@@ -2664,6 +2665,107 @@ await runEnrolChecks(check);
 // The tvloop workload's decisions -- steps, refusals, locks and redaction --
 // against a fake context and a step runner that only returns exit codes.
 await runTvloopChecks(check);
+
+// The night-QA findings store, decisions first: dedupe, the issue cap, the
+// armed GitHub path and the digest timer, against a temp database of its own.
+await runFindingsChecks(check);
+
+// --- night-QA findings, over HTTP ---
+//
+// What the explore workload's executor will actually do: post findings, post
+// them again, and be refused for the ones it should never have sent. The app
+// name is per run, so a second run against the same collector starts clean
+// rather than inheriting the first run's precision table and issue cap.
+{
+  const APP = `smoke-qa-${run}`;
+  const sha = (c: string) => c.repeat(64);
+  const finding = (over: Record<string, unknown> = {}) => ({
+    fingerprint: `${APP}-fp-1`, app: APP, build: "1.0 (1)", platform: "android", device_id: DEVICE,
+    job_id: `smoke-explore-${run}`, mission_id: "add-a-plant", check: "frozen", severity: "medium",
+    title: "Save does nothing", detail: "No change for 20 s after Save.", screen: "scr-1", screen_name: "Add plant",
+    steps: ["Open the app", "Tap Add", "Tap Save"],
+    replay: { kind: "maestro", sha256: sha("a"), attempts: 2, reproduced: 2 },
+    artifacts: { shot: sha("b"), sheet: sha("c") },
+    ...over,
+  });
+
+  const first = await json("POST", "/findings", finding());
+  check("findings: a new finding is 201 with its id", first.status === 201 && first.body?.new === true &&
+    first.body?.seen_count === 1 && Number.isInteger(first.body?.id), JSON.stringify(first.body));
+  const id = first.body?.id as number;
+  const again = await json("POST", "/findings", finding({ build: "1.0 (2)", title: "Reworded" }));
+  check("findings: the same fingerprint is 200, same id, counted", again.status === 200 && again.body?.id === id &&
+    again.body?.new === false && again.body?.seen_count === 2, JSON.stringify(again.body));
+
+  const zero = await json("POST", "/findings", finding({
+    fingerprint: `${APP}-fp-0`, replay: { kind: "maestro", sha256: null, attempts: 2, reproduced: 0 },
+  }));
+  check("findings: reproduced 0 times is refused with 422 and a reason",
+    zero.status === 422 && /0 of 2/.test(zero.body?.error ?? ""), JSON.stringify(zero));
+  const noReplay = await json("POST", "/findings", finding({ fingerprint: `${APP}-fp-nr`, replay: null }));
+  check("findings: no replay is 422 unless it is a crash", noReplay.status === 422);
+  const crash = await json("POST", "/findings", finding({
+    fingerprint: `${APP}-fp-crash`, check: "crash", severity: "high", replay: null, title: "Crash on save",
+  }));
+  check("findings: a crash with no replay is accepted", crash.status === 201, JSON.stringify(crash.body));
+  const badCheck = await json("POST", "/findings", finding({ fingerprint: `${APP}-fp-x`, check: "vibes" }));
+  check("findings: an unknown check name is 400", badCheck.status === 400 && /vibes/.test(badCheck.body?.error ?? ""));
+  const { fingerprint: _drop, ...noFp } = finding();
+  check("findings: a missing fingerprint is 400", (await json("POST", "/findings", noFp)).status === 400);
+  check("findings: an oversized title is 400",
+    (await json("POST", "/findings", finding({ fingerprint: `${APP}-fp-big`, title: "x".repeat(400) }))).status === 400);
+  const huge = await json("POST", "/findings", finding({ fingerprint: `${APP}-fp-huge`, detail: "x".repeat(200_000) }));
+  check("findings: a body past the route's limit is refused", huge.status === 413, `status=${huge.status}`);
+
+  const list = await json("GET", `/api/findings?app=${APP}&status=open`);
+  check("findings: the list shows both, newest sighting first",
+    list.status === 200 && list.body?.findings?.length === 2 && list.body.counts?.open === 2, JSON.stringify(list.body?.counts));
+  const one = await json("GET", `/api/findings/${id}`);
+  check("findings: the detail keeps the first title and lists both builds",
+    one.body?.title === "Save does nothing" && one.body?.builds_seen?.length === 2 && one.body?.check === "frozen" &&
+    one.body?.replay_label === "reproduced 2/2" && one.body?.status === "open", JSON.stringify(one.body));
+  check("findings: an unknown id is 404", (await json("GET", "/api/findings/999999999")).status === 404);
+  check("findings: a bad status filter is 400", (await json("GET", "/api/findings?status=maybe")).status === 400);
+
+  const v = await json("POST", `/api/findings/${id}/verdict`, { verdict: "real", note: "seen it myself" });
+  check("findings: a verdict is recorded", v.status === 200 && v.body?.finding?.verdict === "real" &&
+    v.body.finding.status === "triaged", JSON.stringify(v.body));
+  const dup = await json("POST", `/api/findings/${crash.body?.id}/verdict`, { verdict: "duplicate", duplicate_of: id });
+  check("findings: a duplicate records what it duplicates", dup.body?.finding?.duplicate_of === id);
+  check("findings: a bad verdict is 400", (await json("POST", `/api/findings/${id}/verdict`, { verdict: "meh" })).status === 400);
+  check("findings: triaged leaves the open list",
+    (await json("GET", `/api/findings?app=${APP}&status=open`)).body?.findings?.length === 0);
+
+  // Precision over HTTP: 10 judged "visual" findings, 2 real -> 20%, switched off.
+  for (let i = 0; i < 10; i++) {
+    const r = await json("POST", "/findings", finding({ fingerprint: `${APP}-vis-${i}`, check: "visual" }));
+    await json("POST", `/api/findings/${r.body?.id}/verdict`, {
+      verdict: i < 2 ? "real" : i < 7 ? "not_a_bug" : "agent_mistake",
+    });
+  }
+  const p = await json("GET", `/api/findings/precision?app=${APP}`);
+  const vis = p.body?.classes?.find((c: { check: string }) => c.check === "visual");
+  check("findings: precision is real over judged", vis?.judged === 10 && Math.abs(vis.precision - 0.2) < 1e-9, JSON.stringify(vis));
+  check("findings: a class under 30% with 10 judged is switched off",
+    vis?.disabled === true && p.body?.disabled?.some((d: { check: string }) => d.check === "visual"));
+  const frozen = p.body?.classes?.find((c: { check: string }) => c.check === "frozen");
+  check("findings: one real out of one is not switched off", frozen?.precision === 1 && frozen.disabled === false);
+
+  const digest = await json("GET", "/api/findings/digest?hours=12");
+  check("findings: the digest names the app and the link", digest.status === 200 &&
+    digest.body?.text?.includes(`${APP}:`) && /\/dash\/findings/.test(digest.body.text), digest.body?.text);
+
+  // Built dark: nothing here is armed, so every issue is a dry run, and the
+  // throwaway collector maps no repo for a per-run app name.
+  const issues = await json("GET", "/api/findings/issues");
+  type IssueRow = { app: string; issue: { dry_run: boolean; state: string; body: string; labels: string[] } };
+  const mine = ((issues.body?.issues ?? []) as IssueRow[]).filter((r) => r.app === APP);
+  check("findings: issues are not armed on a collector nobody armed", issues.body?.armed === false);
+  check("findings: every composed issue is a dry run", mine.length > 0 && mine.every((r) => r.issue.dry_run === true),
+    JSON.stringify(mine.map((r) => r.issue.state)));
+  check("findings: the issue body is composed for audit",
+    mine.some((r) => r.issue.body.includes("Tap Save") && r.issue.labels.includes("night-qa")));
+}
 
 // --- the synthetic backend's reference digest ---
 //

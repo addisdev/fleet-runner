@@ -1,0 +1,13 @@
+{
+  "id": "greenfolio-signed-in-tour",
+  "app": "greenfolio",
+  "title": "A collector's look around",
+  "persona": "Someone with a houseplant collection who opens the app most evenings to check what needs watering.",
+  "goal": "Look through the plant list, open two plants, read their care details and history, visit Insights, Blooms and Settings, and change the theme and back. Read only: do not add, edit or delete anything.",
+  "success": "Every screen visited loads its content, and nothing in the collection changed.",
+  "budget": { "steps": 50, "minutes": 30 },
+  "surfaces": ["touch"],
+  "screens": ["Plants", "PlantDetail", "Care", "Insights", "Blooms", "Settings"],
+  "setup_flow": "greenfolio/sign-in.yaml",
+  "block": ["\\bdelete\\b", "\\bremove\\b", "\\bsave\\b", "\\badd\\b", "\\bpost\\b", "\\bshare\\b", "\\bimport\\b"]
+}

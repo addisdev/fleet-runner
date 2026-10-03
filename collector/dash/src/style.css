@@ -825,3 +825,62 @@ main .panel:nth-of-type(n + 6) { animation-delay: 160ms; }
   opacity: 0.55;
   text-decoration: line-through;
 }
+
+/* --- findings (night QA) ---
+
+   The check name is a chip rather than a pill: pills in this dashboard are
+   states (done, failed, online) and colour carries the meaning. A check is a
+   category, so it gets the neutral, code-ish look the rest of the page uses for
+   identifiers, and the severity pill beside it does the shouting. */
+
+.chip {
+  display: inline-block; padding: 0.02rem 0.4rem; border-radius: 4px; white-space: nowrap;
+  font-family: var(--mono); font-size: 0.74rem; background: var(--panel-2); border: 1px solid var(--line);
+  color: var(--ink);
+}
+.text-ok { color: var(--ok); font-weight: 550; }
+
+tr.clickable { cursor: pointer; }
+.findings { margin-top: 0.9rem; }
+.findings .finding-title { min-width: 16rem; }
+.findings .finding-title a { font-weight: 550; }
+.findings td .dim, .findings td .faint { font-size: 0.75rem; }
+
+.crumbs { margin: 0 0 0.4rem; font-size: 0.8rem; color: var(--ink-dim); }
+
+/* The four verdict buttons sit in one row, each with its key, so the shortcut
+   is learned by reading the button rather than the help overlay. */
+.verdicts { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; }
+.verdicts .btn { display: inline-flex; align-items: center; gap: 0.4rem; }
+.verdicts kbd { font-size: 0.7rem; padding: 0 0.3rem; }
+.verdicts .btn.primary kbd { background: transparent; border-color: currentColor; color: inherit; }
+.dup-pick { margin-bottom: 0.75rem; }
+.dup-pick select { max-width: 32rem; }
+
+.next-row { margin: -0.4rem 0 1rem; font-size: 0.82rem; text-align: right; }
+.next-open { color: var(--accent); }
+
+/* Screenshot on the left at phone proportions, words on the right. On a
+   narrow screen the two stack, picture first, because the picture is what a
+   verdict is mostly made from. */
+.finding-body { display: grid; grid-template-columns: minmax(12rem, 20rem) 1fr; gap: 1.2rem; align-items: start; }
+.finding-shot { margin: 0; }
+.finding-shot img {
+  display: block; max-width: 100%; max-height: 34rem; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel-2);
+}
+.finding-detail {
+  margin: 0 0 0.5rem; padding: 0.6rem 0.75rem; background: var(--panel-2); border-radius: 6px;
+  font-family: var(--mono); font-size: 0.78rem; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.finding-steps { margin: 0; padding-left: 1.3rem; font-size: 0.86rem; }
+.finding-steps li { margin: 0.15rem 0; }
+.artifact-links { display: flex; flex-wrap: wrap; gap: 0.4rem 0.9rem; font-size: 0.84rem; margin: 0; }
+.artifact-links a { color: var(--accent); }
+.dup-list { margin: 0; padding-left: 1.1rem; font-size: 0.86rem; }
+
+@media (max-width: 720px) {
+  .finding-body { grid-template-columns: 1fr; }
+  .findings .finding-title { min-width: 12rem; }
+  .next-row { text-align: left; }
+}

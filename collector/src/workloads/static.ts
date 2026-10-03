@@ -28,6 +28,7 @@ type Loader = () => Promise<{ run?: unknown }>;
 
 export const BUNDLED: Record<string, Loader> = {
   enrol: () => import("./enrol/index.js"),
+  explore: () => import("./explore/index.js"),
   install: () => import("./install/index.js"),
   "size-report": () => import("./size-report/index.js"),
   tvloop: () => import("./tvloop/index.js"),
