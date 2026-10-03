@@ -1475,8 +1475,10 @@ async function dumpA11yTree(
  * can happen inside a lease -- so it audits the app's launch screen only, which
  * the run says on the row.
  *
- * It fails until the iOS runner grows the helper, and it fails by naming
- * exactly what is missing, because the alternative is a job that quietly audits
+ * The helper is FleetSmokeUITests.testSmoke in runner-ios: with the flag set
+ * it launches the app and prints its debugDescription between the markers. When
+ * the markers are missing the run says why it thinks so, with the end of
+ * xcodebuild's output, because the alternative is a job that quietly audits
  * nothing on every simulator in the fleet.
  */
 async function xcuitestA11yTree(t: Target, appId: string, timeoutS: number): Promise<A11yNode[]> {
@@ -1499,11 +1501,15 @@ async function xcuitestA11yTree(t: Target, appId: string, timeoutS: number): Pro
   }
   const m = /FLEET-A11Y-DUMP-BEGIN\r?\n([\s\S]*?)\r?\nFLEET-A11Y-DUMP-END/.exec(out);
   if (!m) {
+    // The helper exists (FleetSmokeUITests prints the dump when
+    // TEST_RUNNER_FLEET_A11Y_DUMP=1), so no markers means the test never got
+    // that far: the bundle did not build, the runner did not start, or the app
+    // did not launch. xcodebuild's last lines are what says which.
+    const tail = out.split("\n").filter((l) => l.trim()).slice(-8).join(" | ").slice(-800);
     throw new Error(
-      "the FleetRunner test bundle printed no accessibility dump. The iOS runner needs a test that, when " +
-      "TEST_RUNNER_FLEET_A11Y_DUMP=1 is set, prints XCUIApplication().debugDescription between the lines " +
-      "FLEET-A11Y-DUMP-BEGIN and FLEET-A11Y-DUMP-END. The parser for that output already exists here " +
-      "(parseXcuiDebugDescription in src/a11y-tree.ts)",
+      "the FleetRunner test bundle printed no accessibility dump (FLEET-A11Y-DUMP-BEGIN/END). Its smoke test " +
+      `prints one after launching ${appId}, so the run stopped before that: a build failure, a runner that ` +
+      `did not start, or an app that would not launch. ${tail ? `xcodebuild ended: ${tail}` : "xcodebuild printed nothing"}`,
     );
   }
   const parsed = parseXcuiDebugDescription(m[1]);
