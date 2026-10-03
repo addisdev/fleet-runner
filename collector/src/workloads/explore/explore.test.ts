@@ -142,6 +142,10 @@ export async function runExploreChecks(check: Check): Promise<void> {
     && fingerprint("g", "touch", "s1", "visual", "x") !== fingerprint("g", "touch", "s2", "visual", "x"));
   check("explore: bench check finds the text", benchCheck({ text: ["basil"] }, [node({ text: "Basil x3" })], "Home").passed);
   check("explore: bench check reports what is missing", !benchCheck({ text: ["mint"] }, [node({ text: "Basil" })], "Home").passed);
+  check("explore: absent_text fails while the text is still there",
+    !benchCheck({ text: ["8 plants"], absent_text: ["aloe vera"] }, [node({ text: "8 plants" }), node({ text: "Aloe Vera" })], "Home").passed
+    && benchCheck({ text: ["8 plants"], absent_text: ["aloe vera"] }, [node({ text: "8 plants" })], "Home").passed);
+  check("explore: bench text matches a content-desc", benchCheck({ text: ["ajustes"] }, [node({ label: "Ajustes" })], "Home").passed);
   check("explore: changed files name screens",
     JSON.stringify(changedWords(["app/src/main/java/x/PlantDetailScreen.kt", "ios/CareReminderView.swift"])) === '["plant","detail","care","reminder"]');
   const cards: Mission[] = [

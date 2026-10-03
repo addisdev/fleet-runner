@@ -66,10 +66,12 @@ Already built and covered offline (`npm test` runs a whole mission against a
 fake device). On ultra it needs an emulator and Maestro:
 
 ```bash
-sdkmanager "system-images;android-35;aosp_atd;arm64-v8a"
-avdmanager create avd -n fleet-explore-1 -k "system-images;android-35;aosp_atd;arm64-v8a" -d pixel_7
+sdkmanager "system-images;android-35;google_apis;arm64-v8a"
+avdmanager create avd -n fleet-explore-1 -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_7
 curl -fsSL https://get.maestro.mobile.dev | bash
 ```
+
+Not an `aosp_atd` image: ATD images return a blank frame from `screencap`, so a vision model driving one sees nothing (found while building the bug garden). The fleet's `fleet-atd-1` is fine for scripted flows and wrong for this.
 
 Then one unattended mission on the GreenFolio debug build:
 

@@ -198,7 +198,14 @@ export type Mission = {
    * For the mission bench (B4): an end state the harness can check without a
    * model, by looking for text or a focused element in the final tree.
    */
-  check?: { text?: string[]; focused_label?: string; screen?: string };
+  check?: {
+    /** Each must appear in some element's text, label (content-desc) or value; case-insensitive substring. */
+    text?: string[];
+    /** None of these may appear anywhere on the final screen: "the plant is gone" is checked this way. */
+    absent_text?: string[];
+    focused_label?: string;
+    screen?: string;
+  };
 };
 
 // ---------------------------------------------------------------------------

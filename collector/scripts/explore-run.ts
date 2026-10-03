@@ -53,14 +53,22 @@ export async function exploreRun(o: {
     try {
       const r = await runMission(m, deps);
       let filed = 0;
+      const confirmed: Record<string, unknown>[] = [];
       if (o.confirm && !o.bench) {
-        for (const { c } of pickCandidates(r.candidates, o.appKey, actuator.caps.surface, 6)) {
+        for (const { c, fp } of pickCandidates(r.candidates, o.appKey, actuator.caps.surface, 6)) {
           const cf = await confirm(c, r, deps, 2);
-          if (fileable(cf)) filed++;
+          const ok = fileable(cf);
+          if (ok) filed++;
+          // The shape a finding has when posted, enough for the garden scorer.
+          confirmed.push({ fingerprint: fp, check: c.check, subclass: c.visualClass ?? null, title: c.title, detail: c.detail,
+            screen: c.screen.id, screen_name: c.screen.name, shot: `shots/${c.shot}`, step: c.step,
+            attempts: cf.attempts, reproduced: cf.reproduced, filed: ok, replay_notes: cf.replayNotes });
           console.error(`  candidate ${c.check} "${c.title}": ${cf.replayNotes.join("; ")}`);
         }
       }
-      writeFileSync(path.join(runDir, "result.json"), JSON.stringify({ ...r, candidates: r.candidates.map(({ screen, ...c }) => ({ ...c, screen: screen.name })) }, null, 1));
+      writeFileSync(path.join(runDir, "result.json"), JSON.stringify({
+        ...r, candidates: r.candidates.map(({ screen, ...c }) => ({ ...c, screen: screen.name })), confirmed,
+      }, null, 1));
       const ms = [...r.stats.modelMs].sort((a, b) => a - b);
       summary.missions.push({ id: m.id, steps: r.stats.steps, endedBy: r.stats.endedBy, bench: r.bench, candidates: r.candidates.length, filed, modelMsP50: ms.length ? ms[Math.floor(ms.length / 2)] : null, dir: runDir });
       if (r.bench) { summary.benchTotal++; if (r.bench.passed) summary.benchPassed++; }

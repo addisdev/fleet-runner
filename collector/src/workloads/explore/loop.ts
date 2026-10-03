@@ -153,6 +153,8 @@ export function benchCheck(check: Mission["check"], nodes: A11yNode[] | null, sc
   const visible = (nodes ?? []).flatMap((n) => [n.text, n.label, n.value]).filter(Boolean).map((s) => s.toLowerCase());
   const missing = (check.text ?? []).filter((t) => !visible.some((v) => v.includes(t.toLowerCase())));
   if (missing.length) return { passed: false, detail: `not on the final screen: ${missing.map((m) => JSON.stringify(m)).join(", ")}` };
+  const present = (check.absent_text ?? []).filter((t) => visible.some((v) => v.includes(t.toLowerCase())));
+  if (present.length) return { passed: false, detail: `still on the final screen: ${present.map((m) => JSON.stringify(m)).join(", ")}` };
   if (check.focused_label) {
     const f = (nodes ?? []).find((n) => n.focused);
     const label = (f?.label || f?.text || "").toLowerCase();
@@ -234,6 +236,12 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     }
     lastObs = obs;
     screen = { w: obs.width, h: obs.height };
+    // A device whose screenshots are blank while its tree is full of text is
+    // not showing a blank app: it cannot capture its screen (an Android ATD
+    // image does exactly this). A model driving it would see nothing all night.
+    if (i === 1 && isBlank(obs.png).blank && (obs.nodes ?? []).filter((n) => (n.text || n.label).trim()).length >= 3) {
+      throw new Error(`${actuator.target.id} returns blank screenshots while its UI tree has text; it cannot be explored by sight (an ATD emulator image? use google_apis)`);
+    }
     const shotName = `${String(i).padStart(3, "0")}.png`;
     writeFileSync(path.join(shotsDir, shotName), obs.png);
     // The tree beside the picture: the pointing bench (B1) harvests its
