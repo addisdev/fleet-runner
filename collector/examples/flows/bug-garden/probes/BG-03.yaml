@@ -20,6 +20,9 @@ appId: dev.fleetrunner.buggarden
     id: "field_quantity"
 - eraseText: 40
 - inputText: "2.5"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
 - tapOn:
     id: "button_save"

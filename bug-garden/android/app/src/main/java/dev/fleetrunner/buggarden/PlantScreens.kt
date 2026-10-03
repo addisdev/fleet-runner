@@ -31,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,9 +40,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 
 // ---------------------------------------------------------------------------
@@ -145,11 +149,11 @@ fun DetailScreen(screen: Screen.Detail) {
                         Nav.back()
                         Nav.toast(s.deletedPlant(p.name))
                     },
-                    modifier = Modifier.testTag("button_confirm_delete"),
+                    modifier = Modifier.dialogTag("button_confirm_delete"),
                 ) { Text(s.delete) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmDelete = false }) { Text(s.cancel) }
+                TextButton(onClick = { confirmDelete = false }, modifier = Modifier.dialogTag("button_cancel_delete")) { Text(s.cancel) }
             },
         )
     }
@@ -378,13 +382,30 @@ private fun ClearButton(onClick: () -> Unit) {
         // PLANTED BG-15: a bare clickable icon, 20dp square, with no minimum
         // touch target. It has a label; it is just too small to hit (48dp is
         // the Android guideline).
-        Box(
-            Modifier
-                .size(20.dp)
-                .clickable(onClick = onClick)
-                .testTag("button_clear_search"),
-        ) {
-            Icon(Icons.Filled.Clear, contentDescription = s.clearSearch, modifier = Modifier.size(20.dp))
+        //
+        // Compose normally rescues a small clickable by stretching its touch
+        // area to the ViewConfiguration's minimumTouchTargetSize (48dp), so
+        // the minimum is lowered to 20dp here, the way a "compact" design
+        // override would. The text field also gives its trailing slot a 48dp
+        // minimum size, so the outer Box takes that and the clickable inside
+        // it, which a Box does not stretch, stays 20dp.
+        val base = LocalViewConfiguration.current
+        val compact = remember(base) {
+            object : ViewConfiguration by base {
+                override val minimumTouchTargetSize: DpSize get() = DpSize(20.dp, 20.dp)
+            }
+        }
+        CompositionLocalProvider(LocalViewConfiguration provides compact) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier
+                        .size(20.dp)
+                        .clickable(onClick = onClick)
+                        .testTag("button_clear_search"),
+                ) {
+                    Icon(Icons.Filled.Clear, contentDescription = s.clearSearch, modifier = Modifier.size(20.dp))
+                }
+            }
         }
     } else {
         IconButton(onClick = onClick, modifier = Modifier.testTag("button_clear_search")) {

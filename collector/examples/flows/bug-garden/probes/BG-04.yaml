@@ -13,22 +13,19 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "field_search"
 - inputText: "cactus"
-- hideKeyboard
 - tapOn:
     id: "button_run_search"
-- assertVisible: "No plants match "cactus""
+- assertVisible: 'No plants match "cactus"'
 - tapOn:
     id: "field_search"
 - eraseText: 40
 - inputText: "orchid"
-- hideKeyboard
 - tapOn:
     id: "button_run_search"
-- assertVisible: "No plants match "orchid""
+- assertVisible: 'No plants match "orchid"'
 - tapOn:
     id: "field_search"
 - eraseText: 40
 - inputText: "tulip"
-- hideKeyboard
 - tapOn:
     id: "button_run_search"

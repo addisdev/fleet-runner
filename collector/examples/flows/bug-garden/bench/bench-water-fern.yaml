@@ -17,4 +17,4 @@ appId: dev.fleetrunner.buggarden
 - tapOn: "Fern"
 - tapOn:
     id: "button_water"
-- assertVisible: "Watered today"
+- assertVisible: 'Watered today'

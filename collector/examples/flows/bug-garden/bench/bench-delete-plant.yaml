@@ -23,4 +23,4 @@ appId: dev.fleetrunner.buggarden
     id: "button_delete"
 - tapOn:
     id: "button_confirm_delete"
-- assertVisible: "8 plants"
+- assertVisible: '8 plants'

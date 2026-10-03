@@ -226,3 +226,30 @@ node bug-garden/tools/check-bench.mjs collector/examples/missions/bug-garden/ben
 
 and `collector/examples/flows/bug-garden/bench/<id>.yaml` is a scripted answer
 to each bench mission, which is how the checks themselves were verified.
+
+## Proving it on a device
+
+`tools/verify-on-device.sh <serial>` installs the APK, walks to every defect
+with `collector/examples/flows/bug-garden/probes/BG-nn.yaml` on the default
+build and looks for each one's signal where an oracle would (the crash buffer,
+the ANR in the event log, the tree), then runs every bench flow on the clean
+build and checks the final tree with `check-bench.mjs`. It needs Maestro
+(`~/.maestro/bin/maestro`, or `$MAESTRO`) and writes dumps, screenshots and
+logs to `$OUT`. Run it after any change to the app; a defect that silently
+stops firing makes every later score wrong.
+
+Two traps, both found the hard way:
+
+- **ATD images draw nothing.** On `fleet-atd-1` (an `aosp_atd` Automated Test
+  Device image, API 34) `screencap` and the emulator's own screenshot both
+  return a blank frame, with or without `-gpu swiftshader_indirect`; ATD
+  images are built with hardware rendering off. The tree is fine, so every
+  oracle check works, but BG-09, BG-10 and BG-16 need a picture, and so does
+  any vision model. Explore on a `google_apis` image.
+- **Maestro's `hideKeyboard` presses Back** on an image with no soft keyboard,
+  and Back on the sign-in screen (or on Search, with BG-19) leaves the screen.
+  None of these flows uses it.
+
+Dialogs are separate windows, so a dialog's buttons carry their own
+`testTagsAsResourceId` (`Modifier.dialogTag`); without it their tags never
+become resource-ids.

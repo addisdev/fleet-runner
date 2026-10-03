@@ -14,4 +14,4 @@ appId: dev.fleetrunner.buggarden
     id: "button_invite"
 - tapOn:
     id: "button_copy_link"
-- assertVisible: "java.lang.IllegalStateException: null"
+- assertVisible: 'java.lang.IllegalStateException: null'

@@ -21,7 +21,6 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "field_invite_email"
 - inputText: "friend@example.test"
-- hideKeyboard
 - tapOn:
     id: "button_send_invite"
-- assertVisible: "Invite sent to friend@example.test"
+- assertVisible: 'Invite sent to friend@example.test'

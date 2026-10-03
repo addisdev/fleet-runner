@@ -25,7 +25,10 @@ appId: dev.fleetrunner.buggarden
     id: "field_name"
 - eraseText: 40
 - inputText: "Golden Pothos"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
 - tapOn:
     id: "button_save"
-- assertVisible: "Golden Pothos"
+- assertVisible: 'Golden Pothos'

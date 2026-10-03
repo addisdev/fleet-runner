@@ -20,4 +20,4 @@ appId: dev.fleetrunner.buggarden
     id: "button_upgrade"
 - tapOn:
     id: "button_buy"
-- assertVisible: "You're on Sprout Plus"
+- assertVisible: 'You''re on Sprout Plus'

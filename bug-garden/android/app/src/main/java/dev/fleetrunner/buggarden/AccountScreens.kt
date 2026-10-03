@@ -201,10 +201,10 @@ fun ProfileScreen() {
             confirmButton = {
                 TextButton(
                     onClick = { offerPlus = false; Garden.plus = true },
-                    modifier = Modifier.testTag("button_buy"),
+                    modifier = Modifier.dialogTag("button_buy"),
                 ) { Text(s.buy) }
             },
-            dismissButton = { TextButton(onClick = { offerPlus = false }) { Text(s.notNow) } },
+            dismissButton = { TextButton(onClick = { offerPlus = false }, modifier = Modifier.dialogTag("button_not_now")) { Text(s.notNow) } },
         )
     }
     if (confirmDelete) {
@@ -220,16 +220,21 @@ fun ProfileScreen() {
                         Nav.signInNotice = s.accountDeletedNotice
                         Nav.resetTo(Screen.SignIn)
                     },
-                    modifier = Modifier.testTag("button_confirm_delete_account"),
+                    modifier = Modifier.dialogTag("button_confirm_delete_account"),
                 ) { Text(s.delete) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(s.cancel) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }, modifier = Modifier.dialogTag("button_cancel_delete_account")) { Text(s.cancel) } },
         )
     }
 }
 
-/** Tuned on a 420 dpi emulator: the English label fits at Large and clips at Largest. */
-private val UPGRADE_BUTTON_WIDTH = 220.dp
+/**
+ * Measured on a 420 dpi emulator at system font scale 1.0: the English label
+ * is about 132dp wide at Large and 163dp at Largest. 188dp less the button's
+ * 2 x 24dp padding leaves 140dp, so it fits at Large and loses its last
+ * letters at Largest. A larger system font scale makes it clip sooner.
+ */
+private val UPGRADE_BUTTON_WIDTH = 188.dp
 
 // ---------------------------------------------------------------------------
 // Invite / share

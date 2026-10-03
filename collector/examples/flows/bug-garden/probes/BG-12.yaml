@@ -16,4 +16,4 @@ appId: dev.fleetrunner.buggarden
     direction: DOWN
 - tapOn:
     id: "option_lang_de"
-- assertVisible: "settings_title_v2"
+- assertVisible: 'settings_title_v2'

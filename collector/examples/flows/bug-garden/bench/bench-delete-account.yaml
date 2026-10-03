@@ -24,4 +24,4 @@ appId: dev.fleetrunner.buggarden
     id: "button_delete_account"
 - tapOn:
     id: "button_confirm_delete_account"
-- assertVisible: "Your account has been deleted."
+- assertVisible: 'Your account has been deleted.'

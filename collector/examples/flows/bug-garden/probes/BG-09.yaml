@@ -18,4 +18,4 @@ appId: dev.fleetrunner.buggarden
     id: "option_lang_es"
 - back
 - tapOn: "Fern"
-- assertVisible: "Especie científica"
+- assertVisible: 'Especie científica'

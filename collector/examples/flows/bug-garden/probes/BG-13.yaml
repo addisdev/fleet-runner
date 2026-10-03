@@ -16,4 +16,4 @@ appId: dev.fleetrunner.buggarden
     direction: DOWN
 - tapOn:
     id: "button_about"
-- assertVisible: "Lorem ipsum.*"
+- assertVisible: 'Lorem ipsum.*'

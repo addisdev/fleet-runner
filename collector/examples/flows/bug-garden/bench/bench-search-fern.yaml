@@ -19,7 +19,6 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "field_search"
 - inputText: "Fern"
-- hideKeyboard
 - tapOn:
     id: "button_run_search"
-- assertVisible: "1 result"
+- assertVisible: '1 result'

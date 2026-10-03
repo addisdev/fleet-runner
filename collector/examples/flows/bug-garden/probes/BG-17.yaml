@@ -15,11 +15,14 @@ appId: dev.fleetrunner.buggarden
     id: "field_quantity"
 - eraseText: 40
 - inputText: "4"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
 - tapOn:
     id: "button_save"
-- assertVisible: "Qty 4 · Living room · every 7 days"
+- assertVisible: 'Qty 4 · Living room · every 7 days'
 - back
-- assertVisible: "Qty 1 · Living room · every 7 days"
+- assertVisible: 'Qty 1 · Living room · every 7 days'
 - tapOn: "Monstera"
-- assertVisible: "Qty 1 · Living room · every 7 days"
+- assertVisible: 'Qty 1 · Living room · every 7 days'

@@ -17,4 +17,4 @@ appId: dev.fleetrunner.buggarden
 - tapOn: "Monstera"
 - tapOn:
     id: "button_favourite"
-- assertVisible: "In your favourites"
+- assertVisible: 'In your favourites'

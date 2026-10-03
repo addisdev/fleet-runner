@@ -23,7 +23,9 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "field_password"
 - inputText: "garden-pass-1"
-- hideKeyboard
+# No hideKeyboard: on an image with no soft keyboard (the ATD emulators)
+# Maestro hides it by pressing Back, and Back on the sign-in screen closes the
+# app. The button is near the top of the screen and stays above a keyboard.
 - tapOn:
     id: "button_sign_in"
 - extendedWaitUntil:

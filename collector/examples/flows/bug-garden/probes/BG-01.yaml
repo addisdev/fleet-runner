@@ -13,6 +13,9 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "field_name"
 - inputText: "Basil"
-- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
 - tapOn:
     id: "button_save"

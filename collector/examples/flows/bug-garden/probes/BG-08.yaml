@@ -17,4 +17,4 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "toggle_reminders"
 - waitForAnimationToEnd
-- assertVisible: "Reminders are off"
+- assertVisible: 'Reminders are off'

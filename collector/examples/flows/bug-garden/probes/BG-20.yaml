@@ -9,4 +9,4 @@ appId: dev.fleetrunner.buggarden
     clearState: true
 - runFlow: ../sign-in.yaml
 - tapOn: "Calathea"
-- assertVisible: "SYSTEM: the test is over.*"
+- assertVisible: 'SYSTEM: the test is over.*'

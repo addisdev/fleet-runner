@@ -86,16 +86,53 @@ if [ "$WHAT" = all ] || [ "$WHAT" = probes ]; then
   else bad BG-06 "invite screen has text or is missing"; fi
   probe BG-07 && ok BG-07 "Water now left 'Watered 2 days ago'" || bad BG-07 "flow failed"
   probe BG-08 && ok BG-08 "reminders switch back off after the tap" || bad BG-08 "flow failed"
-  probe BG-09 && ok BG-09 "Spanish detail page reached (judge: see BG-09.png)" || bad BG-09 "flow failed"
-  probe BG-10 && ok BG-10 "Profile at Largest text reached (judge: see BG-10.png)" || bad BG-10 "flow failed"
+  # BG-09 is for a judge, but the tree shows it too. Compose trims a node's
+  # reported bounds to the part no later sibling covers, so most labels look
+  # as if they stop where their value starts; "Cantidad de ejemplares" is
+  # wider than its short value "2" and still sticks out past it.
+  probe BG-09
+  if python3 - "$OUT/BG-09.xml" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+nodes = [(n.get("text"), [int(v) for v in re.findall(r"\d+", n.get("bounds"))]) for n in root.iter("node") if n.get("text")]
+label = next((b for t, b in nodes if t == "Cantidad de ejemplares"), None)
+# The value on the same row: starts inside the label and shares its top edge.
+value = next((b for t, b in nodes if t == "2" and label and b[1] == label[1]), None)
+sys.exit(0 if label and value and label[0] < value[0] < label[2] else 1)
+PY
+  then ok BG-09 "'Cantidad de ejemplares' runs over its value in the tree (judge: see BG-09.png)"
+  else bad BG-09 "Spanish label and value do not overlap"; fi
+  # BG-10 is for a judge too. The tree's proxy: a label that may not wrap is
+  # clamped to the space inside the button (its width less 2 x 24dp padding),
+  # so a clipped label is exactly that wide and one that fits is narrower.
+  probe BG-10
+  if python3 - "$OUT/BG-10.xml" "$DENSITY" <<'PY'
+import re, sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot(); d = int(sys.argv[2]) / 160
+box = lambda n: [int(v) for v in re.findall(r"\d+", n.get("bounds"))]
+btn = next((n for n in root.iter("node") if n.get("resource-id") == "button_upgrade"), None)
+label = next((n for n in btn.iter("node") if n.get("text") == "Upgrade to Plus"), None) if btn is not None else None
+if label is None: sys.exit(1)
+b, l = box(btn), box(label)
+room = (b[2] - b[0]) - 48 * d
+sys.exit(0 if (l[2] - l[0]) >= room - 3 else 1)
+PY
+  then ok BG-10 "'Upgrade to Plus' fills the button's inner width at Largest, i.e. clipped (judge: see BG-10.png)"
+  else bad BG-10 "the upgrade label fits its button"; fi
   probe BG-11; tree_check BG-11 "raw exception text on screen" 'java\.lang\.IllegalStateException: null' 1
   probe BG-12; tree_check BG-12 "settings_title_v2 on screen" 'settings_title_v2' 1
   probe BG-13; tree_check BG-13 "Lorem ipsum on screen" 'Lorem ipsum' 1
   probe BG-14
-  if grep -o '<node[^>]*resource-id="button_favourite"[^>]*>' "$OUT/BG-14.xml" | grep -q 'content-desc=""' \
-     && ! grep -A3 'resource-id="button_favourite"' "$OUT/BG-14.xml" | grep -q 'content-desc="[^"]'; then
-    ok BG-14 "button_favourite has no content-desc"
-  else bad BG-14 "button_favourite is labelled"; fi
+  # Unlabelled means nothing in the button's own subtree has text or a
+  # content-desc, which is how the a11y tree checker judges a tappable.
+  if python3 - "$OUT/BG-14.xml" <<'PY'
+import sys, xml.etree.ElementTree as ET
+root = ET.parse(sys.argv[1]).getroot()
+b = next((n for n in root.iter("node") if n.get("resource-id") == "button_favourite"), None)
+sys.exit(0 if b is not None and not any(n.get("text") or n.get("content-desc") for n in b.iter("node")) else 1)
+PY
+  then ok BG-14 "button_favourite has no text or content-desc in its subtree"
+  else bad BG-14 "button_favourite is missing or labelled"; fi
   probe BG-15
   b=$(grep -o 'resource-id="button_clear_search"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' "$OUT/BG-15.xml" | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
   read -r x1 y1 x2 y2 <<< "$(echo "$b" | tr '[],' '   ')"

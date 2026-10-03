@@ -13,7 +13,6 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "field_search"
 - inputText: "fern"
-- hideKeyboard
 - tapOn:
     id: "button_run_search"
-- assertVisible: "No plants match "fern""
+- assertVisible: 'No plants match "fern"'

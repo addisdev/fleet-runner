@@ -14,4 +14,4 @@ appId: dev.fleetrunner.buggarden
     arguments:
       garden_defects: "false"
 - runFlow: ../sign-in.yaml
-- assertVisible: "Signed in as garden@example.test"
+- assertVisible: 'Signed in as garden@example.test'

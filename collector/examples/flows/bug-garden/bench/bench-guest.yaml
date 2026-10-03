@@ -19,4 +19,4 @@ appId: dev.fleetrunner.buggarden
     timeout: 20000
 - tapOn:
     id: "button_guest"
-- assertVisible: "Browsing as guest"
+- assertVisible: 'Browsing as guest'

@@ -16,6 +16,10 @@ appId: dev.fleetrunner.buggarden
 - runFlow: ../sign-in.yaml
 - tapOn:
     id: "button_add"
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
 - tapOn:
     id: "button_save"
-- assertVisible: "Name is required"
+- assertVisible: 'Name is required'

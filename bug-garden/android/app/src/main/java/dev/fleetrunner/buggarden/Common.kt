@@ -23,7 +23,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -110,3 +113,14 @@ fun SectionHeading(text: String) {
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
     )
 }
+
+/**
+ * A test tag for a control inside a dialog.
+ *
+ * A dialog is its own window with its own composition, so the
+ * testTagsAsResourceId switch on the app's root does not reach it, and a
+ * plain testTag there never becomes a resource-id. This sets the switch on
+ * the control itself.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+fun Modifier.dialogTag(tag: String): Modifier = semantics { testTagsAsResourceId = true }.testTag(tag)

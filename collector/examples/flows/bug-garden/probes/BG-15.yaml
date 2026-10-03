@@ -13,6 +13,5 @@ appId: dev.fleetrunner.buggarden
 - tapOn:
     id: "field_search"
 - inputText: "f"
-- hideKeyboard
 - assertVisible:
     id: "button_clear_search"
