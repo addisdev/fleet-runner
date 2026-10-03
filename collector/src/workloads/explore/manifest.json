@@ -5,39 +5,134 @@
   "description": "Overnight exploratory QA: a vision model works through mission cards on tonight's build, the harness checks every step for crashes, hangs, blank screens, dead controls, accessibility and visual defects, and each candidate is replayed on a clean install before it is filed as a finding.",
   "params": {
     "type": "object",
-    "required": ["app_id"],
+    "required": [
+      "app_id"
+    ],
     "properties": {
-      "app_id": { "type": "string", "description": "Package or bundle id under test." },
-      "app_name": { "type": "string", "description": "What the model calls the app. Default: the app key." },
-      "app_key": { "type": "string", "description": "Mission directory and screen-map key under examples/missions/. Default: the last part of app_id." },
-      "missions": { "type": "array", "items": { "type": "string" }, "description": "Mission ids to run; default all of the app's cards, ordered by today's changes." },
-      "missions_dir": { "type": "string", "description": "Where mission cards live. Default FLEET_MISSIONS_DIR, then examples/missions." },
-      "bench": { "type": "boolean", "description": "Run the bench- cards only, file nothing, and report how many end states were reached (B4)." },
-      "model": { "type": "object", "description": "The driver: base_url (default FLEET_EXPLORE_BASE_URL, then http://ultra.local:4000), model (default FLEET_EXPLORE_MODEL, then \"pilot\"), max_pixels, keep_shots, tree_hints, extra_body, max_tokens, timeout_s. The key comes from the Keychain item fleet-explore-gateway or FLEET_EXPLORE_API_KEY, never from the spec." },
-      "judge": { "description": "The second model for visual and goal checks, same fields as model (default model \"vision\"), or false for none.", "oneOf": [{ "type": "object" }, { "const": false }] },
-      "minutes": { "type": "number", "description": "The night's budget per device. Default 150." },
-      "findings_per_night": { "type": "integer", "description": "New findings filed per app per night. Default 5." },
-      "replay_attempts": { "type": "integer", "description": "Clean-install replays per candidate. Default 2." },
-      "confirm_per_mission": { "type": "integer", "description": "Candidates replayed per mission, worst first. Default 6." },
-      "conditions": { "type": "array", "items": { "type": "string" }, "description": "Rotated across missions: baseline, dark, large-text, bold-text, locale:<tag>, network:<offline|3g|lossy>, rotate, background. Default [baseline]." },
-      "changed": { "type": "object", "description": "Aim missions at today's work (D6): {repo, since} reads git log, or {files: [...]}." },
-      "previous_app": { "type": "object", "description": "{sha256} of the previous build: each reproduced finding is replayed on it too and marked new or old (O6)." },
-      "surface": { "enum": ["touch", "dpad"], "description": "Override the device's surface. Default: dpad for Android TV / Fire TV / Roku / tvOS." },
-      "credentials": { "type": "object", "description": "{account, email_var, password_var} for the missions' setup flow; the password is read from the host's Keychain." },
-      "mirror": { "type": "boolean", "description": "Stream each step's screenshot to the job's live view. Default true." }
+      "app_id": {
+        "type": "string",
+        "description": "Package or bundle id under test."
+      },
+      "app_name": {
+        "type": "string",
+        "description": "What the model calls the app. Default: the app key."
+      },
+      "app_key": {
+        "type": "string",
+        "description": "Mission directory and screen-map key under examples/missions/. Default: the last part of app_id."
+      },
+      "missions": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Mission ids to run; default all of the app's cards, ordered by today's changes."
+      },
+      "missions_dir": {
+        "type": "string",
+        "description": "Where mission cards live. Default FLEET_MISSIONS_DIR, then examples/missions."
+      },
+      "bench": {
+        "type": "boolean",
+        "description": "Run the bench- cards only, file nothing, and report how many end states were reached (B4)."
+      },
+      "model": {
+        "type": "object",
+        "description": "The driver: base_url (default FLEET_EXPLORE_BASE_URL, then http://ultra.local:4000), model (default FLEET_EXPLORE_MODEL, then \"pilot\"), max_pixels, keep_shots, tree_hints, extra_body, max_tokens, timeout_s. The key comes from the Keychain item fleet-explore-gateway or FLEET_EXPLORE_API_KEY, never from the spec."
+      },
+      "judge": {
+        "description": "The second model for visual and goal checks, same fields as model (default model \"vision\"), or false for none.",
+        "oneOf": [
+          {
+            "type": "object"
+          },
+          {
+            "const": false
+          }
+        ]
+      },
+      "minutes": {
+        "type": "number",
+        "description": "The night's budget per device. Default 150."
+      },
+      "steps": {
+        "type": "integer",
+        "description": "Cap every mission at this many steps, for a short trial night."
+      },
+      "findings_per_night": {
+        "type": "integer",
+        "description": "New findings filed per app per night. Default 5."
+      },
+      "replay_attempts": {
+        "type": "integer",
+        "description": "Clean-install replays per candidate. Default 2."
+      },
+      "confirm_per_mission": {
+        "type": "integer",
+        "description": "Candidates replayed per mission, worst first. Default 6."
+      },
+      "conditions": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "Rotated across missions: baseline, dark, large-text, bold-text, locale:<tag>, network:<offline|3g|lossy>, rotate, background. Default [baseline]."
+      },
+      "changed": {
+        "type": "object",
+        "description": "Aim missions at today's work (D6): {repo, since} reads git log, or {files: [...]}."
+      },
+      "previous_app": {
+        "type": "object",
+        "description": "{sha256} of the previous build: each reproduced finding is replayed on it too and marked new or old (O6)."
+      },
+      "surface": {
+        "enum": [
+          "touch",
+          "dpad"
+        ],
+        "description": "Override the device's surface. Default: dpad for Android TV / Fire TV / Roku / tvOS."
+      },
+      "credentials": {
+        "type": "object",
+        "description": "{account, email_var, password_var} for the missions' setup flow; the password is read from the host's Keychain."
+      },
+      "mirror": {
+        "type": "boolean",
+        "description": "Stream each step's screenshot to the job's live view. Default true."
+      }
     }
   },
   "example": {
-    "app": { "name": "greenfolio", "build": "latest", "sha256": "latest", "platform": "android" },
-    "targets": { "match": "platform == 'android'", "exclusive": true },
-    "lease": { "ttl_s": 900 },
+    "app": {
+      "name": "greenfolio",
+      "build": "latest",
+      "sha256": "latest",
+      "platform": "android"
+    },
+    "targets": {
+      "match": "platform == 'android'",
+      "exclusive": true
+    },
+    "lease": {
+      "ttl_s": 900
+    },
     "params": {
       "app_id": "com.taylab.greenfolio.debug",
       "app_name": "GreenFolio",
       "app_key": "greenfolio",
       "minutes": 150,
-      "conditions": ["baseline", "dark", "locale:es", "large-text"],
-      "credentials": { "account": "showcase@greenfol.io", "email_var": "GREENFOLIO_TEST_EMAIL", "password_var": "GREENFOLIO_TEST_PASSWORD" }
+      "conditions": [
+        "baseline",
+        "dark",
+        "locale:es",
+        "large-text"
+      ],
+      "credentials": {
+        "account": "showcase@greenfol.io",
+        "email_var": "GREENFOLIO_TEST_EMAIL",
+        "password_var": "GREENFOLIO_TEST_PASSWORD"
+      }
     }
   }
 }

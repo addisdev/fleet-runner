@@ -57,6 +57,8 @@ type Params = {
   judge?: Partial<ModelWire> | false;
   /** Minutes for the whole night on each device. Default 150. */
   minutes?: number;
+  /** Cap every mission at this many steps, for a short trial night. */
+  steps?: number;
   /** New findings to file per app per night. Default 5. */
   findings_per_night?: number;
   replay_attempts?: number;
@@ -299,7 +301,10 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
         let cond;
         try { cond = await conditionFor(condName, t); }
         catch (e) { missionLog.push({ id: m.id, condition: condName, skipped: (e as Error).message }); continue; }
-        const mission: Mission = { ...m, launch_args: [...(m.launch_args ?? []), ...cond.launchArgs] };
+        const mission: Mission = {
+          ...m, launch_args: [...(m.launch_args ?? []), ...cond.launchArgs],
+          ...(p.steps ? { budget: { ...(m.budget ?? {}), steps: Math.min(p.steps, m.budget?.steps ?? p.steps) } } : {}),
+        };
         const runDir = path.join(work, t.id.replace(/[^\w.-]/g, "_"), `${String(k + 1).padStart(2, "0")}-${m.id}`);
         mkdirSync(runDir, { recursive: true });
         const hints = [

@@ -134,6 +134,11 @@ export function stateSig(nodes: A11yNode[] | null): string {
   return createHash("sha1").update(nodes.map((n) => `${n.cls}|${n.text}|${n.label}|${n.value}|${n.checked ? 1 : 0}|${n.focused ? 1 : 0}|${n.enabled ? 1 : 0}`).join("\n")).digest("hex");
 }
 
+/** Nodes wholly inside the screen: a control clipped by an edge is half-loaded, not unlabelled. */
+export function onScreen(nodes: A11yNode[], w: number, h: number): A11yNode[] {
+  return nodes.filter((n) => !n.bounds || (n.bounds.x >= 0 && n.bounds.y >= 0 && n.bounds.x + n.bounds.w <= w - 1 && n.bounds.y + n.bounds.h <= h - 1));
+}
+
 /** Nothing happened between two looks. */
 export function unchanged(h1: string, s1: string, h2: string, s2: string): boolean {
   return hamming(h1, h2) <= 2 && s1 === s2;
@@ -220,6 +225,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
   let pending: { tapKey: string; hashBefore: string; sigBefore: string; point: { x: number; y: number }; label: string } | null = null;
   let prevSig = "";
   let lastObs: Observation | null = null;
+  let lastScreenId: string | null = null;
 
   for (let i = 1; i <= maxSteps; i++) {
     if (Date.now() > missionDeadline) { stats.endedBy = "time"; break; }
@@ -253,6 +259,8 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     if (place.newEver) stats.newScreensEver++;
     if (place.newThisRun) { lastNewStep = i; stats.screensThisRun++; }
 
+    const prevScreen = lastScreenId;
+    lastScreenId = place.entry.id;
     const stepChecks: TrajectoryStep["checks"] = [];
     const notices: string[] = [];
     const flag = (c: Omit<Candidate, "step" | "screen" | "upTo" | "shot">) => {
@@ -320,11 +328,18 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
       continue;
     }
 
-    if (place.newThisRun && obs.nodes && !a11yDone.has(place.entry.id)) {
+    // Accessibility is judged once per screen, and only once the screen has
+    // settled: the same screen on two consecutive looks. A tree read while a
+    // screen animates in can lack the text a control will have a moment later
+    // (the bug garden's first night filed its Add button that way, and the
+    // replay "reproduced" it because the replay read the tree at the same
+    // moment). Controls cut off by the screen's edge are left out too: the
+    // text of a half-visible row is not in the tree yet.
+    if (obs.nodes && prevScreen === place.entry.id && !a11yDone.has(place.entry.id)) {
       a11yDone.add(place.entry.id);
       const geometry: A11yGeometry = caps.surface === "touch" && actuator.target.platform === "android"
         ? { unit: "unknown" } : { unit: "points" };
-      for (const f of a11yFindings(obs.nodes, geometry, { step: place.entry.name, cap: 5 })) {
+      for (const f of a11yFindings(onScreen(obs.nodes, obs.width, obs.height), geometry, { step: place.entry.name, cap: 5 })) {
         if (f.check !== "a11y-label") continue;
         flag({
           check: "a11y", severity: "low", source: "oracle", key: f.detail.replace(/ at \d+,\d+ \(\d+x\d+\)/, ""),
@@ -586,9 +601,12 @@ async function checkAgain(c: Candidate, d: LoopDeps): Promise<{ hit: boolean; no
       return { hit: unchanged(dhash(o1.png), stateSig(o1.nodes), dhash(o2.png), stateSig(o2.nodes)) };
     }
     case "a11y": {
+      // Settled, like the night's own check: a tree read mid-animation is the
+      // false positive this replay exists to catch.
+      await sleep(2000);
       const o = await a.observe();
       if (!o.nodes) return { hit: false, note: "no tree on replay" };
-      const again = a11yFindings(o.nodes, { unit: "unknown" }, { step: c.screen.name, cap: 25 })
+      const again = a11yFindings(onScreen(o.nodes, o.width, o.height), { unit: "unknown" }, { step: c.screen.name, cap: 25 })
         .some((f) => f.check === "a11y-label" && f.detail.replace(/ at \d+,\d+ \(\d+x\d+\)/, "") === c.key);
       return { hit: again };
     }

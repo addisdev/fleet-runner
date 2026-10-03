@@ -15,7 +15,8 @@ type Defect = { id: string; title: string; check: string; alt_checks?: string[];
 type Finding = { check: string; title: string; detail: string; screen: string; screen_name: string; shot?: string; filed?: boolean };
 type Step = { i: number; refused: { call: string; reason: string }[]; shot: string };
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+// The repo root: scripts/explore-bench -> collector -> fleet-runner.
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 /** screen_of(F): the first `screen_<key>` in the name, then the screen id, then the saved tree. */
 export function screenOf(f: Finding, keys: string[], tree: string): string | null {
