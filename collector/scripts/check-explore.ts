@@ -4,6 +4,7 @@
 // than part of the smoke run.
 import { runExploreChecks } from "../src/workloads/explore/explore.test.js";
 import { runRokuActuatorChecks } from "../src/workloads/explore/actuators/roku.test.js";
+import { runAppleActuatorChecks } from "../src/workloads/explore/actuators/apple.test.js";
 
 let failed = 0;
 let passed = 0;
@@ -14,5 +15,6 @@ const check = (name: string, cond: boolean, detail = "") => {
 };
 await runExploreChecks(check);
 await runRokuActuatorChecks(check);
+await runAppleActuatorChecks(check);
 console.log(failed ? `  ${failed} of ${passed + failed} explore checks failed` : `  ok — ${passed} explore checks`);
 process.exit(failed ? 1 : 0);

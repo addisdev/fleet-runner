@@ -9,6 +9,7 @@ import type { Target } from "../../types.js";
 import type { Actuator, Surface } from "../types.js";
 import { targetHost } from "../../../drivers/roku.js";
 import { AndroidActuator } from "./android.js";
+import { AppleActuator } from "./apple.js";
 import { RokuActuator } from "./roku.js";
 
 export type ActuatorOptions = {
@@ -30,6 +31,12 @@ export async function actuatorFor(t: Target, opts: ActuatorOptions): Promise<Act
         "`security add-generic-password -s fleet-roku-dev -a rokudev -w`");
     }
     return RokuActuator.open(t, { host: await targetHost(t), password: opts.rokuPassword, log: opts.log });
+  }
+  if (driver === "simctl" || driver === "devicectl") {
+    // iOS and tvOS, simulator or hardware, through the FleetDriver UI-test
+    // bundle in runner-ios. Its surface follows the platform: a tvOS target is
+    // driven by remote buttons whatever the mission says.
+    return new AppleActuator(t, opts.log);
   }
   throw new Error(`explore cannot drive ${t.id} yet: no actuator for the ${driver} driver on this executor`);
 }

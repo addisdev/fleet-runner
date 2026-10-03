@@ -1,0 +1,12 @@
+{
+  "id": "bench-leaving-home",
+  "app": "dozehound-tvos",
+  "title": "Start Leaving Home",
+  "persona": "A dog owner about to go out, who wants the calming scene on before they leave.",
+  "goal": "Start the Leaving Home scene playing, then stop pressing keys.",
+  "success": "Leaving Home is playing",
+  "budget": { "steps": 8, "minutes": 6 },
+  "surfaces": ["dpad"],
+  "launch_args": ["-uiTestStubCatalog"],
+  "check": { "text": ["Leaving Home"] }
+}
