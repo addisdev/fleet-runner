@@ -1,0 +1,7 @@
+# Build outputs and machine-local files. The APK is built, never committed.
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml

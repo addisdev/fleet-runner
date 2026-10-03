@@ -1,0 +1,28 @@
+# Probe BG-17: Editing a plant says Saved but keeps nothing.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends back on Monstera, which shows the old quantity.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn: "Monstera"
+- tapOn:
+    id: "button_edit"
+- tapOn:
+    id: "field_quantity"
+- eraseText: 40
+- inputText: "4"
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
+- tapOn:
+    id: "button_save"
+- assertVisible: 'Qty 4 · Living room · every 7 days'
+- back
+- assertVisible: 'Qty 1 · Living room · every 7 days'
+- tapOn: "Monstera"
+- assertVisible: 'Qty 1 · Living room · every 7 days'

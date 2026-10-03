@@ -1,0 +1,33 @@
+{
+  "id": "bench-invite",
+  "app": "bug-garden",
+  "title": "Invite a friend",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Invite your friend at friend@example.test to Sprout.",
+  "success": "the invite screen says 'Invite sent to friend@example.test'",
+  "budget": {
+    "steps": 20,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "profile",
+    "invite"
+  ],
+  "allow": [
+    "invite"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "invite",
+    "text": [
+      "Invite sent to friend@example.test"
+    ]
+  }
+}

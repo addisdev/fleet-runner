@@ -1,0 +1,21 @@
+{
+  "id": "explore-careless-typist",
+  "app": "bug-garden",
+  "title": "Careless typist fills every form badly",
+  "persona": "A hurried person who types fast, makes typos, leaves fields blank and puts words or decimals where numbers go.",
+  "goal": "Add two or three plants and edit one of the existing ones, filling the plant form carelessly each time: skip optional fields, type '2.5' or 'a few' as a quantity, leave the name empty once. See whether the app explains each problem.",
+  "success": "at least one plant was saved and at least one validation message was seen",
+  "budget": {
+    "steps": 60,
+    "minutes": 25
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "edit",
+    "detail"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml"
+}

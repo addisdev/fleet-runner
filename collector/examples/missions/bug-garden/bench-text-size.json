@@ -1,0 +1,29 @@
+{
+  "id": "bench-text-size",
+  "app": "bug-garden",
+  "title": "Make the text as large as it goes",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Make the app's text as large as the app allows.",
+  "success": "Settings says 'Text size: Largest'",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "settings"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "settings",
+    "text": [
+      "Text size: Largest"
+    ]
+  }
+}

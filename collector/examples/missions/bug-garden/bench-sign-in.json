@@ -1,0 +1,28 @@
+{
+  "id": "bench-sign-in",
+  "app": "bug-garden",
+  "title": "Sign in with the test account",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Sign in with the email garden@example.test and the password garden-pass-1.",
+  "success": "the plant list says 'Signed in as garden@example.test'",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "sign_in",
+    "home"
+  ],
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "home",
+    "text": [
+      "Signed in as garden@example.test"
+    ]
+  }
+}

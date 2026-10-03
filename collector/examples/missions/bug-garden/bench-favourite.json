@@ -1,0 +1,29 @@
+{
+  "id": "bench-favourite",
+  "app": "bug-garden",
+  "title": "Make Monstera a favourite",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Mark the Monstera as one of your favourites.",
+  "success": "the Monstera shows 'In your favourites'",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "detail"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Monstera",
+      "In your favourites"
+    ]
+  }
+}
