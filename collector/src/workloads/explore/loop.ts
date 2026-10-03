@@ -139,6 +139,21 @@ export function onScreen(nodes: A11yNode[], w: number, h: number): A11yNode[] {
   return nodes.filter((n) => !n.bounds || (n.bounds.x >= 0 && n.bounds.y >= 0 && n.bounds.x + n.bounds.w <= w - 1 && n.bounds.y + n.bounds.h <= h - 1));
 }
 
+/**
+ * What a tree's bounds are in. Android trees are pixels, judged in dp once the
+ * density is known; without it sizes are not judged at all rather than guessed.
+ * Everything else reaches the loop already scaled to screenshot pixels with no
+ * density, so it is "unknown" too.
+ */
+export function geometryOf(o: Observation): A11yGeometry {
+  return o.densityDpi ? { unit: "pixels", densityDpi: o.densityDpi } : { unit: "unknown" };
+}
+
+/** An a11y finding's identity: the control and the kind of problem, without where it sat or its exact size. */
+export function a11yKey(detail: string): string {
+  return detail.replace(/ at -?\d+,-?\d+ \(\d+x\d+\)/, "").replace(/ is \d+x\d+pt,/, " is undersized,");
+}
+
 /** Nothing happened between two looks. */
 export function unchanged(h1: string, s1: string, h2: string, s2: string): boolean {
   return hamming(h1, h2) <= 2 && s1 === s2;
@@ -337,13 +352,13 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     // text of a half-visible row is not in the tree yet.
     if (obs.nodes && prevScreen === place.entry.id && !a11yDone.has(place.entry.id)) {
       a11yDone.add(place.entry.id);
-      const geometry: A11yGeometry = caps.surface === "touch" && actuator.target.platform === "android"
-        ? { unit: "unknown" } : { unit: "points" };
-      for (const f of a11yFindings(onScreen(obs.nodes, obs.width, obs.height), geometry, { step: place.entry.name, cap: 5 })) {
-        if (f.check !== "a11y-label") continue;
+      for (const f of a11yFindings(onScreen(obs.nodes, obs.width, obs.height), geometryOf(obs), { step: place.entry.name, cap: 5 })) {
+        if (f.check !== "a11y-label" && f.check !== "a11y-target-size") continue;
+        const size = f.check === "a11y-target-size";
         flag({
-          check: "a11y", severity: "low", source: "oracle", key: f.detail.replace(/ at \d+,\d+ \(\d+x\d+\)/, ""),
-          title: `Unlabelled control on ${place.entry.name}`, detail: f.detail,
+          check: "a11y", severity: "low", source: "oracle", key: a11yKey(f.detail),
+          title: size ? `Touch target too small on ${place.entry.name}` : `Unlabelled control on ${place.entry.name}`,
+          detail: f.detail,
         });
       }
     }
@@ -606,8 +621,8 @@ async function checkAgain(c: Candidate, d: LoopDeps): Promise<{ hit: boolean; no
       await sleep(2000);
       const o = await a.observe();
       if (!o.nodes) return { hit: false, note: "no tree on replay" };
-      const again = a11yFindings(onScreen(o.nodes, o.width, o.height), { unit: "unknown" }, { step: c.screen.name, cap: 25 })
-        .some((f) => f.check === "a11y-label" && f.detail.replace(/ at \d+,\d+ \(\d+x\d+\)/, "") === c.key);
+      const again = a11yFindings(onScreen(o.nodes, o.width, o.height), geometryOf(o), { step: c.screen.name, cap: 25 })
+        .some((f) => (f.check === "a11y-label" || f.check === "a11y-target-size") && a11yKey(f.detail) === c.key);
       return { hit: again };
     }
     case "visual": {

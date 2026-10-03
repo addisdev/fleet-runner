@@ -129,6 +129,13 @@ export async function runExploreChecks(check: Check): Promise<void> {
   check("explore: a control labelled by its children is not unlabelled; one with no label anywhere is",
     a11y.length === 1 && a11y[0].detail.includes("button_clear"), JSON.stringify(a11y));
 
+  const { geometryOf, a11yKey } = await import("./loop.js");
+  const tiny = [node({ cls: "android.widget.Button", label: "Clear search", depth: 3, bounds: { x: 900, y: 75, w: 53, h: 53 } })];
+  const sized = a11yFindings(tiny, geometryOf({ densityDpi: 420 } as Observation), { step: "search" }).filter((f) => f.check === "a11y-target-size");
+  check("explore: with the density, a 53px control at 420dpi is an undersized (20dp) target",
+    sized.length === 1 && a11yKey(sized[0].detail) === "Clear search is undersized, under the 44pt minimum", JSON.stringify(sized));
+  check("explore: without a density, sizes are not judged", geometryOf({} as Observation).unit === "unknown");
+
   // --- screen identity ----------------------------------------------------
   const listA = [node({ id: "com.x:id/title", text: "My plants" }), node({ text: "Fern 3" }), node({ text: "Add plant" })];
   const listB = [node({ id: "com.x:id/title", text: "My plants" }), node({ text: "Basil 12" }), node({ text: "Add plant" })];

@@ -60,6 +60,12 @@ export type Observation = {
   focus: string | null;
   /** Whether a soft keyboard is covering the screen, when the platform says. */
   keyboard: boolean | null;
+  /**
+   * Screen density, when the tree's bounds are pixels and the platform says:
+   * what turns a 53-pixel button into the 20dp touch target it is. Absent
+   * means touch-target sizes are not judged.
+   */
+  densityDpi?: number | null;
 };
 
 // ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { exec } from "../../../fleet-client.js";
-import { parseUiautomatorDump, type A11yNode } from "../../../a11y-tree.js";
+import { parseAndroidDensity, parseUiautomatorDump, type A11yNode } from "../../../a11y-tree.js";
 import { parseCrashLogcat } from "../../../soak-samples.js";
 import { ADB } from "../../device.js";
 import type { Target } from "../../types.js";
@@ -327,6 +327,7 @@ export class AndroidActuator implements Actuator {
       foreground: parseForeground(win),
       focus: this.caps.surface === "dpad" ? focusLine(nodes) : null,
       keyboard: this.caps.surface === "touch" ? parseImeShown(ime) : null,
+      densityDpi: await this.density(),
     };
   }
 
@@ -421,6 +422,18 @@ export class AndroidActuator implements Actuator {
         await sleep(Math.min(10_000, Math.max(0, a.ms)));
         return;
     }
+  }
+
+  private densityCache: number | null | undefined = undefined;
+  /** `wm density` once per actuator: the override when one is set, else the physical density. */
+  private async density(): Promise<number | null> {
+    if (this.densityCache !== undefined) return this.densityCache;
+    try {
+      this.densityCache = parseAndroidDensity((await this.shell(["wm", "density"])).stdout);
+    } catch {
+      this.densityCache = null;
+    }
+    return this.densityCache;
   }
 
   private sizeCache: { width: number; height: number } | null = null;
