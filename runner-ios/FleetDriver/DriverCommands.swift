@@ -77,10 +77,17 @@ final class DriverCommands {
 
     private func health() -> DriverHTTPServer.Response {
         #if canImport(UIKit)
-        // UIScreen in the test RUNNER process. The runner is an ordinary app on
-        // the device, so its main screen is the device's screen; bounds are in
-        // points, in the runner's own (portrait on a phone) orientation.
-        let bounds = UIScreen.main.bounds
+        // The screen in points, from the HOME SCREEN's frame, not from UIScreen
+        // in this process. The test runner is an app with no launch screen, so
+        // iOS runs it in legacy compatibility mode and its UIScreen reports a
+        // 320x480 iPhone 4 -- on an iPhone 16, which made every tap land at
+        // 0.82 of where it was aimed until this was found. SpringBoard (and
+        // PineBoard on a TV) is always running and always the full screen.
+        // UIScreen is the fallback for the moment the home screen cannot be
+        // asked, and its scale is reported only for the log: the Mac side
+        // takes pixels-per-point from the screenshot itself.
+        let home = homeScreen.frame
+        let bounds = home.width > 0 && home.height > 0 ? home : UIScreen.main.bounds
         let scale = UIScreen.main.scale
         let os = UIDevice.current.systemVersion
         let model = UIDevice.current.model
@@ -177,9 +184,17 @@ final class DriverCommands {
         if let err = snapshotError, debug is NSNull {
             throw DriverError.failed("snapshot failed: \(err)")
         }
+        // The soft keyboard, asked separately. On iOS 26 the keyboard is drawn
+        // by another process and is NOT in the app's snapshot -- a tree with a
+        // search field focused and a keyboard covering half the screen had no
+        // Keyboard node in it -- but XCUITest's own keyboards query still
+        // finds it. tvOS's keyboard is a screen of the app's own, so the same
+        // query answers there too.
+        let keyboard = a.keyboards.firstMatch.exists
         return .json([
             "ok": true,
             "nodes": nodes,
+            "keyboard": keyboard,
             "debugDescription": debug,
             "snapshotError": snapshotError.map { $0 as Any } ?? NSNull(),
         ])

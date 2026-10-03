@@ -2,7 +2,8 @@
  * Drive one Apple simulator through the explore actuator, end to end, and say
  * what happened and how long it took.
  *
- *   npx tsx scripts/explore-apple-check.ts <udid> [--app <bundleId>] [--out <dir>] [--presses <n>]
+ *   npx tsx scripts/explore-apple-check.ts <udid> [--app <bundleId>] [--out <dir>] [--presses <n>] [--dump]
+ *        [--reset] [--file <path.app>]
  *
  * It boots nothing and creates nothing: hand it a simulator that is already
  * booted (and, on a shared Mac, one you acquired through Load Warden). The
@@ -42,7 +43,7 @@ const opt = (name: string): string | undefined => {
   return i >= 0 ? argv[i + 1] : undefined;
 };
 if (!udid) {
-  console.error("usage: explore-apple-check.ts <udid> [--app <bundleId>] [--out <dir>] [--presses <n>]");
+  console.error("usage: explore-apple-check.ts <udid> [--app <bundleId>] [--out <dir>] [--presses <n>] [--dump] [--reset] [--file <path.app>]");
   process.exit(2);
 }
 
@@ -107,18 +108,27 @@ async function main() {
     say(`driver up: ${Date.now() - s} ms (includes any build)`);
 
     s = Date.now();
-    await actuator.launch(appId);
-    say(`launch ${appId}: ${Date.now() - s} ms`);
+    if (argv.includes("--reset") || opt("file")) {
+      // The mission path: clean state (and a fresh install with --file), then launch.
+      await actuator.reset(appId, { file: opt("file") });
+      say(`reset + launch ${appId}: ${Date.now() - s} ms`);
+    } else {
+      await actuator.launch(appId);
+      say(`launch ${appId}: ${Date.now() - s} ms`);
+    }
     await actuator.crashes(appId);
 
     const first = await look("after launch");
     writeFileSync(path.join(out, `${platform}-1-launch.png`), first.png);
+    if (argv.includes("--dump")) writeFileSync(path.join(out, `${platform}-1-launch.json`), JSON.stringify(first.nodes, null, 1));
 
     if (platform === "ios") {
-      // A labelled cell in the top half, so the tap lands on something visible.
-      const cell = (first.nodes ?? []).find((n) =>
-        (n.cls === "Cell" || n.cls === "Button") && n.label && n.bounds && n.bounds.w > 0 &&
-        n.bounds.y > first.height * 0.12 && n.bounds.y < first.height * 0.6);
+      // "General" in Settings, else a labelled cell in the top half. Never the
+      // Apple Account row: it opens a sign-in sheet with no back button.
+      const candidates = (first.nodes ?? []).filter((n) =>
+        (n.cls === "Cell" || n.cls === "Button") && n.label && !/Apple Account|Sign in/i.test(n.label) &&
+        n.bounds && n.bounds.w > 0 && n.bounds.y > first.height * 0.12 && n.bounds.y < first.height * 0.8);
+      const cell = candidates.find((n) => n.label === "General") ?? candidates[0];
       if (cell?.bounds) {
         await act({ kind: "tap", x: cell.bounds.x + cell.bounds.w / 2, y: cell.bounds.y + cell.bounds.h / 2 }, `"${cell.label}"`);
         await act({ kind: "wait", ms: 800 });
@@ -141,8 +151,14 @@ async function main() {
       } else {
         say("no labelled cell in the top half to tap; skipping the tap");
       }
-      const back = await look("back on the first screen");
-      const field = (back.nodes ?? []).find((n) => n.cls === "SearchField" || n.cls === "TextField");
+      let back = await look("back on the first screen");
+      const isField = (n: { cls: string; bounds: unknown }) => (n.cls === "SearchField" || n.cls === "TextField") && !!n.bounds;
+      if (!(back.nodes ?? []).some(isField)) {
+        // Settings keeps its search field above the first row until pulled down.
+        await act({ kind: "scroll", direction: "up", factor: 0.3 }, "pull down for the search field");
+        back = await look("after pulling down");
+      }
+      const field = (back.nodes ?? []).find(isField);
       if (field?.bounds) {
         await act({ kind: "type", text: "General", x: field.bounds.x + field.bounds.w / 2, y: field.bounds.y + field.bounds.h / 2 });
         await act({ kind: "wait", ms: 800 });
@@ -154,7 +170,8 @@ async function main() {
         const over = await look("after overwrite");
         say(`  the field now holds: ${JSON.stringify((over.nodes ?? []).find((n) => n.cls === field.cls)?.value ?? null)}`);
         await act({ kind: "hide_keyboard" });
-        await look("after hide_keyboard");
+        const hidden = await look("after hide_keyboard");
+        if (hidden.keyboard) say("  the keyboard is still up after hide_keyboard");
       } else {
         say("no search or text field on the first screen; skipping typing");
         writeFileSync(path.join(out, `${platform}-2-typed.png`), back.png);

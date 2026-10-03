@@ -248,7 +248,11 @@ export function focusLine(nodes: A11yNode[] | null): string | null {
   return [...chain, leaf].join(" > ");
 }
 
-/** Whether a soft keyboard is in the tree. Null when there is no tree to look in. */
+/**
+ * Whether a soft keyboard is in the tree. Null when there is no tree to look
+ * in. Only the fallback: the driver's /tree also answers `keyboard` from
+ * XCUITest's keyboards query, which is the one that works on iOS 26.
+ */
 export function keyboardShown(nodes: A11yNode[] | null): boolean | null {
   if (!nodes) return null;
   return nodes.some((n) => n.cls === "Keyboard" && (!n.bounds || (n.bounds.w > 0 && n.bounds.h > 0)));
@@ -746,18 +750,12 @@ export class AppleActuator implements Actuator {
     if (!this.scale) this.scale = pixelsPerPoint({ width, height }, await this.sizePt());
     const scale = this.scale;
 
-    let nodes: A11yNode[] | null = null;
-    let treeSource: string | null = null;
-    try {
-      const q = this.appId ? `?bundleId=${encodeURIComponent(this.appId)}` : "";
-      const tree = (await this.call("GET", `/tree${q}`)) as { nodes: DriverNode[]; debugDescription: string | null };
-      nodes = nodesFromDriver(tree.nodes, scale);
-      treeSource = "xcuitest snapshot";
-    } catch (e) {
-      // Ordinary: a snapshot can fail mid-transition. The contract says carry on with the picture.
-      this.log(`tree failed on ${this.target.id}: ${(e as Error).message.slice(0, 200)}`);
-    }
-
+    // Foreground before the tree, because the answer decides WHICH tree. A
+    // snapshot of an app that is not in front does not fail fast: XCUITest
+    // waits for it to settle and comes back after ~38 s with nothing (seen on
+    // Settings after a home press). So the tree is read from whatever is in
+    // front -- the app, or the home screen -- and skipped when that is some
+    // third app XCUITest cannot name.
     let foreground: string | null = null;
     try {
       const ids = this.appId ? `?bundleIds=${encodeURIComponent(this.appId)}` : "";
@@ -767,10 +765,29 @@ export class AppleActuator implements Actuator {
       this.log(`foreground failed on ${this.target.id}: ${(e as Error).message.slice(0, 200)}`);
     }
 
+    let nodes: A11yNode[] | null = null;
+    let treeSource: string | null = null;
+    let keyboard: boolean | null = null;
+    const treeOf = foreground && foreground !== FOREGROUND_OTHER ? foreground : foreground === null ? this.appId : null;
+    if (treeOf) {
+      try {
+        const tree = (await this.call("GET", `/tree?bundleId=${encodeURIComponent(treeOf)}`, undefined,
+          { timeoutMs: 30_000 })) as { nodes: DriverNode[]; keyboard?: boolean; debugDescription: string | null };
+        nodes = nodesFromDriver(tree.nodes, scale);
+        // The driver's own keyboard query first: on iOS 26 the keyboard is
+        // another process's view and never appears in the app's tree.
+        keyboard = typeof tree.keyboard === "boolean" ? tree.keyboard || keyboardShown(nodes) === true : keyboardShown(nodes);
+        treeSource = "xcuitest snapshot";
+      } catch (e) {
+        // Ordinary: a snapshot can fail mid-transition. The contract says carry on with the picture.
+        this.log(`tree failed on ${this.target.id}: ${(e as Error).message.slice(0, 200)}`);
+      }
+    }
+
     return {
       png, width, height, nodes, treeSource, foreground,
       focus: isTv(this.target) ? focusLine(nodes) : null,
-      keyboard: keyboardShown(nodes),
+      keyboard,
     };
   }
 
@@ -895,9 +912,11 @@ export class AppleActuator implements Actuator {
       await this.call("POST", "/quit", {}, { timeoutMs: 5000 }).catch(() => {});
     }
     if (child && !this.childExit) {
-      // The test returns after /quit and xcodebuild exits on its own within a
-      // few seconds; only a driver that did not hear the quit needs a signal.
-      const exited = await waitFor(() => this.childExit !== null, 20_000);
+      // The test returns after /quit, but xcodebuild then spends a while
+      // writing its result bundle -- over 20 s on a loaded Mac. Nothing in it
+      // is wanted, so after a short grace it is told to stop; the runner on
+      // the device has already returned from the test by then.
+      const exited = await waitFor(() => this.childExit !== null, 10_000);
       if (!exited) {
         child.kill("SIGTERM");
         if (!(await waitFor(() => this.childExit !== null, 10_000))) child.kill("SIGKILL");
