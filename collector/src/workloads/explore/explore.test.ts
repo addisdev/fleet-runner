@@ -19,7 +19,7 @@ import type { A11yNode } from "../../a11y-tree.js";
 import { escapeInputText, focusLine, launchExtras, parseAnrEvents, parseForeground, parseImeShown, pngSize } from "./actuators/android.js";
 import { parseConditions } from "./conditions.js";
 import { dhash, hamming, isBlank, shrinkForModel } from "./image.js";
-import { fileable, modelConfigs, paramsProblem, pickCandidates } from "./index.js";
+import { fileable, missingFlowVars, modelConfigs, paramsProblem, pickCandidates } from "./index.js";
 import { parseJsonLoose, visualIssuesFrom } from "./judge.js";
 import { leash, leftApp, snap } from "./leash.js";
 import { benchCheck, confirm, fingerprint, normalizeMessage, runMission, type LoopDeps } from "./loop.js";
@@ -169,6 +169,11 @@ export async function runExploreChecks(check: Check): Promise<void> {
   const ordered = orderMissions(cards, { surface: "touch", words: ["plantdetail"] });
   check("explore: today's changes order the cards, bench cards stay out", ordered.map((m) => m.id).join() === "m2,m1");
   check("explore: bench mode runs only bench cards", orderMissions(cards, { surface: "touch", bench: true }).map((m) => m.id).join() === "bench-1");
+
+  check("explore: a sign-in flow that needs a password is skipped without one; one with its own account is not",
+    missingFlowVars("greenfolio/sign-in.yaml", {}).join() === "GREENFOLIO_TEST_EMAIL,GREENFOLIO_TEST_PASSWORD"
+    && missingFlowVars("greenfolio/sign-in.yaml", { GREENFOLIO_TEST_EMAIL: "a", GREENFOLIO_TEST_PASSWORD: "b" }).length === 0
+    && missingFlowVars("bug-garden/sign-in.yaml", {}).length === 0);
 
   // --- params ---------------------------------------------------------------
   check("explore: app_id is required", paramsProblem({}) !== null && paramsProblem({ app_id: "com.x" }) === null);

@@ -29,6 +29,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { BASE, NoTargetsError } from "../../fleet-client.js";
 import { keychainPassword } from "../../secrets.js";
+import { resolveFlow } from "../flows.js";
 import type { Job, Target, WorkloadCtx } from "../types.js";
 import { actuatorFor } from "./actuators/index.js";
 import { conditionFor, parseConditions } from "./conditions.js";
@@ -129,6 +130,14 @@ export function pickCandidates(cs: Candidate[], app: string, surface: string, li
 }
 
 /** Does this finding get filed? Crashes stand on their log; everything else must reproduce. */
+/** Variables a setup flow reads (`${NAME}`) that `env` does not supply; APP_ID always is. */
+export function missingFlowVars(flow: string, env: Record<string, string>): string[] {
+  let text = "";
+  try { text = readFileSync(resolveFlow(flow), "utf8"); } catch { return [`the flow ${flow} itself`]; }
+  const wanted = new Set([...text.matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).filter((v) => v !== "APP_ID"));
+  return [...wanted].filter((v) => !(v in env));
+}
+
 export function fileable(c: Confirmed): boolean {
   if (c.check === "crash" || c.check === "anr") return true;
   return c.reproduced > 0;
@@ -255,16 +264,21 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
     targets.splice(0, targets.length, ...targets.filter((t) => granted.has(t.id)));
   }
 
+  let allOk = targets.length > 0;
   try {
     for (const t of targets) {
       if (Date.now() > deadline) break;
       const r = await exploreDevice(t);
+      if (!r.ok) allOk = false;
       await ctx.postResult({ job_id: job.job_id, device_id: t.id, iter: 0, ...r });
     }
   } finally {
     if (job.targets?.exclusive) await ctx.locks.release(job.job_id);
   }
-  await ctx.postResult({ job_id: job.job_id, device_id: `host:${ctx.host}`, iter: 0, final: true, ok: true });
+  // The night failed if any device explored nothing. A device that found bugs
+  // is a device that worked: findings are the output, not the failure.
+  await ctx.postResult({ job_id: job.job_id, device_id: `host:${ctx.host}`, iter: 0, final: true, ok: allOk,
+    ...(allOk ? {} : { error: "one or more devices completed no mission; see their rows" }) });
 
   async function exploreDevice(t: Target): Promise<Record<string, unknown>> {
     let actuator: Actuator;
@@ -279,10 +293,16 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
     const lastRun: Record<string, string> = existsSync(lastRunFile) ? JSON.parse(readFileSync(lastRunFile, "utf8")) as Record<string, string> : {};
     const problems: string[] = [];
     const cards = loadMissions(appKey, p.missions_dir, (m) => problems.push(m));
-    // A card that signs in needs credentials; without them it would fail at
-    // its setup flow every night and spend the budget learning nothing.
+    // A card whose setup flow needs variables this host was not given (the
+    // GreenFolio sign-in needs a password from the Keychain) would fail at its
+    // setup every night and spend the budget learning nothing, so it is left
+    // out and said so. A flow that carries its own test account needs nothing.
     const missions = orderMissions(cards, { surface, words, lastRun, only: p.missions, bench: p.bench })
-      .filter((m) => !m.setup_flow || !/sign-?in/i.test(m.setup_flow) || Object.keys(setupEnv).length > 0);
+      .filter((m) => {
+        const missing = m.setup_flow ? missingFlowVars(m.setup_flow, setupEnv) : [];
+        if (missing.length) problems.push(`${m.id}: its setup flow needs ${missing.join(", ")}, which this job did not provide`);
+        return missing.length === 0;
+      });
     if (missions.length === 0) {
       await actuator.close();
       return { ok: false, error: `no ${p.bench ? "bench " : ""}missions for ${appKey} on a ${surface} device (looked in ${p.missions_dir ?? "examples/missions"}/${appKey})${problems.length ? `; problems: ${problems.join("; ")}` : ""}` };
