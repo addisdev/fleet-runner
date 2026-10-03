@@ -318,6 +318,20 @@ export function parseXcuiDebugDescription(out: string): { nodes: A11yNode[]; pro
 // The checks
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether any node inside `nodes[i]`'s subtree has text, a label or a value.
+ * The list is in document order with depths, so the subtree is the run of
+ * following nodes deeper than it.
+ */
+function descendantAnnounces(nodes: A11yNode[], i: number): boolean {
+  const d = nodes[i].depth;
+  for (let j = i + 1; j < nodes.length && nodes[j].depth > d; j++) {
+    const c = nodes[j];
+    if ([c.label, c.text, c.value].some((s) => s.trim() !== "")) return true;
+  }
+  return false;
+}
+
 /** How a node reads in a finding, when it has no label to name it by. */
 function nameOf(n: A11yNode): string {
   const cls = n.cls.replace(/^XCUIElementType/, "").split(".").pop() || "element";
@@ -374,13 +388,21 @@ export function a11yFindings(
   let sized = 0;
   const seen = new Set<string>();
 
-  for (const n of nodes) {
+  for (const [i, n] of nodes.entries()) {
     if (!n.tappable || !n.enabled) continue;
     // A zero-area node is not on screen; judging it produces findings nobody
     // can act on, because there is nothing there to look at.
     if (n.bounds && (n.bounds.w <= 0 || n.bounds.h <= 0)) continue;
 
-    const announced = [n.label, n.text, n.value].some((s) => s.trim() !== "");
+    // What a screen reader announces for a control includes its children:
+    // TalkBack and VoiceOver both read the text inside a focusable container
+    // that has none of its own. Compose puts a row's text, and an icon
+    // button's contentDescription, on CHILD nodes of the clickable one, so
+    // reading the clickable node alone flagged every list row and every icon
+    // button in a Compose app as unlabelled (found by explore's first real
+    // run on the bug garden: 4 false findings on one screen, each of which
+    // "reproduced" because the check is deterministic).
+    const announced = [n.label, n.text, n.value].some((s) => s.trim() !== "") || descendantAnnounces(nodes, i);
     if (!announced) {
       unlabelled++;
       const key = `unlabelled:${nameOf(n)}`;

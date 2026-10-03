@@ -116,6 +116,19 @@ export async function runExploreChecks(check: Check): Promise<void> {
   check("explore: an upgrade button is a purchase", !leash({ kind: "tap", x: 1, y: 1 }, node({ text: "Upgrade to Pro" }), null, []).ok);
   check("explore: the permission dialog is not leaving the app", !leftApp("com.android.permissioncontroller", "com.x") && leftApp("com.android.chrome", "com.x"));
 
+  // --- accessibility on Compose trees ---------------------------------------
+  const { a11yFindings } = await import("../../a11y-tree.js");
+  const compose = [
+    node({ cls: "android.view.View", id: "plant_row", depth: 3, bounds: { x: 0, y: 600, w: 1080, h: 210 } }),
+    node({ cls: "android.widget.TextView", text: "Fern", tappable: false, depth: 4, bounds: { x: 40, y: 620, w: 300, h: 60 } }),
+    node({ cls: "android.view.View", id: "button_search", depth: 3, bounds: { x: 700, y: 75, w: 126, h: 126 } }),
+    node({ cls: "android.view.View", label: "Search", tappable: false, depth: 4, bounds: { x: 720, y: 95, w: 80, h: 80 } }),
+    node({ cls: "android.view.View", id: "button_clear", depth: 3, bounds: { x: 900, y: 75, w: 53, h: 53 } }),
+  ];
+  const a11y = a11yFindings(compose, { unit: "unknown" }, { step: "home" }).filter((f) => f.check === "a11y-label");
+  check("explore: a control labelled by its children is not unlabelled; one with no label anywhere is",
+    a11y.length === 1 && a11y[0].detail.includes("button_clear"), JSON.stringify(a11y));
+
   // --- screen identity ----------------------------------------------------
   const listA = [node({ id: "com.x:id/title", text: "My plants" }), node({ text: "Fern 3" }), node({ text: "Add plant" })];
   const listB = [node({ id: "com.x:id/title", text: "My plants" }), node({ text: "Basil 12" }), node({ text: "Add plant" })];
