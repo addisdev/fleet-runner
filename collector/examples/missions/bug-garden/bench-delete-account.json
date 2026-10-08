@@ -1,0 +1,33 @@
+{
+  "id": "bench-delete-account",
+  "app": "bug-garden",
+  "title": "Delete the account",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Delete your Sprout account completely, confirming when asked.",
+  "success": "the sign-in screen says 'Your account has been deleted.'",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "profile",
+    "sign_in"
+  ],
+  "allow": [
+    "delete"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "sign_in",
+    "text": [
+      "Your account has been deleted."
+    ]
+  }
+}

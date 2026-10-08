@@ -203,6 +203,46 @@ targets:
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: NO
 
+  # --- FleetDriver: the explore workload's hands on Apple devices --------------
+  #
+  # A UI test that starts an HTTP server inside the test runner and turns
+  # requests into XCUITest calls (FleetDriver/FleetDriverUITests.swift says
+  # what and why). Two targets from one directory, for the same reason the app
+  # has three: a tvOS bundle and an iOS bundle are separate binaries against
+  # separate SDKs.
+  #
+  # Neither depends on an app, deliberately. A UI-test bundle with a target
+  # application installs that application on every run -- and on a real iPhone
+  # in the fleet, the FleetRunner app already installed is the agent the fleet
+  # talks to, which a debug build from this repository would silently replace.
+  # The driver reaches every app by bundle id (XCUIApplication(bundleIdentifier:)),
+  # so it needs no target, and without one the scheme builds the test bundle
+  # alone, in a fraction of the time.
+  FleetDriverUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [FleetDriver]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetdriver
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+  FleetDriverUITestsTV:
+    type: bundle.ui-testing
+    platform: tvOS
+    sources: [FleetDriver]
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.taylab.fleetdriver.tv
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "3"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: NO
+
 schemes:
   FleetRunner:
     build:
@@ -218,3 +258,18 @@ schemes:
     build:
       targets:
         FleetRunnerVision: all
+  # The driver's own schemes, so `build-for-testing` builds the driver and
+  # nothing else, and the FleetRunner scheme's test action -- which the
+  # ui-test workload runs -- is exactly what it was.
+  FleetDriver:
+    build:
+      targets:
+        FleetDriverUITests: [test]
+    test:
+      targets: [FleetDriverUITests]
+  FleetDriverTV:
+    build:
+      targets:
+        FleetDriverUITestsTV: [test]
+    test:
+      targets: [FleetDriverUITestsTV]

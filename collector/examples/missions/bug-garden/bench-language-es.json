@@ -1,0 +1,28 @@
+{
+  "id": "bench-language-es",
+  "app": "bug-garden",
+  "title": "Change the language to Spanish",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Change the app's language to Spanish.",
+  "success": "the app is in Spanish (the settings button or title reads 'Ajustes')",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "settings"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Ajustes"
+    ]
+  }
+}

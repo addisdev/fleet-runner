@@ -1,0 +1,25 @@
+{
+  "id": "explore-german-speaker",
+  "app": "bug-garden",
+  "title": "A German speaker uses the app in German",
+  "persona": "A German speaker who is more comfortable reading German than English.",
+  "goal": "Switch the app to German (Deutsch), then use it normally: browse the plants, open two of them, search for one, edit one, and open the screen for inviting a friend from your profile.",
+  "success": "the app is in German and the agent reached the plant list, a plant, search and the invite screen",
+  "budget": {
+    "steps": 50,
+    "minutes": 20
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "settings",
+    "home",
+    "detail",
+    "search",
+    "edit",
+    "profile",
+    "invite"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml"
+}

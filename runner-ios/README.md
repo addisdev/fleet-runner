@@ -107,6 +107,36 @@ model: silently, with no error, while `.cpuOnly` gave logits identical to the
 Mac. Cross-checking against another device is the only reason that did not ship
 as a real accuracy number.
 
+## FleetDriver: remote control for the explore workload
+
+`FleetDriver/` is a UI test that does not test anything. With
+`FLEET_DRIVER=1` it starts an HTTP server inside the XCUITest runner and turns
+requests into XCUITest calls — screenshot, element tree, tap, swipe, type,
+remote buttons — so the collector's explore workload can drive an iPhone or an
+Apple TV the way it drives an Android phone over adb. The file headers say what
+each endpoint does; the Mac side is
+`collector/src/workloads/explore/actuators/apple.ts`, which builds and starts
+it for you. By hand:
+
+```
+./generate.sh
+xcodebuild build-for-testing -project FleetRunner.xcodeproj -scheme FleetDriver \
+  -destination 'generic/platform=iOS Simulator' -derivedDataPath ~/.fleet/explore/derived/ios-sim
+TEST_RUNNER_FLEET_DRIVER=1 TEST_RUNNER_FLEET_DRIVER_PORT=8123 \
+xcodebuild test-without-building -project FleetRunner.xcodeproj -scheme FleetDriver \
+  -destination 'platform=iOS Simulator,id=<udid>' -derivedDataPath ~/.fleet/explore/derived/ios-sim \
+  -only-testing:FleetDriverUITests/FleetDriverUITests/testDrive
+curl -s localhost:8123/health
+```
+
+For an Apple TV use the `FleetDriverTV` scheme, `tvOS Simulator` and
+`-only-testing:FleetDriverUITestsTV/FleetDriverUITests/testDrive`.
+
+Verified on iOS 26.5 and tvOS 26.5 simulators. Not on the iOS 27 simulator
+runtime, where XCUITest runners abort on this Mac, and **never on hardware**: a
+physical device needs the runner signed (`FLEET_APPLE_TEAM_ID`) and is reached
+over its CoreDevice tunnel address, and neither has carried a request yet.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). What the app links when you build it, and under

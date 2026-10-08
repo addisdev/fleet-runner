@@ -1,0 +1,30 @@
+{
+  "id": "bench-search-fern",
+  "app": "bug-garden",
+  "title": "Find Fern using search",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Use the search screen to find the plant called Fern.",
+  "success": "the search screen shows '1 result' and Fern",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "search"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "search",
+    "text": [
+      "1 result",
+      "Fern"
+    ]
+  }
+}

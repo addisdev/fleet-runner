@@ -1,0 +1,20 @@
+{
+  "id": "explore-every-button",
+  "app": "dozehound-tv",
+  "title": "Press every button on the remote",
+  "persona": "Someone who has picked up an unfamiliar remote and presses every button on it to see what happens -- arrows, OK, Back, Home, Menu, play/pause, rewind, fast-forward, search -- in no particular order, sometimes twice in a row, sometimes quickly.",
+  "goal": "Press every button the remote has, in different places in the app (with the channel bar open and closed, on each channel tile, on Leaving Home). Come back into the app whenever a button takes you out.",
+  "success": "every remote button was pressed at least once with the bar open and once with it closed, and the app is still playing",
+  "budget": {
+    "steps": 60,
+    "minutes": 20
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "player",
+    "channel_bar",
+    "leaving_home"
+  ]
+}

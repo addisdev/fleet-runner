@@ -289,6 +289,13 @@ const PATHS = {
       <path d="M7.5 4.5h6M7.5 8.5h4M7.5 12.5h5" />
     </>
   ),
+  // A magnifier with a mark in it: something looked at, and something found.
+  findings: (
+    <>
+      <circle cx="7" cy="7" r="4.75" />
+      <path d="M10.5 10.5L14 14M7 4.75v2.5M7 9.25v.01" />
+    </>
+  ),
   alerts: (
     <>
       <path d="M4 11.25V7a4 4 0 0 1 8 0v4.25l1.25 1.5H2.75z" />
@@ -415,6 +422,7 @@ const WORKLOAD_ICON: Record<string, IconName> = {
   // Another tool's test suite, on a device the fleet lends it: a UI test by
   // any other name.
   tvloop: "uitest",
+  explore: "uitest",
   benchmark: "benchmark",
   batch: "batch",
   soak: "soak",
@@ -471,6 +479,7 @@ export const NAV_ICON: Record<string, IconName> = {
   "/results": "results",
   "/evals": "evals",
   "/visual": "visual",
+  "/findings": "findings",
   "/schedules": "schedules",
   "/artifacts": "archive",
   "/events": "events",

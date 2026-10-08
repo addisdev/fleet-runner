@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-tunnel-ultra</string>
+  <!-- ultra's loopback 18788 to the brain on fleet-host, over the tailnet.
+
+       Routing at home is one-way: the 192.168.50.x Macs reach the Mini's side,
+       and ultra is on the Mini's side, so it cannot reach fleet-host's LAN
+       address at all. `fleet-ts` is fleet-host's tailnet SSH alias (userspace
+       tailscaled there), which works from anywhere ultra can reach the tailnet.
+       Same shape as com.addisdev.fleet-tunnel on the workstation, for the same
+       launchd local-network reason as well. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/ssh</string>
+    <string>-N</string>
+    <string>-o</string><string>BatchMode=yes</string>
+    <string>-o</string><string>ExitOnForwardFailure=yes</string>
+    <string>-o</string><string>ServerAliveInterval=30</string>
+    <string>-o</string><string>ServerAliveCountMax=3</string>
+    <string>-L</string><string>18788:127.0.0.1:8788</string>
+    <string>fleet-ts</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/fleet-tunnel-ultra.log</string>
+</dict>
+</plist>

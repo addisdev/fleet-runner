@@ -1,0 +1,23 @@
+{
+  "id": "bench-third-details-and-back",
+  "app": "fakeroku",
+  "title": "Open the third tile and come back",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the details of the third tile, then go back to the row.",
+  "success": "the home row is showing with Tile2 focused again -- Back returns to the tile it left from",
+  "budget": {
+    "steps": 10,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home",
+    "details"
+  ],
+  "check": {
+    "screen": "home",
+    "focused_label": "Tile2"
+  }
+}

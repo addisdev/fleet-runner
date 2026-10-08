@@ -1,0 +1,15 @@
+# Probe BG-19: Back from Search goes to the sign-in screen.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends on the sign-in screen.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_search"
+- back
+- assertVisible:
+    id: "screen_sign_in"

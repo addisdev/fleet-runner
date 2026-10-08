@@ -1,0 +1,40 @@
+# Bug garden launch: from a clean install the app opens on its sign-in screen,
+# the guest door leads to the seeded plant list, and the main screens open.
+#
+# This walks only paths with no planted defect on them, so it passes on the
+# default build (defects on) and on the clean one (garden_defects=false)
+# alike. It is the "does the fixture work at all" check, not a bug hunt.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible: "Sign in to your garden"
+    timeout: 20000
+- assertVisible:
+    id: "field_email"
+- assertVisible:
+    id: "field_password"
+- assertVisible: "Continue as guest"
+- tapOn:
+    id: "button_guest"
+# The seed is nine plants, always the same ones in the same order.
+- assertVisible: "Browsing as guest"
+- assertVisible: "9 plants"
+- assertVisible: "Fern"
+- assertVisible: "Monstera"
+- tapOn: "Monstera"
+- assertVisible:
+    id: "screen_detail"
+- assertVisible: "Qty 1 · Living room · every 7 days"
+- back
+- tapOn:
+    id: "button_settings"
+- assertVisible:
+    id: "screen_settings"
+- back
+- tapOn:
+    id: "button_profile"
+- assertVisible:
+    id: "screen_profile"
+- assertVisible: "Browsing as guest"

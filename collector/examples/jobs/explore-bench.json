@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "job_id": "explore-bench-bug-garden",
+  "workload": "explore",
+  "executor": "host",
+  "app": { "name": "bug-garden", "build": "fixture", "sha256": "latest" },
+  "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
+  "lease": { "ttl_s": 900, "max_attempts": 1 },
+  "params": {
+    "app_id": "dev.fleetrunner.buggarden",
+    "app_name": "Bug Garden",
+    "app_key": "bug-garden",
+    "bench": true,
+    "minutes": 120,
+    "model": { "model": "pilot" }
+  }
+}

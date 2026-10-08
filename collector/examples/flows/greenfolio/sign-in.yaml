@@ -1,0 +1,29 @@
+# GreenFolio sign-in, for explore missions that start signed in.
+#
+# The account and password arrive as -e variables from the executor, which
+# resolves the password from its Keychain; neither is ever in this file or in
+# a job spec. Point it only at an account whose data a night of exploring is
+# allowed to touch: the debug build talks to the production backend.
+appId: ${APP_ID}
+---
+- launchApp
+- runFlow:
+    when:
+      visible: "Allow"
+    commands:
+      - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: "Sign in to your collection"
+    timeout: 20000
+- tapOn: "Email"
+- inputText: ${GREENFOLIO_TEST_EMAIL}
+- tapOn: "Password"
+- inputText: ${GREENFOLIO_TEST_PASSWORD}
+- hideKeyboard
+- tapOn: "I agree to the Terms of Use"
+- tapOn:
+    text: "Sign in"
+    index: 1
+- extendedWaitUntil:
+    notVisible: "Sign in to your collection"
+    timeout: 30000

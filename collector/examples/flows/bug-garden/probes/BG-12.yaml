@@ -1,0 +1,19 @@
+# Probe BG-12: German Settings title is an untranslated key.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends on Settings showing the raw key.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "option_lang_de"
+    direction: DOWN
+- tapOn:
+    id: "option_lang_de"
+- assertVisible: 'settings_title_v2'

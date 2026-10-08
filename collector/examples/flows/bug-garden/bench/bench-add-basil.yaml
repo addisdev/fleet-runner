@@ -1,0 +1,36 @@
+# Bench mission bench-add-basil: Add Basil with quantity 3.
+#
+# The scripted answer to collector/examples/missions/bug-garden/bench-add-basil.json,
+# for checking that the mission's `check` block is right: run this, dump the
+# tree, and the check must pass. It is also the shortest path a model could
+# take, which makes it the step-count baseline for the bench.
+#
+# Runs on the clean build: Maestro passes `arguments` as intent extras, and
+# garden_defects=false turns every planted defect off.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_add"
+- tapOn:
+    id: "field_name"
+- inputText: "Basil"
+- tapOn:
+    id: "field_species"
+- inputText: "Ocimum basilicum"
+- tapOn:
+    id: "field_quantity"
+- eraseText: 40
+- inputText: "3"
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
+- tapOn:
+    id: "button_save"
+- assertVisible: 'Basil'
+- assertVisible: 'Qty 3 · every 7 days'

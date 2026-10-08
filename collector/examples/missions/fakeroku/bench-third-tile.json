@@ -1,0 +1,22 @@
+{
+  "id": "bench-third-tile",
+  "app": "fakeroku",
+  "title": "Focus the third tile",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "On the channel's home row, move the focus to the third tile from the left.",
+  "success": "Tile2 has focus on the home row",
+  "budget": {
+    "steps": 6,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home"
+  ],
+  "check": {
+    "screen": "home",
+    "focused_label": "Tile2"
+  }
+}

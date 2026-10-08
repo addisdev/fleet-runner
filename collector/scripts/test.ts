@@ -189,6 +189,11 @@ if (!(await run(process.execPath, [TSX, "scripts/check-workloads.ts"]))) failed 
 step("each device gets the right drawing");
 if (!(await run(process.execPath, [TSX, "scripts/check-device-art.ts"]))) failed = true;
 
+// The explore workload's loop runs a whole mission against a fake device and a
+// fake model server; it needs no collector, so it runs before one is started.
+step("explore: leash, checks and a fake mission");
+if (!(await run(process.execPath, [TSX, "scripts/check-explore.ts"]))) failed = true;
+
 // --- 5. the collector starts and stops on demand -------------------------
 // Before the smoke run, because if the collector cannot be started from code
 // the smoke run's failure would be a much more confusing way to learn it.

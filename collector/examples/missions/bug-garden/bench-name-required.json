@@ -1,0 +1,29 @@
+{
+  "id": "bench-name-required",
+  "app": "bug-garden",
+  "title": "See what happens without a name",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Try to add a new plant without giving it a name, and find out what the app tells you.",
+  "success": "the plant form shows 'Name is required'",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "edit"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "edit",
+    "text": [
+      "Name is required"
+    ]
+  }
+}
