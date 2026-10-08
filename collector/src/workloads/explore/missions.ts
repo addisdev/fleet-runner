@@ -13,12 +13,29 @@
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import type { Mission, Surface } from "./types.js";
 
 const run = promisify(execFile);
 
-export const MISSIONS_DIR = process.env.FLEET_MISSIONS_DIR ?? path.resolve("examples/missions");
+/**
+ * Where the cards are: FLEET_MISSIONS_DIR, then examples/missions under the
+ * working directory (a checkout run from collector/), then beside this module
+ * -- which is `../examples` from a bundled release's bin/fleet.mjs and
+ * `../../../examples` from src/workloads/explore/ in a checkout. A bundled
+ * service's working directory is not the release, so the first fallback alone
+ * finds nothing there.
+ */
+export const MISSIONS_DIR = process.env.FLEET_MISSIONS_DIR ?? (() => {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    path.resolve("examples/missions"),
+    path.resolve(here, "../examples/missions"),
+    path.resolve(here, "../../../examples/missions"),
+  ];
+  return candidates.find((d) => existsSync(d)) ?? candidates[0];
+})();
 
 /** Every card for an app, validated loosely; a broken card is reported, not fatal. */
 export function loadMissions(app: string, dir = MISSIONS_DIR, onProblem: (m: string) => void = () => {}): Mission[] {
