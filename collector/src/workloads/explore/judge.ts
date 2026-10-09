@@ -52,7 +52,38 @@ const GOAL_PROMPT = (goal: string, success: string) => [
   'Answer with JSON only: {"met": true|false|null, "reason": "one sentence quoting what you see"}',
 ].join("\n");
 
-async function ask(cfg: ModelConfig, prompt: string, png: Buffer, extraText = ""): Promise<{ json: unknown; ms: number; error?: string }> {
+/**
+ * The answer's shape, as a JSON schema the server enforces. `json_schema`
+ * rather than `json_object`: LM Studio refuses `json_object` outright ("must
+ * be json_schema or text"), and a schema is the stronger promise anyway.
+ */
+const VISUAL_SCHEMA = {
+  name: "visual_issues",
+  schema: {
+    type: "object",
+    properties: {
+      issues: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { class: { type: "string" }, description: { type: "string" }, where: { type: "string" } },
+          required: ["class", "description", "where"],
+        },
+      },
+    },
+    required: ["issues"],
+  },
+};
+const GOAL_SCHEMA = {
+  name: "goal_verdict",
+  schema: {
+    type: "object",
+    properties: { met: { type: ["boolean", "null"] }, reason: { type: "string" } },
+    required: ["met", "reason"],
+  },
+};
+
+async function ask(cfg: ModelConfig, prompt: string, png: Buffer, schema: { name: string; schema: Record<string, unknown> }, extraText = ""): Promise<{ json: unknown; ms: number; error?: string }> {
   const shot = shrinkForModel(png, cfg.maxPixels ?? 1_000_000);
   const url = `${cfg.baseUrl.replace(/\/+$/, "").replace(/\/v1$/, "")}/v1/chat/completions`;
   const t0 = Date.now();
@@ -64,7 +95,7 @@ async function ask(cfg: ModelConfig, prompt: string, png: Buffer, extraText = ""
         model: cfg.model,
         temperature: 0,
         max_tokens: cfg.maxTokens ?? 600,
-        response_format: { type: "json_object" },
+        response_format: { type: "json_schema", json_schema: schema },
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: [
@@ -112,14 +143,14 @@ export function visualIssuesFrom(json: unknown, disabled: string[] = []): Visual
 }
 
 export async function judgeVisual(cfg: ModelConfig, png: Buffer, opts: { language?: string | null; disabled?: string[] } = {}) {
-  const r = await ask(cfg, VISUAL_PROMPT(opts.language ?? null, opts.disabled ?? []), png);
+  const r = await ask(cfg, VISUAL_PROMPT(opts.language ?? null, opts.disabled ?? []), png, VISUAL_SCHEMA);
   return { issues: visualIssuesFrom(r.json, opts.disabled), ms: r.ms, error: r.error };
 }
 
 export async function judgeGoal(cfg: ModelConfig, png: Buffer, goal: string, success: string, nodes: A11yNode[] | null) {
   const visible = (nodes ?? []).map((n) => (n.text || n.label).trim()).filter(Boolean);
   const text = visible.length ? `Text on screen: ${[...new Set(visible)].slice(0, 80).join(" | ")}` : "";
-  const r = await ask(cfg, GOAL_PROMPT(goal, success), png, text);
+  const r = await ask(cfg, GOAL_PROMPT(goal, success), png, GOAL_SCHEMA, text);
   const o = (r.json ?? {}) as { met?: unknown; reason?: unknown };
   const met = o.met === true ? true : o.met === false ? false : null;
   return { met, reason: String(o.reason ?? "").slice(0, 300), ms: r.ms, error: r.error };

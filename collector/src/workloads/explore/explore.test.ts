@@ -11,7 +11,7 @@
  * is exercised end to end with nothing plugged in.
  */
 import { createServer, type Server } from "node:http";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
@@ -19,7 +19,7 @@ import type { A11yNode } from "../../a11y-tree.js";
 import { escapeInputText, focusLine, launchExtras, parseAnrEvents, parseForeground, parseImeShown, pngSize } from "./actuators/android.js";
 import { parseConditions } from "./conditions.js";
 import { dhash, hamming, isBlank, shrinkForModel } from "./image.js";
-import { fileable, missingFlowVars, modelConfigs, paramsProblem, pickCandidates } from "./index.js";
+import { fileable, gatewayKey, missingFlowVars, modelConfigs, paramsProblem, pickCandidates } from "./index.js";
 import { parseJsonLoose, visualIssuesFrom } from "./judge.js";
 import { leash, leftApp, snap } from "./leash.js";
 import { benchCheck, confirm, fingerprint, normalizeMessage, runMission, type LoopDeps } from "./loop.js";
@@ -186,6 +186,13 @@ export async function runExploreChecks(check: Check): Promise<void> {
   check("explore: app_id is required", paramsProblem({}) !== null && paramsProblem({ app_id: "com.x" }) === null);
   const cfg = modelConfigs({ app_id: "x" }, {});
   check("explore: defaults are ultra's pilot and vision", cfg.model.model === "pilot" && cfg.judge?.model === "vision" && cfg.model.baseUrl.includes("ultra"));
+  check("explore: the night queue's gateway is used when nothing else names one",
+    modelConfigs({ app_id: "x" }, { HARNESS_GATEWAY: "http://127.0.0.1:4000" }).model.baseUrl === "http://127.0.0.1:4000");
+  const keyDir = mkdtempSync(path.join(os.tmpdir(), "explore-key-"));
+  writeFileSync(path.join(keyDir, "fleet.key"), "sk-file\n");
+  check("explore: the key comes from the night queue, then the harness's file",
+    (await gatewayKey({ HARNESS_KEY: "sk-night" })) === "sk-night"
+    && (await gatewayKey({ FLEET_EXPLORE_API_KEY_FILE: path.join(keyDir, "fleet.key") })) === "sk-file");
   check("explore: bench mode has no judge", modelConfigs({ app_id: "x", bench: true }, {}).judge === null);
   let condThrew = false;
   try { parseConditions(["dark", "sideways"]); } catch { condThrew = true; }

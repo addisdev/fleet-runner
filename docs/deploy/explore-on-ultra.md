@@ -8,6 +8,46 @@ The plan runs in phases, and each ends on a number. A missed number changes the
 plan instead of being explained away. The thresholds below are the plan's
 proposals.
 
+## How it is installed on ultra
+
+As set up on 8 October 2026. ultra's user is `studio`, not `addisdev`; it has
+no Homebrew and no full Xcode; and its models, gateway, keys and nightly jobs
+belong to the [Local LLM Harness](https://claude.ai/code/artifact/2fe401ec-a8ce-4a6e-a78a-5b31b83491f7),
+which runs LM Studio, LiteLLM, Postgres and the night queue as system
+LaunchDaemons. Explore plugs into that rather than running its own.
+
+| Piece | Where |
+|---|---|
+| Node 24, a JDK 21, adb, the emulator, `google_apis` image, Maestro | user-local: `~/.local/opt/`, `~/Library/Android/sdk`, `~/.maestro`; `source ~/explore/env.sh` puts them on `PATH` |
+| Fleet Runner checkout | `~/fleet-runner` (`npm ci` in `collector/`) |
+| The emulator | AVD `fleet-explore-1`, android-35 `google_apis`, 1080×2400 at 420 dpi |
+| Holo4 | `~/.lmstudio/models/Hcompany/Holo4-35B-A3B-GGUF/`: the vendor's Q4_K_M and its vision projector, renamed to LM Studio's convention (`Holo4-35B-A3B-Q4_K_M.gguf`, `mmproj-Holo4-35B-A3B-F16.gguf`) or LM Studio lists the projector as a separate model and cannot pair them. Model key `holo4-35b-a3b`, identifier `holo4-35b-a3b-gguf` |
+| The gateway name | `pilot` in the harness's `litellm.yaml`: Holo4, 300 s timeout, no fallback. The judge is the harness's `judge` role |
+| The shelf | `ondemand holo4-35b-a3b@holo4-35b-a3b-gguf 65536 1 3600` in `~/harness/shelf.conf`; `bash ~/harness/shelf.sh warm pilot` loads it when at least 65% of memory is free |
+| The key | `~/.config/harness/keys/fleet.key` (roles `pilot`, `judge`, `vision`). Not the Keychain: neither SSH nor a LaunchDaemon can write the login Keychain on ultra. The workload reads `HARNESS_KEY`, then this file |
+| The night | `~/night/recurring/fleet-explore.json`, run by the harness's night queue from 22:00 when memory pressure is normal, 35 GB is free and no CI job is running |
+| The brain | On fleet-host, which ultra cannot route to. The night command opens `ssh -L 18788:192.168.50.27:8788 runner-ts` for the length of the run |
+
+The night command (`collector/scripts/explore-night.ts`) boots the AVD if
+needed, opens the tunnel, enqueues the spec on the brain pinned to the executor
+name `ultra`, runs an executor in-process until the job ends, then shuts down
+what it started and exits with the job's result, so the night queue knows when
+the memory is free again.
+
+### Measured on 8 October 2026
+
+| Measure | Holo4 35B-A3B (GGUF Q4_K_M, LM Studio) | Bar |
+|---|---|---|
+| Pointing, 100 targets from 40 of our own screens | **100%**, median 2.2 s (Qwen3.8-27B on the same targets: 59%) | 85% |
+| Model latency per step, 40-step mission | median 4.0 s, max 6.8 s, prompt up to 11.5k tokens | |
+| Whole step (look, model, act, checks) | median 6.8 s | 20 s |
+| Full-size screenshot reaches the model | yes: 2,569 prompt tokens at 2.6 MP, 665 at half size | |
+| Tool calls | 40 of 40 steps, once `tool_choice` is `required` (with `auto`, the second turn sometimes came back as prose) | |
+
+Its first 40-step bug-garden mission filed BG-01 and BG-03, both reproduced
+2/2 on clean installs. The night rehearsal through the brain filed BG-16 (low
+contrast), reproduced 2/2.
+
 ## Phase 0: measure before building on it
 
 **The model.** Holo4 35B-A3B only: Apache-2.0. The 27B is CC BY-NC, and testing

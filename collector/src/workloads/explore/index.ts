@@ -78,9 +78,30 @@ type ModelWire = {
   tree_hints: boolean; extra_body: Record<string, unknown>; max_tokens: number; timeout_s: number;
 };
 
+/**
+ * The gateway key, never from the spec. In order: FLEET_EXPLORE_API_KEY;
+ * HARNESS_KEY, which ultra's night queue sets for the job it starts; the
+ * harness's key file for this caller (FLEET_EXPLORE_API_KEY_FILE, default
+ * ~/.config/harness/keys/fleet.key -- a file because a process started over
+ * SSH or by launchd cannot write to the login Keychain); then the Keychain
+ * item fleet-explore-gateway.
+ */
+export async function gatewayKey(env: NodeJS.ProcessEnv = process.env): Promise<string | undefined> {
+  if (env.FLEET_EXPLORE_API_KEY) return env.FLEET_EXPLORE_API_KEY;
+  if (env.HARNESS_KEY) return env.HARNESS_KEY;
+  const file = env.FLEET_EXPLORE_API_KEY_FILE ?? path.join(os.homedir(), ".config/harness/keys/fleet.key");
+  try {
+    const k = readFileSync(file, "utf8").trim();
+    if (k) return k;
+  } catch { /* no file: try the Keychain */ }
+  const k = await keychainPassword("gateway", "fleet-explore-gateway");
+  return k.ok ? k.password : undefined;
+}
+
 /** Pure: the model configs from params and the environment, without the key. */
 export function modelConfigs(p: Params, env: NodeJS.ProcessEnv = process.env): { model: ModelConfig; judge: ModelConfig | null } {
-  const base = p.model?.base_url ?? env.FLEET_EXPLORE_BASE_URL ?? "http://ultra.local:4000";
+  // HARNESS_GATEWAY is what ultra's night queue hands every job it starts.
+  const base = p.model?.base_url ?? env.FLEET_EXPLORE_BASE_URL ?? env.HARNESS_GATEWAY ?? "http://ultra.local:4000";
   const shape = (w: Partial<ModelWire> | undefined, fallbackModel: string): ModelConfig => ({
     baseUrl: w?.base_url ?? base,
     model: w?.model ?? fallbackModel,
@@ -217,8 +238,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
   if (targets.length === 0) throw new NoTargetsError(`no device matches this job on ${ctx.host}`);
 
   const { model, judge } = modelConfigs(p);
-  const key = process.env.FLEET_EXPLORE_API_KEY
-    ?? await keychainPassword("gateway", "fleet-explore-gateway").then((k) => (k.ok ? k.password : undefined));
+  const key = await gatewayKey();
   if (key) { model.apiKey = key; if (judge) judge.apiKey = key; }
 
   // An installable build, if the job names one. Without it the app already on

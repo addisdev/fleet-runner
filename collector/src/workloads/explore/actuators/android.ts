@@ -256,7 +256,22 @@ export class AndroidActuator implements Actuator {
       // first steps on dialogs it will see every night.
       await exec(ADB, ["-s", this.target.id, "install", "-r", "-g", opts.file], { timeout: 180_000 });
     }
-    await this.shell(["pm", "clear", appId], 30_000);
+    // `pm clear` can fail while the app's "keeps stopping" dialog is up after
+    // a crash (seen on ultra: two replays in a row lost to it). Dismiss what
+    // is on screen, stop the app again, and give the package manager a moment.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.shell(["pm", "clear", appId], 30_000);
+        break;
+      } catch (e) {
+        if (attempt >= 3) throw e;
+        this.log(`pm clear failed (attempt ${attempt}); dismissing dialogs and retrying`);
+        await this.shell(["input", "keyevent", "4"]).catch(() => {});
+        await this.shell(["input", "keyevent", "3"]).catch(() => {});
+        await this.shell(["am", "force-stop", appId]).catch(() => {});
+        await sleep(2000 * attempt);
+      }
+    }
     // Clearing data also clears the crash baseline's meaning: whatever the
     // buffer holds now is history.
     this.crashBaseline = null;
