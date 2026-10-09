@@ -1,0 +1,31 @@
+# Bug garden, large run: the same walk after the large setting (PeerTest
+# ADVISOR-PLAN T1 corpus).
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- extendedWaitUntil:
+    visible:
+      id: "screen_sign_in"
+    timeout: 20000
+- tapOn:
+    id: "button_guest"
+- extendedWaitUntil:
+    visible:
+      id: "screen_home"
+    timeout: 10000
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "option_size_largest"
+    direction: DOWN
+- tapOn:
+    id: "option_size_largest"
+- back
+- runFlow:
+    file: t1-walk.yaml
+    env:
+      PREFIX: large
