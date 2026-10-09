@@ -368,7 +368,12 @@ export class Conversation {
         model: this.cfg.model,
         messages: this.messages,
         tools: this.tools,
-        tool_choice: "auto",
+        // "required", because every turn must act: Holo4 on ultra, given a
+        // shrunk screenshot and a long mission card, sometimes answered its
+        // second turn with the action written as prose ("Click on the Name
+        // field") and no call. With the call required it did not, in any
+        // trial. extra_body can still say "auto" for a server that refuses it.
+        tool_choice: "required",
         temperature: this.cfg.temperature ?? 0,
         max_tokens: this.cfg.maxTokens ?? 1024,
         ...(this.cfg.extraBody ?? {}),
