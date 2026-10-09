@@ -14,7 +14,14 @@
 //   4. shuts down only what it booted, and exits 0 for a job that finished and
 //      1 for one that did not.
 //
-//   npx tsx scripts/explore-night.ts --spec examples/jobs/explore-greenfolio-ultra.json [--avd fleet-explore-1]
+//   npx tsx scripts/explore-night.ts --spec examples/jobs/explore-garden-ultra.json \
+//     [--avd fleet-explore-1] [--tunnel runner-ts:192.168.50.27:8788]
+//
+// --tunnel opens `ssh -N -L <local>:<host>:<port> <jump>` for the length of
+// the night and closes it after. ultra sits on the Mini's side of the home
+// network and cannot route to the brain on fleet-host at all; runner-host,
+// on the tailnet, can. A tunnel that exists only while a night runs is one
+// fewer service to keep alive on a machine whose services are LaunchDaemons.
 //
 // Env: FLEET_URL (the brain, through the tunnel), FLEET_EXECUTOR_NAME (default
 // "ultra"), and HARNESS_GATEWAY / HARNESS_KEY, which the night queue sets and
@@ -68,7 +75,32 @@ async function jobStatus(id: string): Promise<{ status: string; last_error?: str
   return await res.json() as { status: string; last_error?: string | null };
 }
 
+/** Open the tunnel and wait until the brain answers through it. */
+async function openTunnel(spec: string): Promise<() => void> {
+  const [jump, host, port] = spec.split(":");
+  const local = new URL(BASE).port || "18788";
+  if (await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3_000) }).then((r) => r.ok, () => false)) {
+    log(`the brain already answers at ${BASE}; no tunnel needed`);
+    return () => {};
+  }
+  const ssh = spawn("/usr/bin/ssh", ["-N", "-o", "BatchMode=yes", "-o", "ExitOnForwardFailure=yes",
+    "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3", "-L", `${local}:${host}:${port}`, jump], { stdio: "ignore" });
+  for (let i = 0; i < 30; i++) {
+    await sleep(1000);
+    if (await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(3_000) }).then((r) => r.ok, () => false)) {
+      log(`tunnel to ${host}:${port} through ${jump} is up`);
+      return () => { ssh.kill(); };
+    }
+    if (ssh.exitCode !== null) break;
+  }
+  ssh.kill();
+  throw new Error(`no route to the brain: ssh -L ${local}:${host}:${port} ${jump} did not come up`);
+}
+
 async function main() {
+  const tunnel = arg("--tunnel");
+  const closeTunnel = tunnel ? await openTunnel(tunnel) : () => {};
+  process.once("exit", () => closeTunnel());
   const specPath = arg("--spec");
   if (!specPath) throw new Error("--spec <job spec JSON> is required");
   const spec = JSON.parse(readFileSync(specPath, "utf8")) as Record<string, unknown> & { targets?: Record<string, unknown>; job_id?: string };

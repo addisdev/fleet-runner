@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "job_id": "explore-garden",
+  "workload": "explore",
+  "executor": "host",
+  "app": { "name": "bug-garden", "build": "fixture-2026-10-02", "sha256": "451789dd7a05da92302e49bc454c99938ecd1419fd819726d3e8ca4b6c187dbc", "platform": "android" },
+  "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
+  "lease": { "ttl_s": 900, "max_attempts": 1 },
+  "params": {
+    "app_id": "dev.fleetrunner.buggarden",
+    "app_name": "Sprout",
+    "app_key": "bug-garden",
+    "minutes": 120,
+    "findings_per_night": 25,
+    "replay_attempts": 2,
+    "conditions": ["baseline", "locale:es", "large-text", "baseline", "locale:de", "dark", "baseline"],
+    "model": { "model": "pilot" },
+    "judge": { "model": "judge" }
+  }
+}
