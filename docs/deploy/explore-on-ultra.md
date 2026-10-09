@@ -34,6 +34,20 @@ name `ultra`, runs an executor in-process until the job ends, then shuts down
 what it started and exits with the job's result, so the night queue knows when
 the memory is free again.
 
+### Measured on 8 October 2026
+
+| Measure | Holo4 35B-A3B (GGUF Q4_K_M, LM Studio) | Bar |
+|---|---|---|
+| Pointing, 100 targets from 40 of our own screens | **100%**, median 2.2 s (Qwen3.8-27B on the same targets: 59%) | 85% |
+| Model latency per step, 40-step mission | median 4.0 s, max 6.8 s, prompt up to 11.5k tokens | |
+| Whole step (look, model, act, checks) | median 6.8 s | 20 s |
+| Full-size screenshot reaches the model | yes: 2,569 prompt tokens at 2.6 MP, 665 at half size | |
+| Tool calls | 40 of 40 steps, once `tool_choice` is `required` (with `auto`, the second turn sometimes came back as prose) | |
+
+Its first 40-step bug-garden mission filed BG-01 and BG-03, both reproduced
+2/2 on clean installs. The night rehearsal through the brain filed BG-16 (low
+contrast), reproduced 2/2.
+
 ## Phase 0: measure before building on it
 
 **The model.** Holo4 35B-A3B only: Apache-2.0. The 27B is CC BY-NC, and testing
