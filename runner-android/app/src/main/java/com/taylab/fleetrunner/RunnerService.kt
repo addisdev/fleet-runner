@@ -103,7 +103,14 @@ class RunnerService : Service() {
             val intent = Intent(context, RunnerService::class.java)
                 .putExtra(EXTRA_BASE_URL, baseUrl)
                 .putExtra(EXTRA_DEVICE_ID, deviceId)
-            context.startForegroundService(intent)
+            // startForegroundService is API 26 and minSdk is 24: on 24-25 it
+            // throws NoSuchMethodError. There a plain startService is allowed
+            // to run in the background, and onStartCommand promotes it anyway.
+            if (Build.VERSION.SDK_INT >= 26) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
         }
 
         fun stop(context: Context) {
