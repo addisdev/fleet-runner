@@ -35,3 +35,8 @@ jobs:
       # developer machine (and by the phones that actually run the benchmarks)
       # rather than on every push.
       - run: ./gradlew :app:testDebugUnitTest -Pfleet.skipNative
+
+      # Lint catches what the JVM tests cannot see: a manifest an installer or
+      # a store would refuse, or an API call above minSdk 24 that only crashes
+      # on the old devices the fleet exists for. Errors fail the job.
+      - run: ./gradlew :app:lintDebug -Pfleet.skipNative

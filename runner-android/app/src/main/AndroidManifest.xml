@@ -40,9 +40,16 @@
     <!-- Leanback is what a TV launcher looks for. Not required, because
          requiring it would hide the app from every phone on the shelf. -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
-    <!-- Declared so a Wear device's launcher lists the app. Not required, for
-         the same reason. -->
-    <uses-feature android:name="android.hardware.type.watch" android:required="false" />
+    <!-- Deliberately no `android.hardware.type.watch`, unlike leanback above.
+         A Wear launcher lists any MAIN/LAUNCHER activity, so a watch needs no
+         declaration to start this APK after `adb install`. The feature is only
+         a store filter, and there it means "this is a Wear app": it has to be
+         required (lint's InvalidWearFeatureAttribute; Play rejects
+         required="false"), and a Wear app then also owes the
+         `com.google.android.wearable.standalone` flag (WearStandaloneAppFlag).
+         Requiring it would hide the APK from every phone, TV and headset, which
+         is the opposite of one APK for every shape. The runner still tells a
+         watch apart at run time with hasSystemFeature(FEATURE_WATCH). -->
 
     <!-- `banner` is a third thing beside `icon` and `roundIcon`, not a
          replacement for either: a TV launcher draws a 320x180 banner and
