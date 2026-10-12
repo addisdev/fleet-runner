@@ -78,6 +78,8 @@ android {
     androidResources {
         noCompress += "tflite"
     }
+    // Robolectric needs the merged manifest (RunnerServiceStartTest).
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 
 dependencies {
@@ -94,4 +96,6 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // RunnerServiceStartTest runs start() on the JVM at API 25 and 34.
+    testImplementation("org.robolectric:robolectric:4.14.1")
 }
