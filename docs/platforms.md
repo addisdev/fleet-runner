@@ -24,7 +24,7 @@ that says which ones somebody has watched register is worth something.
 | **Any browser** | `collector/runner-web/` | open `http://<collector>/runner` | **yes** — driven end to end by a real Chromium against a real collector, both backends, digest checked |
 | **Android TV, Google TV, Fire TV** | `runner-android` | `adb connect`, then `adb install` | **partly** — the built APK declares a leanback launcher and a banner, checked with `aapt2 dump badging`. No TV has run it |
 | **Meta Quest** | `runner-android` | sideload via `adb` | **no** — Quest is Android 12 and reports `UI_MODE_TYPE_NORMAL`, so the runner identifies it by the VR feature flag. Never run on one |
-| **Wear OS** | `runner-android` | `adb install` over Wi-Fi debugging | **no** — the watch feature flag is read and declared; never run on one |
+| **Wear OS** | `runner-android` | `adb install` over Wi-Fi debugging | **no** — the watch feature flag is read at run time; the manifest deliberately does not declare it (that would make the APK a Wear-only app in a store). Never run on one |
 | **Apple TV (tvOS)** | `runner-ios`, `FleetRunnerTV` target | `devicectl` or `simctl` | **builds** — `xcodebuild -scheme FleetRunnerTV` succeeds. No Apple TV has run it |
 | **Vision Pro (visionOS)** | `runner-ios`, `FleetRunnerVision` target | `devicectl` or `simctl` | **no** — the target is written and has never been compiled; the visionOS platform is not installed on the machine it was written on |
 | **Raspberry Pi, Jetson, Steam Deck** | `runner-machine` | `install-agent.sh`, or the Docker image | **no** — but arm64 Linux in CI reports a nearly complete descriptor, so a board should register cleanly. No board has |
