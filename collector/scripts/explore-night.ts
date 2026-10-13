@@ -116,11 +116,18 @@ async function bootSimulator(spec: string): Promise<{ udid: string; booted: bool
     const udid = (await run("xcrun", ["simctl", "create", name, deviceType, runtime])).stdout.trim();
     found = { name, udid, state: "Shutdown", isAvailable: true };
   }
-  if (found.state === "Booted") return { udid: found.udid, booted: false };
-  log(`booting simulator ${name}`);
-  await run("xcrun", ["simctl", "boot", found.udid]).catch(() => {});
-  await run("xcrun", ["simctl", "bootstatus", found.udid, "-b"], { timeout: 600_000 });
-  return { udid: found.udid, booted: true };
+  const booted = found.state !== "Booted";
+  if (booted) {
+    log(`booting simulator ${name}`);
+    await run("xcrun", ["simctl", "boot", found.udid]).catch(() => {});
+    await run("xcrun", ["simctl", "bootstatus", found.udid, "-b"], { timeout: 600_000 });
+  }
+  // A fresh simulator puts iOS's "slide to type" tip over the app the first
+  // time a keyboard opens. It is the system's, not the app's, and the judge
+  // would otherwise file it.
+  await run("xcrun", ["simctl", "spawn", found.udid, "defaults", "write", "com.apple.keyboard.preferences",
+    "DidShowContinuousPathIntroduction", "-bool", "true"]).catch(() => {});
+  return { udid: found.udid, booted };
 }
 
 async function main() {
