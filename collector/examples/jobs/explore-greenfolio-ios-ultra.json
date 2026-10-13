@@ -1,0 +1,45 @@
+{
+  "schema": 1,
+  "job_id": "explore-greenfolio-ios",
+  "workload": "explore",
+  "executor": "host",
+  "app": {
+    "name": "greenfolio-ios",
+    "build": "latest",
+    "sha256": "latest",
+    "platform": "ios"
+  },
+  "targets": {
+    "executor": "ultra",
+    "match": "os ~ 'ios'",
+    "exclusive": true
+  },
+  "lease": {
+    "ttl_s": 900,
+    "max_attempts": 1
+  },
+  "params": {
+    "app_id": "com.taylab.greenfolio",
+    "app_name": "GreenFolio",
+    "app_key": "greenfolio-ios",
+    "surface": "touch",
+    "minutes": 60,
+    "findings_per_night": 5,
+    "replay_attempts": 2,
+    "conditions": [
+      "baseline",
+      "dark",
+      "large-text"
+    ],
+    "changed": {
+      "repo": "~/explore/builds/greenfolio-ios",
+      "since": "24 hours ago"
+    },
+    "model": {
+      "model": "pilot"
+    },
+    "judge": {
+      "model": "judge"
+    }
+  }
+}

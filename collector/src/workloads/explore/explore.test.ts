@@ -11,11 +11,13 @@
  * is exercised end to end with nothing plugged in.
  */
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
 import type { A11yNode } from "../../a11y-tree.js";
+import { unpackApp } from "./actuators/apple.js";
 import { escapeInputText, focusLine, launchExtras, parseAnrEvents, parseForeground, parseImeShown, pngSize } from "./actuators/android.js";
 import { parseConditions } from "./conditions.js";
 import { dhash, hamming, isBlank, shrinkForModel } from "./image.js";
@@ -55,6 +57,17 @@ const TOUCH: ActuatorCaps = { surface: "touch", keys: ["back", "home", "enter"],
 const DPAD: ActuatorCaps = { surface: "dpad", keys: ["up", "down", "left", "right", "select", "back", "home"], tree: true, foreground: true };
 
 export async function runExploreChecks(check: Check): Promise<void> {
+  // --- apple builds arrive zipped -----------------------------------------
+  if (process.platform === "darwin") {
+    const tmp = mkdtempSync(path.join(os.tmpdir(), "explore-zip-"));
+    mkdirSync(path.join(tmp, "Products", "Dozehound.app"), { recursive: true });
+    writeFileSync(path.join(tmp, "Products", "Dozehound.app", "Info.plist"), "<plist/>");
+    execFileSync("ditto", ["-c", "-k", "--keepParent", path.join(tmp, "Products"), path.join(tmp, "build.zip")]);
+    const app = await unpackApp(path.join(tmp, "build.zip"));
+    check("explore(apple): a zipped build unpacks to its .app folder", app.endsWith(path.join("Products", "Dozehound.app")), app);
+    check("explore(apple): a second unpack reuses the folder", (await unpackApp(path.join(tmp, "build.zip"))) === app);
+  }
+
   // --- android parsers ----------------------------------------------------
   const p1 = png(200, 400, 120);
   check("explore: pngSize reads IHDR", JSON.stringify(pngSize(p1)) === '{"width":200,"height":400}');

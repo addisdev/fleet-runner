@@ -1,0 +1,16 @@
+{
+  "name": "fleet-explore-tv",
+  "owner": "fleet-runner",
+  "command": [
+    "bash",
+    "-lc",
+    "source ~/explore/env.sh && bash ~/harness/shelf.sh warm pilot && cd ~/fleet-runner/collector && npx tsx scripts/explore-night.ts --avd fleet-explore-tv --spec examples/jobs/explore-tv-bench-pilot-ultra.json --spec examples/jobs/explore-tv-bench-vision-ultra.json --spec examples/jobs/explore-tv-ultra.json --tunnel runner-ts:192.168.50.27:8788"
+  ],
+  "priority": 21,
+  "needs_gb": 35,
+  "unloads_shelf": false,
+  "max_minutes": 150,
+  "gateway_key": "fleet",
+  "nights": "daily",
+  "wait_minutes": 120
+}

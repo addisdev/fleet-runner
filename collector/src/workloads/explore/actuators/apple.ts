@@ -425,6 +425,31 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_PROJECT = process.env.FLEET_IOS_PROJECT ??
   path.resolve(HERE, "../../../../../runner-ios/FleetRunner.xcodeproj");
 
+/**
+ * The .app inside a zipped build, unpacked once beside the zip. A zip made
+ * with `ditto -c -k --keepParent X.app` holds X.app at its root; one made
+ * from inside the products folder may hold Payload/ or a deeper path, so the
+ * first .app found anywhere in it is taken.
+ */
+export async function unpackApp(zip: string): Promise<string> {
+  const dir = `${zip.replace(/\.zip$/, "")}-unpacked`;
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+    await exec("ditto", ["-x", "-k", zip, dir], { timeout: 300_000 });
+  }
+  const find = (d: string, depth: number): string | null => {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (!e.isDirectory()) continue;
+      if (e.name.endsWith(".app")) return path.join(d, e.name);
+      if (depth > 0) { const f = find(path.join(d, e.name), depth - 1); if (f) return f; }
+    }
+    return null;
+  };
+  const app = find(dir, 3);
+  if (!app) throw new Error(`${path.basename(zip)} holds no .app bundle`);
+  return app;
+}
+
 export class AppleActuator implements Actuator {
   readonly caps: ActuatorCaps;
   private readonly opts: Required<Omit<AppleActuatorOptions, "port" | "teamId">> & { port?: number; teamId?: string };
@@ -713,6 +738,9 @@ export class AppleActuator implements Actuator {
    */
   async reset(appId: string, opts: { file?: string; launchArgs?: string[] } = {}): Promise<void> {
     await this.ensureStarted();
+    // Builds travel as zips (the artifact store holds files, and an .app is a
+    // folder); simctl and devicectl install the folder, so unpack it first.
+    if (opts.file?.endsWith(".zip")) opts = { ...opts, file: await unpackApp(opts.file) };
     const udid = this.target.id;
     // Through the driver first: XCUITest's terminate is the one that also
     // works on a device, and it tells XCUITest the app is gone.

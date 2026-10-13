@@ -1,0 +1,15 @@
+{
+  "name": "fleet-explore-builds",
+  "owner": "fleet-runner",
+  "command": [
+    "bash",
+    "-lc",
+    "source ~/explore/env.sh && cd ~/fleet-runner/collector && bash deploy/explore/nightly-builds.sh --tunnel runner-ts:192.168.50.27:8788"
+  ],
+  "priority": 19,
+  "needs_gb": 16,
+  "unloads_shelf": false,
+  "max_minutes": 75,
+  "nights": "daily",
+  "wait_minutes": 120
+}

@@ -34,6 +34,25 @@ name `ultra`, runs an executor in-process until the job ends, then shuts down
 what it started and exits with the job's result, so the night queue knows when
 the memory is free again.
 
+### Builds, TVs and Apple simulators (from 12 October 2026)
+
+Three more night-queue jobs, kept in `collector/deploy/explore/night/` and
+copied to `~/night/recurring/`. Lower priority numbers run first.
+
+| Job | Priority | What it does |
+|---|---|---|
+| `fleet-explore-builds` | 19 | `deploy/explore/nightly-builds.sh`: resets `~/explore/builds/{dozehound-firetv,greenfolio-ios,dozehound-tvos}` to `origin/develop`, builds a debug APK or a simulator `.app` (zipped), uploads it to the brain as app `<name>`, build `develop-<sha>`. An unchanged sha is skipped; a failed build leaves the previous one as `latest` |
+| `fleet-explore` | 20 | The bug garden on `fleet-explore-1` (unchanged) |
+| `fleet-explore-tv` | 21 | Dozehound Fire TV on AVD `fleet-explore-tv` (android-34 TV, 1080p): the 10 bench cards with Holo4, the same cards with the resident `vision` model, then the explorer cards. Phase 3 |
+| `fleet-explore-apple` | 22 | GreenFolio iOS offline on simulator `fleet-explore-ios` (iOS 26.5), then Dozehound tvOS on `fleet-explore-tvos` (tvOS 26.5). Phase 4, and phase 2's real-build precision |
+
+`explore-night.ts` takes `--spec` more than once (run in turn on one device)
+and `--sim name:runtime:devicetype`, which creates the simulator if missing,
+boots it, and shuts it down afterwards if it booted it. Simulator names start
+with `fleet-` so the executor counts them as fleet devices. FleetDriver builds
+itself into `~/.fleet/explore/derived` on first use. Xcode builds use
+`/Applications/Xcode.app`, `xcodegen` comes from `/opt/homebrew`.
+
 ### Measured on 8 October 2026
 
 | Measure | Holo4 35B-A3B (GGUF Q4_K_M, LM Studio) | Bar |
