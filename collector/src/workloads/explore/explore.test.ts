@@ -12,7 +12,7 @@
  */
 import { createServer, type Server } from "node:http";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
@@ -66,6 +66,14 @@ export async function runExploreChecks(check: Check): Promise<void> {
     const app = await unpackApp(path.join(tmp, "build.zip"));
     check("explore(apple): a zipped build unpacks to its .app folder", app.endsWith(path.join("Products", "Dozehound.app")), app);
     check("explore(apple): a second unpack reuses the folder", (await unpackApp(path.join(tmp, "build.zip"))) === app);
+    // A rebuild at the same path replaces the folder rather than reusing it.
+    rmSync(path.join(tmp, "Products"), { recursive: true });
+    mkdirSync(path.join(tmp, "Products", "Dozehound2.app"), { recursive: true });
+    rmSync(path.join(tmp, "build.zip"));
+    await new Promise((r) => setTimeout(r, 20));
+    execFileSync("ditto", ["-c", "-k", "--keepParent", path.join(tmp, "Products"), path.join(tmp, "build.zip")]);
+    const again = await unpackApp(path.join(tmp, "build.zip"));
+    check("explore(apple): a zip rebuilt at the same path unpacks afresh", again.endsWith("Dozehound2.app"), again);
   }
 
   // --- android parsers ----------------------------------------------------

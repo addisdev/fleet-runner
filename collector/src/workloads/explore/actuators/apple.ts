@@ -433,6 +433,9 @@ const DEFAULT_PROJECT = process.env.FLEET_IOS_PROJECT ??
  */
 export async function unpackApp(zip: string): Promise<string> {
   const dir = `${zip.replace(/\.zip$/, "")}-unpacked`;
+  // Reused only while it is newer than the zip: a zip rebuilt at the same path
+  // must not install the app it replaced.
+  if (existsSync(dir) && statSync(dir).mtimeMs < statSync(zip).mtimeMs) rmSync(dir, { recursive: true, force: true });
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
     await exec("ditto", ["-x", "-k", zip, dir], { timeout: 300_000 });

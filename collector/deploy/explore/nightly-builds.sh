@@ -63,14 +63,20 @@ upload() {
 
 # The .app from a simulator build, zipped with its folder: simctl installs a
 # folder, and the explore workload unpacks the zip before installing.
-# Secrets.xcconfig is gitignored and has to exist before xcodegen; the
-# checked-in template carries placeholders only, which is what explore wants:
-# no real keys, so a build can never reach a production backend with them.
+# Secrets.xcconfig is gitignored and has to exist before xcodegen. Explore
+# writes its own from the template, with the backend at a loopback port where
+# nothing listens and a dummy key: the app counts as configured (Dozehound
+# refuses to start otherwise; plain http is allowed to loopback), and no
+# request from an explored build can reach a production backend. Collector
+# keys stay empty, so no telemetry leaves either.
 # xcode_build <dir> <scheme> <sdk> <destination> <out zip>
 xcode_build() {
   local dir="$1" scheme="$2" sdk="$3" dest="$4" zip="$5" derived="$1/.derived" t
   for t in "$dir"/*/Config/Secrets.xcconfig.template; do
-    [ -f "$t" ] && [ ! -f "${t%.template}" ] && cp "$t" "${t%.template}"
+    [ -f "$t" ] || continue
+    sed -E -e 's#^(SUPABASE_URL *=).*#\1 http:/$()/127.0.0.1:9#' \
+      -e 's#^(SUPABASE_ANON_KEY *=).*#\1 explore-offline#' \
+      -e 's#^(COLLECTOR_KEY[A-Z_]* *=).*#\1#' "$t" >"${t%.template}"
   done
   ( cd "$dir" && xcodegen generate --quiet ) || return 1
   # A destination, not -sdk: -sdk would build an embedded watch app against
