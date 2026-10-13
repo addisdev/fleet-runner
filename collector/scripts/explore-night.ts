@@ -97,28 +97,57 @@ async function openTunnel(spec: string): Promise<() => void> {
   throw new Error(`no route to the brain: ssh -L ${local}:${host}:${port} ${jump} did not come up`);
 }
 
+/** All values of a repeated flag. */
+const args = (k: string) => a.flatMap((x, i) => (x === k && a[i + 1] ? [a[i + 1]] : []));
+
+/**
+ * A simulator by name, created if missing, booted if not. `spec` is
+ * `name:runtime:devicetype`, e.g.
+ * `fleet-explore-ios:com.apple.CoreSimulator.SimRuntime.iOS-26-5:com.apple.CoreSimulator.SimDeviceType.iPhone-16`.
+ * A 26.x runtime, not 27: XCUITest runners abort on the iOS 27 runtime here.
+ */
+async function bootSimulator(spec: string): Promise<{ udid: string; booted: boolean }> {
+  const [name, runtime, deviceType] = spec.split(":");
+  const list = JSON.parse((await run("xcrun", ["simctl", "list", "devices", "-j"], { maxBuffer: 16 << 20 })).stdout) as
+    { devices: Record<string, { name: string; udid: string; state: string; isAvailable: boolean }[]> };
+  let found = (list.devices[runtime] ?? []).find((d) => d.name === name && d.isAvailable);
+  if (!found) {
+    log(`creating simulator ${name} (${runtime})`);
+    const udid = (await run("xcrun", ["simctl", "create", name, deviceType, runtime])).stdout.trim();
+    found = { name, udid, state: "Shutdown", isAvailable: true };
+  }
+  const booted = found.state !== "Booted";
+  if (booted) {
+    log(`booting simulator ${name}`);
+    await run("xcrun", ["simctl", "boot", found.udid]).catch(() => {});
+    await run("xcrun", ["simctl", "bootstatus", found.udid, "-b"], { timeout: 600_000 });
+  }
+  // A fresh simulator puts iOS's "slide to type" tip over the app the first
+  // time a keyboard opens. It is the system's, not the app's, and the judge
+  // would otherwise file it.
+  await run("xcrun", ["simctl", "spawn", found.udid, "defaults", "write", "com.apple.keyboard.preferences",
+    "DidShowContinuousPathIntroduction", "-bool", "true"]).catch(() => {});
+  return { udid: found.udid, booted };
+}
+
 async function main() {
   const tunnel = arg("--tunnel");
   const closeTunnel = tunnel ? await openTunnel(tunnel) : () => {};
   process.once("exit", () => closeTunnel());
-  const specPath = arg("--spec");
-  if (!specPath) throw new Error("--spec <job spec JSON> is required");
-  const spec = JSON.parse(readFileSync(specPath, "utf8")) as Record<string, unknown> & { targets?: Record<string, unknown>; job_id?: string };
+  // Several --spec flags run one after another on the same device, sharing
+  // the tunnel and the executor: a night can drive Holo4 and then the
+  // resident model through the same bench, or a TV bench and its explorers.
+  const specPaths = args("--spec");
+  if (!specPaths.length) throw new Error("--spec <job spec JSON> is required (repeatable)");
   const avd = arg("--avd");
+  const sim = arg("--sim");
   const night = new Date().toISOString().slice(0, 10);
-  const jobId = `${spec.job_id ?? "explore"}-${night}-${Date.now().toString(36).slice(-4)}`;
 
   let emulator: { serial: string; booted: boolean } | null = null;
+  let simulator: { udid: string; booted: boolean } | null = null;
   if (avd) emulator = await bootEmulator(avd);
-
-  const body = {
-    ...spec,
-    job_id: jobId,
-    targets: { ...(spec.targets ?? {}), executor: NAME, ...(emulator ? { device_id: emulator.serial } : {}) },
-  };
-  const res = await fetch(`${BASE}/jobs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!res.ok) throw new Error(`POST /jobs -> ${res.status}: ${await res.text()}`);
-  log(`queued ${jobId} for executor ${NAME}`);
+  if (sim) simulator = await bootSimulator(sim);
+  const deviceId = emulator?.serial ?? simulator?.udid;
 
   // The executor reads FLEET_URL and FLEET_EXECUTOR_NAME when its module loads,
   // so they are settled before the import rather than passed in.
@@ -127,12 +156,23 @@ async function main() {
   const { startExecutor } = await import("../src/executor.js");
   const executor = await startExecutor();
 
-  let final = { status: "unknown" } as { status: string; last_error?: string | null };
+  const outcomes: string[] = [];
   try {
-    for (;;) {
-      await sleep(20_000);
-      final = await jobStatus(jobId).catch((e) => { log(`status: ${(e as Error).message}`); return final; });
-      if (["done", "failed", "cancelled"].includes(final.status)) break;
+    for (const specPath of specPaths) {
+      const spec = JSON.parse(readFileSync(specPath, "utf8")) as Record<string, unknown> & { targets?: Record<string, unknown>; job_id?: string };
+      const jobId = `${spec.job_id ?? "explore"}-${night}-${Date.now().toString(36).slice(-4)}`;
+      const body = { ...spec, job_id: jobId, targets: { ...(spec.targets ?? {}), executor: NAME, ...(deviceId ? { device_id: deviceId } : {}) } };
+      const res = await fetch(`${BASE}/jobs`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) { outcomes.push(`${path.basename(specPath)}: POST /jobs -> ${res.status} ${(await res.text()).slice(0, 200)}`); continue; }
+      log(`queued ${jobId} for executor ${NAME}`);
+      let final = { status: "unknown" } as { status: string; last_error?: string | null };
+      for (;;) {
+        await sleep(20_000);
+        final = await jobStatus(jobId).catch((e) => { log(`status: ${(e as Error).message}`); return final; });
+        if (["done", "failed", "cancelled"].includes(final.status)) break;
+      }
+      log(`${jobId}: ${final.status}${final.last_error ? ` (${final.last_error})` : ""}`);
+      outcomes.push(`${jobId}: ${final.status}`);
     }
   } finally {
     executor.stop();
@@ -140,9 +180,14 @@ async function main() {
       log(`shutting down ${avd}`);
       await run(ADB, ["-s", emulator.serial, "emu", "kill"]).catch(() => {});
     }
+    if (simulator?.booted) {
+      log(`shutting down simulator ${sim?.split(":")[0]}`);
+      await run("xcrun", ["simctl", "shutdown", simulator.udid]).catch(() => {});
+    }
   }
-  log(`${jobId}: ${final.status}${final.last_error ? ` (${final.last_error})` : ""}`);
-  process.exit(final.status === "done" ? 0 : 1);
+  const failed = outcomes.filter((o) => !o.endsWith(": done"));
+  log(failed.length ? `not every job finished: ${failed.join("; ")}` : `all ${outcomes.length} job(s) done`);
+  process.exit(failed.length ? 1 : 0);
 }
 
 main().catch((e) => {

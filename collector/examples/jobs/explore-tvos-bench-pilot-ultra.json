@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "job_id": "explore-tvos-bench-pilot",
+  "workload": "explore",
+  "executor": "host",
+  "app": {
+    "name": "dozehound-tvos",
+    "build": "latest",
+    "sha256": "latest",
+    "platform": "tvos"
+  },
+  "targets": {
+    "executor": "ultra",
+    "match": "os ~ 'tvos'",
+    "exclusive": true
+  },
+  "lease": {
+    "ttl_s": 900,
+    "max_attempts": 1
+  },
+  "params": {
+    "app_id": "com.taylab.dozehound",
+    "app_name": "Dozehound",
+    "app_key": "dozehound-tvos",
+    "surface": "dpad",
+    "bench": true,
+    "minutes": 45,
+    "judge": false,
+    "model": {
+      "model": "pilot"
+    }
+  }
+}

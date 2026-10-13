@@ -2,11 +2,25 @@
   "id": "bench-leaving-home",
   "app": "dozehound-tvos",
   "title": "Start Leaving Home",
-  "persona": "A dog owner about to go out, who wants the calming scene on before they leave.",
-  "goal": "Start the Leaving Home scene playing, then stop pressing keys.",
-  "success": "Leaving Home is playing",
-  "budget": { "steps": 8, "minutes": 6 },
-  "surfaces": ["dpad"],
-  "launch_args": ["-uiTestStubCatalog"],
-  "check": { "text": ["Leaving Home"] }
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Start the Leaving Home scene, then stop pressing buttons.",
+  "success": "a banner says the channel is on until you're back",
+  "budget": {
+    "steps": 8,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "text": [
+      "until you're back"
+    ]
+  },
+  "screens": [
+    "leaving_home"
+  ]
 }

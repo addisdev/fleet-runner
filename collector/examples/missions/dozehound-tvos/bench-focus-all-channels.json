@@ -1,0 +1,24 @@
+{
+  "id": "bench-focus-all-channels",
+  "app": "dozehound-tvos",
+  "title": "Point at All channels",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Move the highlight to All channels without opening it.",
+  "success": "All channels is highlighted",
+  "budget": {
+    "steps": 8,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "focused_label": "All channels"
+  },
+  "screens": [
+    "channel_bar"
+  ]
+}

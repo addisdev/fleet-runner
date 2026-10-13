@@ -1,0 +1,29 @@
+{
+  "id": "bench-pause-resume",
+  "app": "dozehound-tvos",
+  "title": "Pause, then carry on",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Start any channel, pause it, then start it again.",
+  "success": "the channel is playing again and nothing says paused",
+  "budget": {
+    "steps": 12,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "text": [
+      "playing"
+    ],
+    "absent_text": [
+      "Paused"
+    ]
+  },
+  "screens": [
+    "player"
+  ]
+}

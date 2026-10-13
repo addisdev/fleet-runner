@@ -1,0 +1,24 @@
+{
+  "id": "bench-focus-naptime",
+  "app": "dozehound-tvos",
+  "title": "Point at Naptime",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Move the highlight to the Naptime tile without starting anything.",
+  "success": "the Naptime tile is highlighted",
+  "budget": {
+    "steps": 6,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "focused_label": "Naptime"
+  },
+  "screens": [
+    "channel_bar"
+  ]
+}

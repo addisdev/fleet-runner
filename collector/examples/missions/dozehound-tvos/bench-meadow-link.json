@@ -1,0 +1,26 @@
+{
+  "id": "bench-meadow-link",
+  "app": "dozehound-tvos",
+  "title": "See how to unlock Meadow",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the Meadow channel and stop on the screen that explains how to link an account.",
+  "success": "the screen asks to link a Dozehound account and shows a code",
+  "budget": {
+    "steps": 8,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "text": [
+      "Link your Dozehound account"
+    ]
+  },
+  "screens": [
+    "link"
+  ]
+}

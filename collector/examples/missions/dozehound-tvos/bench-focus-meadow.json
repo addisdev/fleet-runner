@@ -1,0 +1,27 @@
+{
+  "id": "bench-focus-meadow",
+  "app": "dozehound-tvos",
+  "title": "Point at Meadow",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Move the highlight to the Meadow tile without opening it.",
+  "success": "the Meadow tile is highlighted",
+  "budget": {
+    "steps": 6,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "focused_label": "Meadow",
+    "absent_text": [
+      "Link your Dozehound account"
+    ]
+  },
+  "screens": [
+    "channel_bar"
+  ]
+}
