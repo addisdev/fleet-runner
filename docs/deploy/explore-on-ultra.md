@@ -37,14 +37,16 @@ the memory is free again.
 ### Builds, TVs and Apple simulators (from 12 October 2026)
 
 Three more night-queue jobs, kept in `collector/deploy/explore/night/` and
-copied to `~/night/recurring/`. Lower priority numbers run first.
+copied to `~/night/recurring/`. Lower priority numbers run first; the TV and
+Apple nights go after every product's own night jobs (50–70), so a long
+explore night can never push those past 07:30.
 
 | Job | Priority | What it does |
 |---|---|---|
 | `fleet-explore-builds` | 19 | `deploy/explore/nightly-builds.sh`: resets `~/explore/builds/{greenfolio-ios,dozehound-tvos}` to `origin/develop`, builds a simulator `.app` (zipped) and uploads it to the brain as app `<name>`, build `develop-<sha>`. An unchanged sha is skipped; a failed build leaves the previous one as `latest` |
 | `fleet-explore` | 20 | The bug garden on `fleet-explore-1` (unchanged) |
-| `fleet-explore-tv` | 21 | Dozehound tvOS on simulator `fleet-explore-tvos` (tvOS 26.5) with its stub catalog: the 10 bench cards with Holo4, the same cards with the resident `vision` model (phase 3's 20 navigation missions), then the every-button explorer |
-| `fleet-explore-apple` | 22 | GreenFolio iOS offline on simulator `fleet-explore-ios` (iOS 26.5): the first real-build night, phase 2's precision bar, and phase 4 |
+| `fleet-explore-tv` | 85 | Dozehound tvOS on simulator `fleet-explore-tvos` (tvOS 26.5) with its stub catalog: the 10 bench cards with Holo4, the same cards with the resident `vision` model (phase 3's 20 navigation missions), then the every-button explorer |
+| `fleet-explore-apple` | 86 | GreenFolio iOS offline on simulator `fleet-explore-ios` (iOS 26.5): the first real-build night, phase 2's precision bar, and phase 4 |
 
 **Explore builds never reach a backend.** The script writes each app's
 `Secrets.xcconfig` from its template with `SUPABASE_URL = http://127.0.0.1:9`
