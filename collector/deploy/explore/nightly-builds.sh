@@ -12,7 +12,10 @@
 #
 #   nightly-builds.sh [--tunnel jump:host:port] [app ...]
 #
-# Apps: dozehound-firetv, greenfolio-ios, dozehound-tvos (all by default).
+# Apps: greenfolio-ios and dozehound-tvos by default; dozehound-firetv when
+# named. The Fire TV app has no offline mode and refuses to start without a
+# real https backend, so it is not built nightly until explore may read the
+# production catalog (WB-297).
 set -uo pipefail
 
 BRAIN="${FLEET_URL:-http://127.0.0.1:18788}"
@@ -29,7 +32,7 @@ while [ $# -gt 0 ]; do
     *) apps+=("$1"); shift ;;
   esac
 done
-[ ${#apps[@]} -eq 0 ] && apps=(dozehound-firetv greenfolio-ios dozehound-tvos)
+[ ${#apps[@]} -eq 0 ] && apps=(greenfolio-ios dozehound-tvos)
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 

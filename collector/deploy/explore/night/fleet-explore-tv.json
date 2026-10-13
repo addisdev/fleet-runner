@@ -4,7 +4,7 @@
   "command": [
     "bash",
     "-lc",
-    "source ~/explore/env.sh && bash ~/harness/shelf.sh warm pilot && cd ~/fleet-runner/collector && npx tsx scripts/explore-night.ts --avd fleet-explore-tv --spec examples/jobs/explore-tv-bench-pilot-ultra.json --spec examples/jobs/explore-tv-bench-vision-ultra.json --spec examples/jobs/explore-tv-ultra.json --tunnel runner-ts:192.168.50.27:8788"
+    "source ~/explore/env.sh && bash ~/harness/shelf.sh warm pilot && cd ~/fleet-runner/collector && npx tsx scripts/explore-night.ts --sim fleet-explore-tvos:com.apple.CoreSimulator.SimRuntime.tvOS-26-5:com.apple.CoreSimulator.SimDeviceType.Apple-TV-4K-3rd-generation-1080p --spec examples/jobs/explore-tvos-bench-pilot-ultra.json --spec examples/jobs/explore-tvos-bench-vision-ultra.json --spec examples/jobs/explore-dozehound-tvos-ultra.json --tunnel runner-ts:192.168.50.27:8788"
   ],
   "priority": 21,
   "needs_gb": 35,

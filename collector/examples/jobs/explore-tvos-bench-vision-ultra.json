@@ -1,17 +1,17 @@
 {
   "schema": 1,
-  "job_id": "explore-tv-bench-vision",
+  "job_id": "explore-tvos-bench-vision",
   "workload": "explore",
   "executor": "host",
   "app": {
-    "name": "dozehound-firetv",
+    "name": "dozehound-tvos",
     "build": "latest",
     "sha256": "latest",
-    "platform": "android"
+    "platform": "tvos"
   },
   "targets": {
     "executor": "ultra",
-    "match": "os ~ 'android'",
+    "match": "os ~ 'tvos'",
     "exclusive": true
   },
   "lease": {
@@ -19,9 +19,9 @@
     "max_attempts": 1
   },
   "params": {
-    "app_id": "com.taylab.dozehound.debug",
+    "app_id": "com.taylab.dozehound",
     "app_name": "Dozehound",
-    "app_key": "dozehound-tv",
+    "app_key": "dozehound-tvos",
     "surface": "dpad",
     "bench": true,
     "minutes": 45,

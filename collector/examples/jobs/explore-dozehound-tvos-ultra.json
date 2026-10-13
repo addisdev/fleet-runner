@@ -24,12 +24,15 @@
     "app_key": "dozehound-tvos",
     "surface": "dpad",
     "missions": [
-      "bench-leaving-home",
       "dozehound-tvos-every-button"
     ],
-    "minutes": 40,
+    "minutes": 30,
     "findings_per_night": 5,
     "replay_attempts": 2,
+    "changed": {
+      "repo": "~/explore/builds/dozehound-tvos",
+      "since": "24 hours ago"
+    },
     "model": {
       "model": "pilot"
     },
