@@ -63,12 +63,20 @@ upload() {
 
 # The .app from a simulator build, zipped with its folder: simctl installs a
 # folder, and the explore workload unpacks the zip before installing.
-# xcode_build <dir> <scheme> <sdk> <out zip>
+# Secrets.xcconfig is gitignored and has to exist before xcodegen; the
+# checked-in template carries placeholders only, which is what explore wants:
+# no real keys, so a build can never reach a production backend with them.
+# xcode_build <dir> <scheme> <sdk> <destination> <out zip>
 xcode_build() {
-  local dir="$1" scheme="$2" sdk="$3" zip="$4" derived="$1/.derived"
+  local dir="$1" scheme="$2" sdk="$3" dest="$4" zip="$5" derived="$1/.derived" t
+  for t in "$dir"/*/Config/Secrets.xcconfig.template; do
+    [ -f "$t" ] && [ ! -f "${t%.template}" ] && cp "$t" "${t%.template}"
+  done
   ( cd "$dir" && xcodegen generate --quiet ) || return 1
+  # A destination, not -sdk: -sdk would build an embedded watch app against
+  # the phone's SDK too, and it fails on WatchKit.
   xcodebuild -project "$dir/$(cd "$dir" && ls -d *.xcodeproj | head -1)" -scheme "$scheme" \
-    -sdk "$sdk" -configuration Debug -derivedDataPath "$derived" \
+    -destination "$dest" -configuration Debug -derivedDataPath "$derived" \
     CODE_SIGNING_ALLOWED=NO build >"$dir.build.log" 2>&1 || { tail -30 "$dir.build.log"; return 1; }
   local app
   app=$(ls -d "$derived/Build/Products/Debug-$sdk/"*.app | grep -v -i -e watch -e widget -e topshelf | head -1)
@@ -80,7 +88,14 @@ failed=0
 for name in "${apps[@]}"; do
   dir="$BUILDS/$name"
   [ -d "$dir/.git" ] || { log "$name: no checkout at $dir"; failed=1; continue; }
-  git -C "$dir" fetch -q origin develop && git -C "$dir" reset -q --hard origin/develop || { log "$name: fetch failed"; failed=1; continue; }
+  # Three tries: the home gateway sometimes refuses new connections for a
+  # few minutes at a time.
+  fetched=0
+  for try in 1 2 3; do
+    git -C "$dir" fetch -q origin develop 2>"$dir.fetch.log" && { fetched=1; break; }
+    sleep $(( try * 20 ))
+  done
+  [ $fetched = 1 ] && git -C "$dir" reset -q --hard origin/develop || { log "$name: fetch failed: $(tail -1 "$dir.fetch.log")"; failed=1; continue; }
   sha=$(git -C "$dir" rev-parse --short=10 HEAD)
   build="develop-$sha"
   if [ "$(cat "$STATE/$name" 2>/dev/null)" = "$build" ]; then log "$name: $build already uploaded"; continue; fi
@@ -92,10 +107,10 @@ for name in "${apps[@]}"; do
       file="$dir/app/build/outputs/apk/debug/app-debug.apk"; platform=android ;;
     greenfolio-ios)
       file="$BUILDS/$name-$sha.zip"; platform=ios
-      xcode_build "$dir" GreenFolio iphonesimulator "$file" || { log "$name: build failed"; failed=1; continue; } ;;
+      xcode_build "$dir" GreenFolio iphonesimulator "generic/platform=iOS Simulator" "$file" || { log "$name: build failed"; failed=1; continue; } ;;
     dozehound-tvos)
       file="$BUILDS/$name-$sha.zip"; platform=tvos
-      xcode_build "$dir" Dozehound appletvsimulator "$file" || { log "$name: build failed"; failed=1; continue; } ;;
+      xcode_build "$dir" Dozehound appletvsimulator "generic/platform=tvOS Simulator" "$file" || { log "$name: build failed"; failed=1; continue; } ;;
     *) log "$name: no recipe"; failed=1; continue ;;
   esac
   log "$name: built in $(( $(date +%s) - started )) s"
