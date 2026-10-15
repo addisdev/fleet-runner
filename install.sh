@@ -314,7 +314,7 @@ main() {
   # with it -- every result the fleet has ever recorded -- and an upgrade that
   # deletes your history is a worse outcome than an upgrade that fails.
   mkdir -p "$dir"
-  for entry in bin runner-web dash examples schemas; do
+  for entry in bin runner-web dash examples schemas skills; do
     if [ -d "${root}/${entry}" ]; then
       rm -rf "${dir:?}/${entry}"
       cp -R "${root}/${entry}" "${dir}/${entry}"
