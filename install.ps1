@@ -241,7 +241,7 @@ function Install-Fleet {
         # recorded -- and an upgrade that deletes your history is a worse
         # outcome than an upgrade that fails.
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
-        foreach ($entry in @('bin', 'runner-web', 'dash', 'examples', 'schemas')) {
+        foreach ($entry in @('bin', 'runner-web', 'dash', 'examples', 'schemas', 'skills')) {
             $from = Join-Path $root $entry
             if (-not (Test-Path -LiteralPath $from)) { continue }
             $to = Join-Path $dir $entry

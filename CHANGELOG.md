@@ -16,6 +16,16 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fleet skill` failed on an installed 0.8.0.** The 0.8.0 archives carry
+  `skills/`, but `install.sh` and `install.ps1` copy a release's directories
+  by name and did not name it, so `fleet skill show` and `fleet skill install`
+  could not find `SKILL.md`. Both installers now copy it, and a test fails if
+  the bundle gains a directory the installers do not copy. The installers are
+  fetched from `main`, so re-running the install command fixes an existing
+  0.8.0 install; no new release is needed.
+
 ## [0.8.0] — 2026-10-15
 
 The fleet as something a program or an AI agent can drive: a versioned control
