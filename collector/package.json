@@ -1,6 +1,6 @@
 {
   "name": "fleet-collector",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -10,6 +10,7 @@
   "scripts": {
     "test": "tsx scripts/test.ts",
     "typecheck": "tsc --noEmit",
+    "gen:api": "tsx scripts/gen-api.ts",
     "start": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",
     "executor": "tsx src/executor.ts",
@@ -38,7 +39,7 @@
     "@playwright/test": "^1.62.1",
     "@types/node": "^24.2.0",
     "@types/pngjs": "^6.0.5",
-    "ajv": "^8.17.1",
+    "ajv": "^8.20.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"
   },

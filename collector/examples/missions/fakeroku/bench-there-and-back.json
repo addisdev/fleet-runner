@@ -1,0 +1,22 @@
+{
+  "id": "bench-there-and-back",
+  "app": "fakeroku",
+  "title": "Go right, then all the way back",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Move to the fourth tile, then back to the first one.",
+  "success": "Tile0 has focus on the home row",
+  "budget": {
+    "steps": 10,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home"
+  ],
+  "check": {
+    "screen": "home",
+    "focused_label": "Tile0"
+  }
+}

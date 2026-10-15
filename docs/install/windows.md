@@ -6,15 +6,15 @@ irm https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.ps1 | i
 
 !!! danger "Two separate things are untested here, and the second one matters more"
 
-    **No release has been published**, so there is nothing for that line to
-    download. It will ask `api.github.com` for the latest release, fail, and
-    stop with a message naming the releases page and `$env:FLEET_VERSION`.
+    **`install.ps1` has never been run.** Releases publish `win32-x64` and
+    `win32-arm64` zips with `SHASUMS256.txt`, so there is something for that
+    line to download, but nobody has pointed PowerShell at it.
 
-    **And the `fleet` CLI has never been run on Windows at all.** Not the CLI,
-    not the supervisor, not the bundle, not the scheduled-task service backend.
-    The paths, the process handling and the service code are written and
-    untested. `fleet.yml` declares a three-platform matrix that has never
-    executed.
+    **And nobody has run a fleet on Windows.** CI runs the `fleet` CLI's suite
+    on `windows-latest` on every pull request that touches it, including the
+    supervised `fleet up` end to end, and it passes. That is the whole of it:
+    the bundle from an archive, `fleet service install`'s scheduled-task
+    backend, and a fleet left running on a Windows machine are all unwatched.
 
     What *has* been exercised on Windows is [the machine
     agent](../platforms.md#what-a-cloud-runner-actually-reports): its own suite
@@ -53,9 +53,9 @@ Three details the script gets right that are easy to get wrong by hand:
 
 ## From a checkout
 
-Until a release exists, this is the only path. It has never been run on Windows
-either, but it has no archive to download and no `PATH` registry entry to write,
-so there is less of it to be wrong.
+This is what CI runs on `windows-latest`, so of the two it is the one with
+something behind it. It has no archive to download and no `PATH` registry entry
+to write, so there is less of it to be wrong.
 
 ```powershell
 git clone https://github.com/addisdev/fleet-runner

@@ -1,7 +1,66 @@
 # HTTP API
 
-Grouped by who calls it. The agent API is [the protocol](protocol.md) and is the
-only part an agent needs.
+Three audiences. **Scripts, CI, the CLI and AI agents** use the control API
+under `/api/v1`. **Runners** use [the protocol](protocol.md), and that is the
+only part a runner needs. **The dashboard** uses the unversioned `/api/*`
+routes described further down, which predate `/api/v1`.
+
+## Control API (`/api/v1`)
+
+The machine-readable description is served at `GET /api/v1/openapi.json`
+(OpenAPI 3.1) and committed as `collector/openapi.json`. One route table
+(`collector/src/api/v1/routes.ts`) registers the routes, writes that document
+and generates the typed client in `collector/src/client/`, so the three cannot
+disagree: the test suite fails if they do.
+
+| Method & path | Scope | Purpose |
+|---|---|---|
+| `GET /api/v1/health` | none | Version, auth mode, `api: "v1"` |
+| `GET /api/v1/whoami` | none | Who the collector thinks you are, and your scopes |
+| `GET /api/v1/devices` · `/devices/{id}` | read | The shelf, with status (`online`, `stale`, `offline`) and current job |
+| `GET /api/v1/workloads` · `/workloads/{name}` | read | What the fleet can run: executor, params schema, a valid example spec, how many live agents can take it |
+| `GET /api/v1/templates` | read | Saved job templates |
+| `GET /api/v1/jobs` | read | Jobs; filter by `status`, `workload`, `device`, `pool`, `source`, `requested_by`, `mine=true`, `from`/`to` |
+| `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs |
+| `POST /api/v1/jobs/validate` | run | Dry run: schema errors by path, the devices it would land on, warnings. Always 200 |
+| `GET /api/v1/jobs/{id}` | read | One job, with its spec |
+| `GET /api/v1/jobs/{id}/summary` | read | The verdict across every device, per-device outcomes and artifact refs. Works for a fan-out parent |
+| `GET /api/v1/jobs/{id}/wait?timeout_s=` | read | Long-poll (≤ 120 s) until the job finishes; returns the summary |
+| `POST /api/v1/jobs/{id}/cancel` · `/retry` | run | Cancel (cascades over a fan-out) or run again under a new id |
+| `GET /api/v1/results` · `/results/flaky` | read | Result rows (`include=payload` for the raw row), and tests whose verdict flips on one build |
+| `GET /api/v1/artifacts/{sha256}` · `/content` | read | What an artifact is, and its bytes. Active types (HTML, SVG) are served as attachments with a sandbox CSP |
+| `GET /api/v1/schedules` · `/alerts` | read | Recurring jobs and open alerts |
+| `GET /api/v1/audit` | admin | Who did what, when tokens are on |
+
+**Lists** are `{items, page, per_page, total, pages}` with `page` and
+`per_page` (≤ 500) query parameters.
+
+**Errors** are `{error: {code, message, hint?, details?}}`. `code` is one of
+`bad_request`, `invalid_spec`, `not_found`, `duplicate_job`,
+`no_capable_agent`, `no_matching_devices`, `secret_in_spec`, `no_build`,
+`invalid_match`, `invalid_dependency`, `unresolved_reference`, `conflict`,
+`unauthorized`, `insufficient_scope`, `forbidden`, `rate_limited`, `internal`.
+`hint` says what to do next, for a person or an agent.
+
+**Job specs are validated strictly** against `job.schema.json`: an unknown
+top-level field is refused rather than ignored, so a typo is an error and not
+a setting that silently did nothing. A workload's params are checked against
+its manifest.
+
+**Verdicts** in a summary: `passed`, `failed`, `mixed`, `skipped` (nothing
+ran, never folded into passed), `cancelled`, and while unfinished `queued`,
+`waiting` or `running`.
+
+**Who asked.** Every job records `requested_by` and `source` (`cli`, `mcp`,
+`ci`, `dash`, `schedule`, `api`). With auth off both are what the caller said, labelled
+unverified; with tokens on, `requested_by` is the token's name, or the person a
+`delegate` token names in `X-Fleet-Actor`. See [Authentication](deploy/auth.md).
+
+**The older routes are deprecated, not removed.** `GET /api/devices`,
+`/api/jobs`, `/api/results`, `/devices`, `/schedules`, `GET /jobs/{id}` and
+`POST /jobs` · `/api/jobs` answer with `Deprecation` (RFC 9745) and a
+`Link: <...>; rel="successor-version"` header. There is no sunset date. The
+runner protocol is not deprecated.
 
 Timestamps are ISO-8601 **UTC with a `Z`**. SQLite stores
 `YYYY-MM-DD HH:MM:SS` with no zone marker, which JavaScript parses as local
@@ -21,6 +80,7 @@ running whether or not anyone has a token in a browser.
 | `POST /results` | Result rows and beacons. `final: true` closes the job |
 | `POST /artifacts` | Upload bytes; returns `sha256` |
 | `GET /artifacts/:sha256` | Download, supports Range |
+| `POST /findings` | An `explore` finding from an executor; merged on its fingerprint. See [Findings and verdicts](explore/findings.md#the-api) |
 
 ## Queue
 
@@ -80,6 +140,20 @@ clients should refetch everything.
 
 Topics: `job`, `device`, `beacon`, `result`, `lock`, `schedule`, `artifact`,
 `pipeline-event`.
+
+## Findings
+
+From the [`explore`](explore/index.md) workload. Full shapes and replies are in
+[Findings and verdicts](explore/findings.md#the-api).
+
+| Method & path | Purpose |
+|---|---|
+| `GET /api/findings` | The list: `?app= &check= &status=open\|triaged\|all &since= &limit=` |
+| `GET /api/findings/:id` | One finding, with its duplicates |
+| `GET /api/findings/precision` | How often each check and visual class was judged real; which are switched off |
+| `GET /api/findings/digest?hours=` | The morning digest, as text and as data |
+| `GET /api/findings/issues` | Every GitHub issue composed, dry run or filed |
+| `POST /api/findings/:id/verdict` | Real, duplicate, not a bug, agent's mistake, or reopen. Guarded |
 
 ## Mutations
 

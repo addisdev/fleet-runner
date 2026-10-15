@@ -5,6 +5,7 @@ import path from "node:path";
 import { db, type SqlParam } from "../db.js";
 import {
   ARTIFACT_DIR,
+  AUTH,
   DATA_DIR,
   GITHUB_STATUS_ARMED,
   GITHUB_TOKEN,
@@ -75,6 +76,7 @@ export function health() {
     // Lets the dashboard ask for a token up front instead of discovering the
     // requirement through a 401 on the user's first cancel.
     guard: guardEnabled(),
+    auth: AUTH,
   };
 }
 

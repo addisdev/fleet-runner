@@ -1,0 +1,12 @@
+{
+  "id": "dozehound-tvos-every-button",
+  "app": "dozehound-tvos",
+  "title": "Press every button on the Siri Remote",
+  "persona": "Someone who has picked up the Apple TV remote and presses every button to see what happens, sometimes twice in a row.",
+  "goal": "Move around the channels with the arrows, select things, press Menu (back), play/pause, and Home, from the player and from every channel. Come back into the app whenever a button takes you out.",
+  "success": "every button was pressed somewhere, and the app is still playing",
+  "budget": { "steps": 40, "minutes": 15 },
+  "surfaces": ["dpad"],
+  "screens": ["player", "channel_bar", "leaving_home"],
+  "launch_args": ["-uiTestStubCatalog"]
+}

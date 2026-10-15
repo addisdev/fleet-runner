@@ -1,0 +1,23 @@
+{
+  "id": "explore-settings-tinkerer",
+  "app": "bug-garden",
+  "title": "Someone changing every setting",
+  "persona": "Someone who opens Settings first in every app and tries every switch and option.",
+  "goal": "Change every setting at least once: dark theme, each text size, each language, watering reminders and Back up now. After each change, go back and look at the plant list, a plant, your profile and the About page.",
+  "success": "every setting was changed at least once",
+  "budget": {
+    "steps": 60,
+    "minutes": 25
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "settings",
+    "home",
+    "detail",
+    "profile",
+    "about"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml"
+}

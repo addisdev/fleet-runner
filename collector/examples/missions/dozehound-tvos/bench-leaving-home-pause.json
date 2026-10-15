@@ -1,0 +1,28 @@
+{
+  "id": "bench-leaving-home-pause",
+  "app": "dozehound-tvos",
+  "title": "Leaving Home, then pause",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Start the Leaving Home scene, then pause it.",
+  "success": "the leaving-home banner is still there and the channel shows as paused",
+  "budget": {
+    "steps": 12,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "text": [
+      "until you're back",
+      "Paused"
+    ]
+  },
+  "screens": [
+    "leaving_home",
+    "player"
+  ]
+}

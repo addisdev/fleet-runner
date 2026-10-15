@@ -83,3 +83,85 @@ jobs:
           # bundled agent probes, the bundled collector's browser check, and the
           # config file all load from inside one file with no node_modules.
           FLEET_HOME="$RUNNER_TEMP/fleet-home" node bin/fleet.mjs doctor
+
+  container:
+    # docs/install/docker.md used to say nobody had built this image. Build it,
+    # run it the way the docs say, and drive it through the CLI from outside:
+    # a container whose port is published but whose collector never answers is
+    # the failure a `docker build` alone would call green.
+    name: container smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: npm
+          cache-dependency-path: fleet/package-lock.json
+      - working-directory: .
+        run: docker build -f fleet/Dockerfile -t fleet:ci .
+      - working-directory: .
+        run: docker run -d --name fleet -p 8788:8788 fleet:ci up --role brain,agent
+      - name: The collector answers, and the machine agent registers
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8788/api/v1/health && break
+            sleep 2
+          done
+          npm --prefix ../collector ci
+          npm ci
+          for i in $(seq 1 30); do
+            n=$(npx tsx src/cli.ts devices --url http://127.0.0.1:8788 --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).items.length))')
+            [ "$n" -gt 0 ] && break
+            sleep 2
+          done
+          [ "$n" -gt 0 ] || { echo "::error::no device registered inside the container"; docker logs fleet; exit 1; }
+          npx tsx src/cli.ts workloads --url http://127.0.0.1:8788 --json > /dev/null
+          npx tsx src/cli.ts whoami --url http://127.0.0.1:8788
+      - if: failure()
+        run: docker logs fleet
+
+  systemd:
+    # `fleet service install` on Linux writes a user unit and enables it. Run it
+    # on a real systemd and check the collector it starts answers, then that
+    # uninstall leaves nothing running.
+    name: systemd smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: npm
+          cache-dependency-path: fleet/package-lock.json
+      - run: npm ci && npm --prefix ../collector ci && npm run build
+      - name: Install as a user service, and it serves
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo loginctl enable-linger "$USER"
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          for i in $(seq 1 20); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 1; done
+          mkdir -p "$HOME/.fleet"
+          cp -R dist/. "$HOME/.fleet/"
+          node "$HOME/.fleet/bin/fleet.mjs" service install
+          systemd-analyze --user verify "$HOME/.config/systemd/user/fleet.service"
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8788/api/v1/health && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8788/api/v1/health >/dev/null
+          node "$HOME/.fleet/bin/fleet.mjs" service status
+          node "$HOME/.fleet/bin/fleet.mjs" service uninstall
+          sleep 3
+          if curl -fsS http://127.0.0.1:8788/api/v1/health 2>/dev/null; then
+            echo "::error::the collector is still answering after uninstall"
+            exit 1
+          fi
+      - if: failure()
+        shell: bash
+        run: |
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          journalctl --user -u fleet.service --no-pager | tail -100 || true

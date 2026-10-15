@@ -28,7 +28,21 @@ Four components, four suites. Only run the one you touched.
     the smoke suite against it. It never touches a real fleet's history, which
     is why it can be wired to `npm test` at all.
 
-    It takes about four minutes.
+    It takes about five minutes. If you changed a route in
+    `src/api/v1/routes.ts`, run `npm run gen:api` first: the suite fails when
+    `openapi.json` or the generated client no longer match the route table.
+
+=== "fleet"
+
+    ```bash
+    cd fleet
+    npm install
+    npm test
+    ```
+
+    The CLI, the MCP server and the remote gateway, each tested against a real
+    collector it starts itself. `npm run skill:gen` after changing a tool or
+    an exit code; the suite fails when `skills/fleet-runner/SKILL.md` is stale.
 
 === "runner-android"
 
@@ -142,6 +156,30 @@ this is the first rule rather than a nice sentiment.
 `ci-ok` is the only required check. It always reports, and it passes when every
 component suite is green **or skipped** — a change to one runner does not build
 the others.
+
+## Cutting a release
+
+One version covers every component, so a release is one number everywhere.
+
+1. On a branch from `develop`, run `node scripts/version.mjs set X.Y.Z`. It
+   writes `VERSION` and every component's own version. Then run
+   `npm --prefix collector run gen:api`, because `openapi.json` carries the
+   version and CI fails when it is stale. Android's `versionCode` is not
+   derived from it; bump that by hand if the Play Store build needs it.
+2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`,
+   add a fresh empty `## [Unreleased]` above it, and update the compare links
+   at the bottom.
+3. Merge that into `develop`, then open a `develop` → `main` pull request named
+   `Release X.Y.Z` and merge it once `ci-ok` passes.
+4. Tag the merge commit on `main` and push the tag:
+   `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
+
+The tag runs `release.yml`. Its first job refuses to publish anything unless
+the tag, `VERSION` and every component agree. Then it builds the six
+platform archives and `SHASUMS256.txt`, pushes the container image, and creates
+the GitHub Release, which `install.sh` and `install.ps1` read. A version with a
+suffix (`0.9.0-rc.1`) is published as a pre-release and leaves `latest` alone.
+Pushing to `main` also publishes the docs site.
 
 ## Dependencies
 

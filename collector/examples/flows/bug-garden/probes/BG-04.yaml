@@ -1,0 +1,31 @@
+# Probe BG-04: The third search in a row with no results crashes.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. The tap at the end crashes the app; the script reads `adb logcat -b crash`.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_search"
+- tapOn:
+    id: "field_search"
+- inputText: "cactus"
+- tapOn:
+    id: "button_run_search"
+- assertVisible: 'No plants match "cactus"'
+- tapOn:
+    id: "field_search"
+- eraseText: 40
+- inputText: "orchid"
+- tapOn:
+    id: "button_run_search"
+- assertVisible: 'No plants match "orchid"'
+- tapOn:
+    id: "field_search"
+- eraseText: 40
+- inputText: "tulip"
+- tapOn:
+    id: "button_run_search"

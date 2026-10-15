@@ -57,6 +57,26 @@ once and then cannot start the fleet.
 is not a broken machine, and a doctor that exited non-zero for it would fail every CI job
 somebody put it in.
 
+### Work commands
+
+Running jobs rather than running the fleet. Each calls `/api/v1` through the generated
+client in `collector/src/client/`, takes `--url`, `--token` and `--json`, and exits with the
+verdict: **0** passed, **1** failed, **2** usage or invalid spec, **3** still running, **4**
+skipped (nothing ran), **5** refused or unreachable.
+
+| | |
+|---|---|
+| `fleet devices` / `fleet workloads [NAME]` | What is on the shelf; what it can run, with an example spec |
+| `fleet run WORKLOAD [--device\|--pool\|--match] [--param k=v] [--spec FILE]` | Validate, queue, wait, print the verdict. `--validate` checks only; `--no-wait` prints the id |
+| `fleet job ID` / `fleet wait ID` | A verdict now, or when it finishes |
+| `fleet cancel ID` / `fleet retry ID` | |
+| `fleet results` / `fleet flaky` / `fleet artifact SHA [--out FILE]` | What ran, what flips, and the files it left |
+| `fleet login` / `logout` / `whoami` | Save a token for a collector (`~/.fleet/credentials.json`, 0600) |
+| `fleet token create\|list\|revoke` | On the brain's host: the collector's tokens, for `FLEET_AUTH=tokens` |
+| `fleet skill show\|install` | The agent skill, into Cursor, Claude Code and Codex |
+
+`fleetr` is the same program under a name no other tool uses; the skill uses it.
+
 ## For coding agents: `fleet mcp`
 
 `fleet mcp` serves the lab as MCP tools over stdio, so a coding session can ask
@@ -66,20 +86,30 @@ the session:
 | Tool | For |
 |---|---|
 | `fleet_devices` | What is attached right now, and what each device can run |
+| `fleet_workloads` | What the lab can run, and a spec for each that validates |
+| `fleet_validate` | Check a spec and see where it would land, without queueing |
 | `fleet_run` | Run a job spec on real devices and wait for the verdict |
 | `fleet_job` | Follow a job started without waiting |
+| `fleet_cancel` / `fleet_retry` | Stop a job you started, or run one again |
 | `fleet_artifact` | Open a screenshot, a visual diff, a JUnit report or a log by sha256 |
-| `fleet_results` | Recent results by device or workload -- "has this been flaky on hardware?" |
+| `fleet_results` / `fleet_flaky` | Recent results by device or workload, and tests that flip |
+| `fleet_whoami` | Which collector, and what this session may do there |
 
-Register it with Claude Code once, for every project:
+Register it with Claude Code once, for every project, and install the skill that says how
+to use it:
 
 ```bash
 claude mcp add --scope user fleet -- ~/.fleet/bin/fleet mcp
+fleet skill install
 ```
 
-It finds the brain the way the agent does -- `--url`, then `FLEET_URL`, then the
-config -- and adds nothing the HTTP API does not already do: one scheduler, one
-set of device locks, and nothing an agent can do that curl could not.
+It finds the brain the way the agent does -- `--url`, then `FLEET_RUNNER_URL` or
+`FLEET_URL`, then the config -- and adds nothing the HTTP API does not already do: one
+scheduler, one set of device locks, and nothing an agent can do that curl could not.
+
+`fleet mcp --http` is the same tools as a remote MCP server behind your identity
+provider's OAuth, for chat clients and people without `fleet` installed. See
+[Authentication and the remote MCP gateway](../docs/deploy/auth.md).
 
 Why it exists: nobody opened the dashboard in a week while the fleet ran fifty
 jobs, and most of the code in the repositories it tests is written with coding
@@ -193,12 +223,21 @@ the collector under it. Two things cost an outage each on the way and are fixed 
 `PATH` from the shell that ran the install, which is how an executor ends up unable to find
 `adb`.
 
+Since 0.8.0, two CI smoke jobs in `fleet.yml` run what had only been built:
+
+- **systemd.** `systemd smoke` installs the built bundle as a systemd user unit on Ubuntu,
+  checks it with `systemd-analyze verify`, waits for its collector to answer, and uninstalls
+  it.
+- **A container.** `container smoke` builds `fleet/Dockerfile`, starts `fleet up` in it, and
+  waits for its machine agent to register. Its first run found the image could not start on
+  a fresh volume.
+
 What has still not been run:
 
-- **`fleet service install` on systemd or on Windows.** The launchd backend is the one with a
-  real deployment behind it; the other two are written, typechecked, and unexercised.
-- **A container.** `fleet/Dockerfile` is built and published by the release workflow for
-  linux/amd64 and linux/arm64, so it assembles; nothing has started a container from it.
+- **`fleet service install` on Windows**, and the systemd unit surviving a reboot on a real
+  machine.
+- **The arm64 container image.** The release workflow builds and publishes it; nothing has
+  started it.
 - **`install.ps1`.** No PowerShell was available to parse it, let alone run it. `install.sh`
   *has* been run against the real v0.5.0 release on macOS/arm64: checksum verified, binary
   installed and reporting its version.

@@ -1,0 +1,50 @@
+# The screen walk behind the t1-*.yaml flows (PeerTest ADVISOR-PLAN T1): from
+# the plant list, one screenshot of each main screen, named by the PREFIX the
+# caller passes so one walk serves the base, dark, Spanish and large-text runs.
+appId: dev.fleetrunner.buggarden
+---
+- extendedWaitUntil:
+    visible:
+      id: "screen_home"
+    timeout: 10000
+- takeScreenshot: ${PREFIX}_home
+- tapOn: "Monstera"
+- extendedWaitUntil:
+    visible:
+      id: "screen_detail"
+    timeout: 10000
+- takeScreenshot: ${PREFIX}_detail
+- back
+- tapOn:
+    id: "button_add"
+- extendedWaitUntil:
+    visible:
+      id: "screen_edit"
+    timeout: 10000
+- takeScreenshot: ${PREFIX}_edit
+- back
+- tapOn:
+    id: "button_search"
+- extendedWaitUntil:
+    visible:
+      id: "screen_search"
+    timeout: 10000
+- inputText: "Fern"
+- takeScreenshot: ${PREFIX}_search
+- back
+- tapOn:
+    id: "button_settings"
+- extendedWaitUntil:
+    visible:
+      id: "screen_settings"
+    timeout: 10000
+- takeScreenshot: ${PREFIX}_settings
+- back
+- tapOn:
+    id: "button_profile"
+- extendedWaitUntil:
+    visible:
+      id: "screen_profile"
+    timeout: 10000
+- takeScreenshot: ${PREFIX}_profile
+- back

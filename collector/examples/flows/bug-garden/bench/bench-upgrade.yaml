@@ -1,0 +1,23 @@
+# Bench mission bench-upgrade: Buy Sprout Plus.
+#
+# The scripted answer to collector/examples/missions/bug-garden/bench-upgrade.json,
+# for checking that the mission's `check` block is right: run this, dump the
+# tree, and the check must pass. It is also the shortest path a model could
+# take, which makes it the step-count baseline for the bench.
+#
+# Runs on the clean build: Maestro passes `arguments` as intent extras, and
+# garden_defects=false turns every planted defect off.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_profile"
+- tapOn:
+    id: "button_upgrade"
+- tapOn:
+    id: "button_buy"
+- assertVisible: 'You''re on Sprout Plus'

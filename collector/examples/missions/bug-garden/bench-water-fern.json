@@ -1,0 +1,29 @@
+{
+  "id": "bench-water-fern",
+  "app": "bug-garden",
+  "title": "Water the Fern",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "You just watered the Fern. Record that in the app.",
+  "success": "the Fern shows 'Watered today'",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "detail"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Fern",
+      "Watered today"
+    ]
+  }
+}

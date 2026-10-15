@@ -1,0 +1,21 @@
+{
+  "id": "explore-first-plant",
+  "app": "bug-garden",
+  "title": "New user adds a first plant",
+  "persona": "Someone who has just installed Sprout, has no account, and has never used a plant-tracking app.",
+  "goal": "Get into the app without creating an account, add your first plant with whatever details seem natural, then open it and look around at what you added.",
+  "success": "a plant the agent added appears in the plant list",
+  "budget": {
+    "steps": 45,
+    "minutes": 20
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "sign_in",
+    "home",
+    "edit",
+    "detail"
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "bench-guest",
+  "app": "bug-garden",
+  "title": "Continue as a guest",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Get into the app without signing in.",
+  "success": "the plant list says 'Browsing as guest'",
+  "budget": {
+    "steps": 8,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "sign_in",
+    "home"
+  ],
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "home",
+    "text": [
+      "Browsing as guest"
+    ]
+  }
+}

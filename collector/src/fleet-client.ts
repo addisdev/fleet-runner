@@ -14,6 +14,47 @@ export const exec = promisify(execFile);
 export const BASE = process.env.FLEET_URL ?? "http://127.0.0.1:8788";
 export const NAME = process.env.FLEET_EXECUTOR_NAME ?? os.hostname().replace(/\.local$/, "");
 
+/**
+ * Every request this process makes to its own collector carries FLEET_TOKEN.
+ *
+ * The executor and its workload modules call fetch against BASE in a dozen
+ * places, written before the collector had auth; threading a header through
+ * each would leave the thirteenth to be found by a 401 in production. So fetch
+ * is wrapped once, here, and adds the token only when the URL's origin is the
+ * collector's: a token must never ride along to a site under test.
+ *
+ * The token wants `agent` (claims, results, artifacts) plus `read` for the
+ * dashboard reads some workloads make (visual baselines, findings precision),
+ * and `run` if this host runs the digest, which enqueues its own job.
+ */
+function installCollectorAuth(): void {
+  const token = process.env.FLEET_TOKEN?.trim();
+  if (!token) return;
+  let origin: string;
+  try {
+    origin = new URL(BASE).origin;
+  } catch {
+    return;
+  }
+  const inner = globalThis.fetch;
+  if ((inner as { fleetAuth?: boolean }).fleetAuth) return;
+  const wrapped = (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    let same = false;
+    try {
+      same = new URL(url).origin === origin;
+    } catch { /* relative or malformed: not ours */ }
+    if (!same) return inner(input, init);
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    if (!headers.has("authorization")) headers.set("authorization", `Bearer ${token}`);
+    if (!headers.has("x-fleet-source")) headers.set("x-fleet-source", "executor");
+    return inner(input, { ...init, headers });
+  };
+  Object.assign(wrapped, { fleetAuth: true });
+  globalThis.fetch = wrapped as typeof fetch;
+}
+installCollectorAuth();
+
 export const log = (msg: string) => console.log(`[executor:${NAME}] ${msg}`);
 
 export async function post(url: string, body: unknown) {

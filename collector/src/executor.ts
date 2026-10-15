@@ -30,7 +30,6 @@ import { targetsFrom } from "./drivers/devicectl.js";
 import { describeRoku, rokuDevPassword, rokuDevices, rokuPresenceHere, rokuTarget, type RokuDevice } from "./drivers/roku.js";
 import { evalMatch } from "./match.js";
 import { keychainPassword, redact, KEYCHAIN_SERVICE } from "./secrets.js";
-import { parseAmStart, amStartProblem } from "./am-start.js";
 import { withNetwork, withNetworkAll, restoreAttached } from "./network-shape.js";
 import {
   restoreAttachedState, unmanageableReason, withState,
@@ -1475,8 +1474,10 @@ async function dumpA11yTree(
  * can happen inside a lease -- so it audits the app's launch screen only, which
  * the run says on the row.
  *
- * It fails until the iOS runner grows the helper, and it fails by naming
- * exactly what is missing, because the alternative is a job that quietly audits
+ * The helper is FleetSmokeUITests.testSmoke in runner-ios: with the flag set
+ * it launches the app and prints its debugDescription between the markers. When
+ * the markers are missing the run says why it thinks so, with the end of
+ * xcodebuild's output, because the alternative is a job that quietly audits
  * nothing on every simulator in the fleet.
  */
 async function xcuitestA11yTree(t: Target, appId: string, timeoutS: number): Promise<A11yNode[]> {
@@ -1499,11 +1500,15 @@ async function xcuitestA11yTree(t: Target, appId: string, timeoutS: number): Pro
   }
   const m = /FLEET-A11Y-DUMP-BEGIN\r?\n([\s\S]*?)\r?\nFLEET-A11Y-DUMP-END/.exec(out);
   if (!m) {
+    // The helper exists (FleetSmokeUITests prints the dump when
+    // TEST_RUNNER_FLEET_A11Y_DUMP=1), so no markers means the test never got
+    // that far: the bundle did not build, the runner did not start, or the app
+    // did not launch. xcodebuild's last lines are what says which.
+    const tail = out.split("\n").filter((l) => l.trim()).slice(-8).join(" | ").slice(-800);
     throw new Error(
-      "the FleetRunner test bundle printed no accessibility dump. The iOS runner needs a test that, when " +
-      "TEST_RUNNER_FLEET_A11Y_DUMP=1 is set, prints XCUIApplication().debugDescription between the lines " +
-      "FLEET-A11Y-DUMP-BEGIN and FLEET-A11Y-DUMP-END. The parser for that output already exists here " +
-      "(parseXcuiDebugDescription in src/a11y-tree.ts)",
+      "the FleetRunner test bundle printed no accessibility dump (FLEET-A11Y-DUMP-BEGIN/END). Its smoke test " +
+      `prints one after launching ${appId}, so the run stopped before that: a build failure, a runner that ` +
+      `did not start, or an app that would not launch. ${tail ? `xcodebuild ended: ${tail}` : "xcodebuild printed nothing"}`,
     );
   }
   const parsed = parseXcuiDebugDescription(m[1]);
@@ -1715,207 +1720,6 @@ async function runA11yAudit(job: Job) {
     artifacts: [reportSha, ...(zipSha ? [zipSha] : [])],
     error: zipSha ? undefined : "no screenshot was captured, so there is no bundle (the findings report is still attached)",
   });
-}
-
-const LAUNCH_STATES = ["cold", "warm", "hot"] as const;
-type LaunchState = (typeof LAUNCH_STATES)[number];
-
-/** The launcher activity `am start -n` needs, resolved the same way launchApp does. */
-async function androidLaunchComponent(target: Target, appId: string): Promise<string> {
-  const { stdout } = await exec(
-    ADB, ["-s", target.id, "shell", "cmd", "package", "resolve-activity", "--brief", appId],
-    { timeout: 15_000 },
-  );
-  const component = stdout.replace(/\r/g, "").trim().split("\n").pop()?.trim();
-  if (!component || !component.includes("/")) {
-    throw new Error(`no launcher activity for ${appId}: ${stdout.trim().slice(0, 160)}`);
-  }
-  return component;
-}
-
-/**
- * Put the app into `state`, then launch it once and ask the framework how long
- * that took.
- *
- * The three states are three different pieces of choreography, and the
- * difference between them is the whole measurement:
- *
- *   cold -- force-stop first, so the process is gone and Android builds it from
- *           nothing. This is the number a user feels after a reboot.
- *   warm -- launch again with the process still around. No force-stop, by
- *           definition: warm IS "the app is still in memory".
- *   hot  -- HOME first, so the activity is merely backgrounded, then return to
- *           it. The cheapest launch there is.
- *
- * `am start -W` blocks until the activity reports it is displayed and prints
- * TotalTime, which is the framework's own time-to-first-frame. That is why this
- * path exists and the iOS ones below do not: nothing in simctl or devicectl
- * answers the same question.
- */
-async function androidLaunchOnce(target: Target, component: string, appId: string, state: LaunchState) {
-  if (state === "cold") {
-    await exec(ADB, ["-s", target.id, "shell", "am", "force-stop", appId], { timeout: 20_000 });
-    // Force-stop returns before the process is reaped; measuring into that
-    // window times a launch that is still racing the teardown.
-    await new Promise((r) => setTimeout(r, 800));
-  } else if (state === "hot") {
-    await exec(ADB, ["-s", target.id, "shell", "input", "keyevent", "KEYCODE_HOME"], { timeout: 20_000 });
-    await new Promise((r) => setTimeout(r, 1200));
-  }
-  const { stdout } = await exec(
-    ADB, ["-s", target.id, "shell", "am", "start", "-W", "-n", component],
-    { timeout: 90_000 },
-  );
-  return parseAmStart(stdout);
-}
-
-/**
- * cold-start: how long the app takes to put its first frame on screen, N times
- * over, in each launch state.
- *
- * One result row per launch — never a pre-averaged one. The collector computes
- * p50 and p95 from the rows, split by launch_state, because a percentile mixing
- * cold and hot launches describes nothing that ever happens to a person holding
- * the phone.
- *
- * Android is the only platform this can measure honestly, and that is a
- * statement about the tooling rather than about the app:
- *
- *   Android      -- `am start -W` reports TotalTime, the framework's own
- *                   time-to-first-frame. Real measurement.
- *   iOS simulator-- `simctl launch` returns once the process is SPAWNED. That
- *                   is not time to first frame, it is a much smaller number
- *                   that would sit in a field documented as time to first
- *                   frame and be read as one. Reported as a failed row naming
- *                   the limitation.
- *   iOS device   -- devicectl has the same gap and one more: no force-stop by
- *                   bundle id, so the cold state cannot even be established.
- *
- * The honest iOS path is on-device (XCTApplicationLaunchMetric in an XCUITest
- * run, or the runner app reporting its own first frame) — it needs a runner
- * change in another repo, not a number invented here.
- */
-async function runColdStart(job: Job) {
-  const appId = (job.params?.app_id as string | undefined) ?? job.suite?.app_id;
-  if (!appId) throw new Error("cold-start job needs params.app_id");
-  const launches = Math.max(1, Number(job.params?.launches ?? 10));
-  const asked = job.params?.states;
-  const states = (Array.isArray(asked) ? asked.map(String) : [...LAUNCH_STATES]) as LaunchState[];
-  for (const s of states) {
-    if (!LAUNCH_STATES.includes(s)) {
-      throw new Error(`params.states has ${JSON.stringify(s)}; launch states are ${LAUNCH_STATES.join(", ")}`);
-    }
-  }
-  if (states.length === 0) throw new Error("params.states is empty; nothing to measure");
-
-  const platform = job.app?.platform ?? "android";
-  const targets = await selectTargets(job, (await listTargets()).filter((t) => t.platform === platform));
-  if (targets.length === 0) throw new NoTargetsError(`no ${platform} targets matched this job`);
-
-  let allOk = true;
-  for (const target of targets) {
-    // iOS, both kinds: say what is missing and stop. A spawn time filed as
-    // launch_ms would be indistinguishable downstream from an Android
-    // time-to-first-frame, and every comparison drawn from the pair would be
-    // wrong in the app's favour.
-    if (target.platform === "ios") {
-      allOk = false;
-      const why = target.kind === "device"
-        ? "devicectl cannot time an iOS device's first frame (and cannot force-stop by bundle id, " +
-          "so the cold state cannot be established); measure it on-device with XCTApplicationLaunchMetric"
-        : "simctl launch returns when the process is spawned, not when the first frame is presented, " +
-          "so there is no honest time-to-first-frame here; measure it with XCTApplicationLaunchMetric in a ui-test job";
-      await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: false, error: why });
-      log(`cold-start on ${target.id}: unsupported — ${why}`);
-      continue;
-    }
-
-    if (!(await hasApp(target, appId))) {
-      await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: `skipped: ${appId} not installed` });
-      log(`cold-start on ${target.id}: skipped (${appId} not installed)`);
-      continue;
-    }
-
-    let component: string;
-    try {
-      component = await androidLaunchComponent(target, appId);
-    } catch (e) {
-      allOk = false;
-      await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: false, error: (e as Error).message.slice(0, 300) });
-      log(`cold-start on ${target.id}: ${(e as Error).message}`);
-      continue;
-    }
-
-    let iter = 0;
-    for (const state of states) {
-      // The lease is renewed per state, not per job: ten launches of a heavy
-      // app in three states outlives a default lease comfortably, and a swept
-      // job would be re-claimed and re-run on the same phone.
-      await postBeacon(job.job_id, target.id, {}).catch(() => {});
-
-      // One discarded warm-up launch per state, and it is not optional. Each
-      // state is defined by what the OS is holding when the launch starts, and
-      // the launch before the first measured one is what puts it there: the
-      // first "warm" launch after a cold start would otherwise be measured
-      // against a process that was never warm, and the first launch of the run
-      // as a whole carries one-time work (dexopt, first-run migrations) that no
-      // user pays twice.
-      try {
-        await androidLaunchOnce(target, component, appId, state);
-      } catch (e) {
-        allOk = false;
-        iter += 1;
-        await postResult({
-          job_id: job.job_id, device_id: target.id, iter, ok: false,
-          error: `${state} warm-up launch failed: ${(e as Error).message.slice(0, 240)}`,
-        });
-        log(`cold-start ${appId} on ${target.id}: ${state} warm-up failed, skipping the state`);
-        continue;
-      }
-
-      const measured: number[] = [];
-      for (let i = 0; i < launches; i++) {
-        iter += 1;
-        let parsed;
-        try {
-          parsed = await androidLaunchOnce(target, component, appId, state);
-        } catch (e) {
-          allOk = false;
-          await postResult({
-            job_id: job.job_id, device_id: target.id, iter, ok: false,
-            error: `${state} launch ${i + 1} failed: ${(e as Error).message.slice(0, 240)}`,
-          });
-          continue;
-        }
-        const problem = amStartProblem(parsed);
-        if (problem || parsed.totalMs === null) {
-          allOk = false;
-          await postResult({
-            job_id: job.job_id, device_id: target.id, iter, ok: false,
-            error: `${state} launch ${i + 1}: ${problem ?? "no TotalTime"}`,
-          });
-          continue;
-        }
-        // LaunchState (Android 10+) is the framework's verdict on what that
-        // launch actually was, and it beats our choreography's intent: a
-        // force-stopped app the OS still had warm really did launch warm, and
-        // filing it as cold is how a p95 stops meaning anything. When the
-        // platform is too old to say, the state we drove is the best available.
-        const reported = parsed.launchState ?? state;
-        if (parsed.launchState && parsed.launchState !== state) {
-          log(`cold-start ${appId} on ${target.id}: asked for ${state}, the framework reported ${parsed.launchState} — filing it as ${parsed.launchState}`);
-        }
-        measured.push(parsed.totalMs);
-        await postResult({
-          job_id: job.job_id, device_id: target.id, iter, ok: true,
-          metrics: { launch_ms: parsed.totalMs, launch_state: reported },
-        });
-      }
-      const mean = measured.length > 0 ? Math.round(measured.reduce((a, b) => a + b, 0) / measured.length) : null;
-      log(`cold-start ${appId} on ${target.id}: ${state} — ${measured.length}/${launches} launches, mean ${mean ?? "?"} ms`);
-    }
-  }
-  await postResult({ job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk });
 }
 
 /**
@@ -2925,7 +2729,6 @@ async function dispatch(job: Job, loaded: Map<string, LoadedWorkload>): Promise<
   else if (job.workload === "locale-shots") await runLocaleShots(job);
   else if (job.workload === "a11y-audit") await runA11yAudit(job);
   else if (job.workload === "drain") await runDrain(job);
-  else if (job.workload === "cold-start") await runColdStart(job);
   else if (job.workload === "web-test") await runWebTest(job);
   else if (job.workload === "web-shots") await runWebShots(job);
   else if (job.workload === "web-audit") await runWebAudit(job);

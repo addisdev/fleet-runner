@@ -1,6 +1,7 @@
 // Typed access to the collector's read API, plus the hooks the pages use.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { onLive } from "./live.js";
+import { tokenHeader } from "./token.js";
 
 export class ApiError extends Error {
   constructor(
@@ -14,7 +15,7 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path.startsWith("/") ? path : `/api/${path}`, {
     ...init,
-    headers: { accept: "application/json", ...(init?.headers ?? {}) },
+    headers: { accept: "application/json", ...tokenHeader(), ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     // The API answers unknown /api paths with JSON, so an HTML body here means
@@ -357,4 +358,91 @@ export type Health = {
   pid: number;
   stream_clients: number;
   guard: boolean;
+  /** "tokens" when every read needs a token too, not only changes. */
+  auth?: "off" | "tokens";
+};
+
+// --- night-QA findings (mirrors src/findings.ts) ---
+
+export type FindingVerdict = "real" | "duplicate" | "not_a_bug" | "agent_mistake";
+
+export type FindingIssue = {
+  state: "dry_run" | "pending" | "filed" | "failed" | "capped" | "no_repo";
+  /** True means nothing was sent to GitHub. */
+  dry_run: boolean;
+  repo: string | null;
+  title: string;
+  body: string;
+  labels: string[];
+  url: string | null;
+  number: number | null;
+  detail: string;
+  at: string;
+};
+
+export type Finding = {
+  id: number;
+  fingerprint: string;
+  app: string;
+  build: string;
+  platform: string;
+  device_id: string;
+  job_id: string;
+  last_job_id: string | null;
+  mission_id: string;
+  /** An open string, like Device.platform: the workload gains checks before the dashboard learns their names. */
+  check: string;
+  severity: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  screen: string;
+  screen_name: string;
+  steps: string[];
+  replay: { kind: string; sha256: string | null; attempts: number; reproduced: number } | null;
+  /** "reproduced 2/2", "flaky 1/2", "crash log". */
+  replay_label: string;
+  artifacts: { shot?: string; sheet?: string; trajectory?: string; log?: string; replay?: string };
+  first_seen: string | null;
+  last_seen: string | null;
+  seen_count: number;
+  builds_seen: string[];
+  verdict: FindingVerdict | null;
+  verdict_note: string | null;
+  verdict_at: string | null;
+  duplicate_of: number | null;
+  issue: FindingIssue | null;
+  status: "open" | "triaged";
+};
+
+export type FindingDetail = Finding & {
+  duplicates: { id: number; title: string; seen_count: number }[];
+  duplicate_of_title: string | null;
+};
+
+export type FindingList = {
+  findings: Finding[];
+  counts: { open: number; triaged: number; total: number };
+  /** Facets over every finding, not the filtered set. */
+  apps: string[];
+  checks: string[];
+  limit: number;
+};
+
+export type FindingPrecision = {
+  floor: number;
+  min: number;
+  classes: {
+    app: string;
+    check: string;
+    subclass: string | null;
+    open: number;
+    real: number;
+    duplicate: number;
+    not_a_bug: number;
+    agent_mistake: number;
+    judged: number;
+    precision: number | null;
+    disabled: boolean;
+  }[];
+  disabled: { app: string; check: string; subclass: string | null; precision: number | null; judged: number }[];
 };

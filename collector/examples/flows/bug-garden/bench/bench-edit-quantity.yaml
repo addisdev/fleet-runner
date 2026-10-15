@@ -1,0 +1,30 @@
+# Bench mission bench-edit-quantity: Change Monstera's quantity to 5.
+#
+# The scripted answer to collector/examples/missions/bug-garden/bench-edit-quantity.json,
+# for checking that the mission's `check` block is right: run this, dump the
+# tree, and the check must pass. It is also the shortest path a model could
+# take, which makes it the step-count baseline for the bench.
+#
+# Runs on the clean build: Maestro passes `arguments` as intent extras, and
+# garden_defects=false turns every planted defect off.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- runFlow: ../sign-in.yaml
+- tapOn: "Monstera"
+- tapOn:
+    id: "button_edit"
+- tapOn:
+    id: "field_quantity"
+- eraseText: 40
+- inputText: "5"
+- scrollUntilVisible:
+    element:
+      id: "button_save"
+    direction: DOWN
+- tapOn:
+    id: "button_save"
+- assertVisible: 'Qty 5 · Living room · every 7 days'

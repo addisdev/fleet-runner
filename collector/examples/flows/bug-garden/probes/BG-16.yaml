@@ -1,0 +1,12 @@
+# Probe BG-16: Tip of the day is grey on grey.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends on Home, for a screenshot.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- assertVisible:
+    id: "card_tip"

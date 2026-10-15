@@ -4,24 +4,28 @@
 curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.sh | sh
 ```
 
-!!! danger "Two separate things are untested here"
+!!! warning "What has been run on Linux, and what has not"
 
-    **No release has been published**, so there is no archive to download and no
-    `SHASUMS256.txt` to check it against. The script asks `api.github.com` for
-    the latest release, finds nothing, and stops. Use [from a
-    checkout](#from-a-checkout) or [Docker](docker.md).
+    **`install.sh` has not been run against a release on Linux.** Releases
+    publish `linux-x64` and `linux-arm64` archives with `SHASUMS256.txt`, and the
+    script has been run against a real release on macOS; the Linux branch of it
+    has not been watched.
 
-    **And the `fleet` CLI has never been run on Linux.** Not the CLI, not the
-    supervisor, not the bundle, not the systemd service backend. The paths, the
-    process handling and the service code are written and untested.
+    **The `fleet` CLI has been run on Linux only by CI.** Every pull request
+    that touches it runs the CLI's suite on `ubuntu-latest`, including the
+    supervised `fleet up` end to end. Two smoke jobs go further:
+    `systemd smoke` installs the built bundle as a systemd user service, waits
+    for its collector to answer, and uninstalls it; `container smoke` starts the
+    [Docker image](docker.md) and waits for its machine agent to register. That
+    is a real result, and it is not the same as somebody running a fleet on a
+    Linux machine for a week.
 
     What *has* been exercised on Linux is [the machine
     agent](../platforms.md#what-a-cloud-runner-actually-reports): its own suite
     runs on x64 and arm64 Linux in CI, and the arm64 descriptor comes back
     near enough complete -- only `soc` is missing, because `/proc/cpuinfo` on
-    arm64 has no `model name` line. That is a real result about the agent and
-    says nothing about `fleet`. **No board has ever registered against a real
-    collector.**
+    arm64 has no `model name` line. **No board has ever registered against a
+    real collector.**
 
 **You need Node 22.13 or newer on `PATH`.** The release carries no runtime, and
 your distribution's `nodejs` package is very often older than 22.13 -- Debian
@@ -128,12 +132,15 @@ lingering for the account (`loginctl enable-linger <user>`). A headless Pi that
 reboots unattended and is never logged into will otherwise sit there running
 nothing.
 
-**`fleet service install` has never been run on Linux.** It has now been run
-on macOS, where it runs a real fleet's brain -- so the command works and the
-systemd backend specifically does not have that behind it. Every path it writes
+**`fleet service install` on systemd is checked by CI, not by a deployment.**
+On macOS it runs a real fleet's brain. On Linux, `systemd smoke` installs the
+user unit on GitHub's Ubuntu runner, checks it with `systemd-analyze verify`,
+waits for the collector it starts to answer, and uninstalls it. What that does
+not cover is a reboot: the job enables lingering and starts the unit, and
+nobody has watched it come back at boot on a real machine. Every path it writes
 is resolved absolutely, because systemd expands no `~` and reads no login
-`PATH`, and none of it has been watched start here. [Headless
-hosts](../deploy/headless.md) has the older, actually-deployed alternative.
+`PATH`. [Headless hosts](../deploy/headless.md) has the older,
+actually-deployed alternative.
 
 ## Next
 

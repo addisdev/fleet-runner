@@ -43,7 +43,7 @@
     ],
     "externalBin": ["binaries/fleet"],
     "resources": {
-      "resources/fleet": "fleet"
+      "resources/fleet": "fleet-tree"
     },
     "category": "DeveloperTool",
     "shortDescription": "A device lab you can send work to",

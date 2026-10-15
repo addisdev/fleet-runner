@@ -29,8 +29,10 @@ fleet without a mock.
 
 ## What is there
 
-The Overview, Devices, Jobs, Schedules, Evals, Visual, Artifacts, Events,
-Alerts and System screens, with live updates over SSE. Device detail has a 24 h
+The Overview, Devices, Jobs, Schedules, Evals, Visual, Findings, Artifacts,
+Events, Alerts and System screens, with live updates over SSE. Findings is the
+morning list from the [`explore`](explore/findings.md) workload, with a verdict
+button for each one. Device detail has a 24 h
 battery and thermal chart; job detail has per-device results, beacons and
 artifacts.
 
@@ -40,8 +42,8 @@ renamed, annotated and re-pooled; schedules enabled, fired now and deleted;
 artifacts uploaded and garbage-collected.
 
 Alerts appear as a banner on every screen. The layout works on a phone, and `?`
-lists the keyboard shortcuts — `g j` jobs, `g d` devices, `g n` new job, `/`
-search.
+lists the keyboard shortcuts — `g j` jobs, `g d` devices, `g f` findings, `g n` new job,
+`/` search.
 
 ## Naming devices
 

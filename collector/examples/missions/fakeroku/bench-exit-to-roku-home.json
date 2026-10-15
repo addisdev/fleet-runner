@@ -1,0 +1,21 @@
+{
+  "id": "bench-exit-to-roku-home",
+  "app": "fakeroku",
+  "title": "Leave the channel",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Leave this channel and get to the Roku home screen.",
+  "success": "the Roku's own home screen is in front, not the channel (ECP active-app has no id)",
+  "budget": {
+    "steps": 4,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home"
+  ],
+  "check": {
+    "screen": "roku-home"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "bench-meadow-then-leaving-home",
+  "app": "dozehound-tv",
+  "title": "Watch Meadow, then leave",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Switch to the Meadow channel, then use Leaving Home before going out.",
+  "success": "Leaving Home put the calm channel back on: a banner says \"Leaving Home — Naptime is on until you're back.\"",
+  "budget": {
+    "steps": 12,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "channel_bar",
+    "leaving_home"
+  ],
+  "check": {
+    "text": [
+      "Leaving Home — Naptime is on until you're back."
+    ]
+  }
+}

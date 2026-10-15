@@ -1,0 +1,31 @@
+# Bug garden, es run: the same walk after the es setting (PeerTest
+# ADVISOR-PLAN T1 corpus).
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- extendedWaitUntil:
+    visible:
+      id: "screen_sign_in"
+    timeout: 20000
+- tapOn:
+    id: "button_guest"
+- extendedWaitUntil:
+    visible:
+      id: "screen_home"
+    timeout: 10000
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "option_lang_es"
+    direction: DOWN
+- tapOn:
+    id: "option_lang_es"
+- back
+- runFlow:
+    file: t1-walk.yaml
+    env:
+      PREFIX: es

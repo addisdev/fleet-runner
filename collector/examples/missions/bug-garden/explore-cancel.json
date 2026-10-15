@@ -1,0 +1,22 @@
+{
+  "id": "explore-cancel",
+  "app": "bug-garden",
+  "title": "Someone who wants to cancel",
+  "persona": "Someone who has decided Sprout is not for them and wants to stop paying and remove their data.",
+  "goal": "Find out how to stop a subscription and how to delete your account. Look at every option on the way, but do not confirm deleting anything: stop at the final confirmation.",
+  "success": "the agent found the Delete account control and the upgrade offer without confirming either",
+  "budget": {
+    "steps": 40,
+    "minutes": 15
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "profile",
+    "settings",
+    "about"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml"
+}

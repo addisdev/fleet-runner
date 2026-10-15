@@ -1,0 +1,31 @@
+# Bug garden, dark run: the same walk after the dark setting (PeerTest
+# ADVISOR-PLAN T1 corpus).
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- extendedWaitUntil:
+    visible:
+      id: "screen_sign_in"
+    timeout: 20000
+- tapOn:
+    id: "button_guest"
+- extendedWaitUntil:
+    visible:
+      id: "screen_home"
+    timeout: 10000
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "toggle_dark"
+    direction: DOWN
+- tapOn:
+    id: "toggle_dark"
+- back
+- runFlow:
+    file: t1-walk.yaml
+    env:
+      PREFIX: dark

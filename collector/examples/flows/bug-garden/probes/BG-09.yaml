@@ -1,0 +1,21 @@
+# Probe BG-09: Detail labels overlap their values in Spanish.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends on Fern's detail page in Spanish, for a screenshot.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "option_lang_es"
+    direction: DOWN
+- tapOn:
+    id: "option_lang_es"
+- back
+- tapOn: "Fern"
+- assertVisible: 'Especie científica'

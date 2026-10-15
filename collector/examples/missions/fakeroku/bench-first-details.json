@@ -1,0 +1,23 @@
+{
+  "id": "bench-first-details",
+  "app": "fakeroku",
+  "title": "Open the first tile",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the details of the first tile in the row.",
+  "success": "the details screen is open with PlayButton focused",
+  "budget": {
+    "steps": 4,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home",
+    "details"
+  ],
+  "check": {
+    "screen": "details",
+    "focused_label": "PlayButton"
+  }
+}

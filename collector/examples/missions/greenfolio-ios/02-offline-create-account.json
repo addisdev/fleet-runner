@@ -1,0 +1,12 @@
+{
+  "id": "greenfolio-ios-offline-create-account",
+  "app": "greenfolio-ios",
+  "title": "Creating an account with no network",
+  "persona": "A new user who wants to start a collection right away, still offline.",
+  "goal": "Find how to create an account, fill the form with obviously fake values, and see what happens when it cannot reach the server. Then go back to sign in.",
+  "success": "The form validates its fields, the failure to reach the server is explained in words, and nothing hangs.",
+  "budget": { "steps": 35, "minutes": 20 },
+  "surfaces": ["touch"],
+  "screens": ["SignUp", "Auth", "Offline"],
+  "launch_args": ["-UITesting", "-UITestingSignedOut", "-UITestingOffline"]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "bench-water-interval",
+  "app": "bug-garden",
+  "title": "Water the Peace Lily every 10 days",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Change how often the Peace Lily should be watered to every 10 days.",
+  "success": "Peace Lily shows 'Qty 1 · Office · every 10 days'",
+  "budget": {
+    "steps": 20,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "detail",
+    "edit"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Peace Lily",
+      "Qty 1 · Office · every 10 days"
+    ]
+  }
+}

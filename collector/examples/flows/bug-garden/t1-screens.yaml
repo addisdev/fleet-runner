@@ -1,0 +1,20 @@
+# Bug garden, base run: the sign-in screen, then every main screen as a guest
+# on the clean build (PeerTest ADVISOR-PLAN T1 corpus). Captured on a real
+# device and on an emulator alike; the capture is the label.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+    arguments:
+      garden_defects: "false"
+- extendedWaitUntil:
+    visible:
+      id: "screen_sign_in"
+    timeout: 20000
+- takeScreenshot: base_sign_in
+- tapOn:
+    id: "button_guest"
+- runFlow:
+    file: t1-walk.yaml
+    env:
+      PREFIX: base

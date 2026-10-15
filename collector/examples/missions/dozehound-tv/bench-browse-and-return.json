@@ -1,0 +1,21 @@
+{
+  "id": "bench-browse-and-return",
+  "app": "dozehound-tv",
+  "title": "Look along the row and come back",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the channel bar, move along to the last channel, then come back to the first one. The bar hides itself six seconds after the last key press, so stop with it open.",
+  "success": "the Naptime tile has focus again",
+  "budget": {
+    "steps": 10,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "channel_bar"
+  ],
+  "check": {
+    "focused_label": "Naptime"
+  }
+}

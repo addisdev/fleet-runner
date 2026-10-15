@@ -1,0 +1,17 @@
+# Probe BG-11: Copy invite link shows a raw exception.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends with the exception text in a snackbar.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_profile"
+- tapOn:
+    id: "button_invite"
+- tapOn:
+    id: "button_copy_link"
+- assertVisible: 'java.lang.IllegalStateException: null'

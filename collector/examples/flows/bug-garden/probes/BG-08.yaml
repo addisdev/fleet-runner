@@ -1,0 +1,20 @@
+# Probe BG-08: Watering reminders switch flips back off.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends a second after the tap; the row still says off.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "toggle_reminders"
+    direction: DOWN
+- tapOn:
+    id: "toggle_reminders"
+- waitForAnimationToEnd
+- assertVisible: 'Reminders are off'

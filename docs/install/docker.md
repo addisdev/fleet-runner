@@ -6,18 +6,19 @@ docker run -d --restart unless-stopped -p 8788:8788 \
   ghcr.io/addisdev/fleet up --role brain,agent
 ```
 
-!!! warning "Built, never run"
+!!! note "Run by CI on every pull request, on amd64"
 
-    `ghcr.io/addisdev/fleet` exists: the release workflow built and pushed it for
-    linux/amd64 and linux/arm64 at v0.5.0, tagged `0.5.0` and `latest`. So the
-    Dockerfile is at least correct enough to assemble, which is more than could
-    be said of it before that tag.
+    Every release builds and pushes `ghcr.io/addisdev/fleet` for linux/amd64 and
+    linux/arm64, tagged with the version and `latest`.
 
-    **No container has been started from it.** Docker was not available on the
-    machine that wrote it, and the build succeeding in CI says nothing about
-    whether `fleet up` comes up inside one -- the entrypoint, the volume, the
-    health check and the non-root user are all untested. If you run it and it
-    works, or does not, that is worth an issue either way.
+    `container smoke` in CI builds the same Dockerfile on linux/amd64, starts it
+    with `up --role brain,agent` on a fresh volume, waits for `/api/health`,
+    then waits for the container's own
+    machine agent to register and checks `fleet devices`, `fleet workloads` and
+    `fleet whoami` against it. Its first run found that the image could not
+    start on a fresh volume (the directory was created root-owned), fixed in
+    0.8.0. The arm64 image is built and has not been started. If you run it on
+    a NAS or a board, an issue saying how it went is welcome either way.
 
     `runner-machine/Dockerfile`, the agent-only image, is still **not built at
     all**: nothing publishes it and nobody has run `docker build` on it.

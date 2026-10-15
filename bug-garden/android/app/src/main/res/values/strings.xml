@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launcher label. Everything inside the app is translated in Kotlin
+         (Strings.kt), because the language is an in-app setting. -->
+    <string name="app_name">Sprout</string>
+</resources>

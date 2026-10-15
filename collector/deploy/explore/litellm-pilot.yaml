@@ -1,0 +1,41 @@
+# The two gateway names the explore workload calls, for ultra's LiteLLM config.
+# Merge into the gateway's model_list; the rest of the gateway is the day-one
+# plan's.
+#
+# `pilot` has NO fallback on purpose. Every other name on the gateway falls
+# through to a cloud model when ultra is busy, because a person is waiting on
+# those. Nobody is waiting on the night's QA: a busy Studio should delay it,
+# not send a night of app screenshots to a third party.
+#
+# Two ways to serve Holo4 behind it; measure both with
+# scripts/explore-bench/steptime.ts before choosing (the vendor's docs say
+# llama.cpp on Apple silicon lacks prefix caching for this architecture, and a
+# mission's prompt is ~16k tokens by its middle, so the cache decides step time).
+model_list:
+  - model_name: pilot
+    litellm_params:
+      # A: LM Studio (llmster) serving the MLX 4-bit build.
+      model: openai/holo4-35b-a3b-mlx
+      api_base: http://127.0.0.1:1234/v1
+      api_key: lm-studio
+      timeout: 300
+    model_info: { supports_vision: true, supports_function_calling: true }
+  # B: llama-server with the official GGUF. Swap the name above to this one
+  # (rename it `pilot`) if it measures faster.
+  - model_name: pilot-gguf
+    litellm_params:
+      model: openai/holo4-35b-a3b-gguf
+      api_base: http://127.0.0.1:8093/v1
+      api_key: none
+      timeout: 300
+    model_info: { supports_vision: true, supports_function_calling: true }
+  # The judge: the resident general model the day-one plan already loads. The
+  # driver and the judge are different models so the judge does not grade its
+  # own run. This name may keep its cloud fallback; it only ever sees a screen
+  # the driver already reached, and the fallback is the day-one plan's call.
+  - model_name: vision
+    litellm_params:
+      model: openai/qwen3.8-27b
+      api_base: http://127.0.0.1:1234/v1
+      api_key: lm-studio
+    model_info: { supports_vision: true }

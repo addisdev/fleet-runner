@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
 import { createServer } from "node:net";
 import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, statSync, existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -6,10 +6,10 @@ import { rename, unlink } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import type { Readable } from "node:stream";
 import path from "node:path";
-import { closeDb, db, isUniqueViolation, openDb } from "./db.js";
+import { closeDb, db, openDb } from "./db.js";
 import { renderDash, renderBench } from "./dash.js";
 import { cronMatches, isValidCron, minuteKey } from "./cron.js";
-import { evalMatch, isValidMatch } from "./match.js";
+import { evalMatch } from "./match.js";
 import { identity } from "./identity.js";
 import { APP_VERSION } from "./version.js";
 import { advertise, type Advertised } from "./discovery.js";
@@ -32,29 +32,25 @@ import {
 } from "./config.js";
 import { evaluate, expireSnoozes, notify, reconcile } from "./alerts.js";
 import { requireToken } from "./api/guard.js";
-import { invalidateOverview, publish, registerApi } from "./api/index.js";
+import { registerApi } from "./api/index.js";
 import { AGE, capabilityMatches, deviceCapabilities, effectivePools, isExpired, ONLINE_S } from "./api/shared.js";
 import { admit, isTailnetAddress, normaliseIp, whois } from "./tailnet.js";
 // Dependency chains live beside the cancel path, which also has to settle
 // waiters; imported here rather than duplicated. mutations.ts imports nothing
 // from this file, so there is no cycle.
-import {
-  dependencyState, firstArtifactSha, settleWaiters, substituteDepRefs,
-  validateDepRefs, validateDependencies, type DepSettlement,
-} from "./api/mutations.js";
+import { firstArtifactSha, settleWaiters, type DepSettlement } from "./api/mutations.js";
+import { announce } from "./announce.js";
+import { enqueueJob, matchingDevices, resolveLatestBuild, type JobSpec } from "./queue.js";
+import { authWarnings, provenanceOf, registerAuth } from "./auth.js";
+import { registerDeprecations } from "./api/v1/deprecations.js";
+import { cleanMediaType, sniffMediaType } from "./media-type.js";
 import { registerDashStatic } from "./dash-static.js";
 import { registerRunnerWeb } from "./runner-web.js";
 import { startPowerSampler } from "./power.js";
 import { endMirror } from "./api/mirror.js";
+import { digestTick, digestTickOptions } from "./findings.js";
+import { FINDINGS_REPOS_ERROR } from "./config.js";
 
-
-/** Every fleet-state change fans out to connected dashboards and drops the
- *  overview's short cache. Called after the write commits, never inside a
- *  transaction — a broken browser pipe must not roll back a device's result. */
-function announce(event: { type: string; [k: string]: unknown }) {
-  invalidateOverview();
-  publish(event);
-}
 
 /**
  * This collector's stable id, read once.
@@ -72,30 +68,10 @@ function myCollectorId(): string {
 
 const LONG_POLL_S = 25;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// Lease defaults. A claim expires unless the runner keeps renewing it via
-// beacons; the sweep then requeues the job (up to max_attempts) so a dead
-// runner cannot strand work in 'claimed'.
-const DEFAULT_LEASE_TTL_S = 600;
-// drain and soak legitimately run for hours between beacons.
-const LONG_LEASE_TTL_S = 4 * 60 * 60;
-// thermal is minutes rather than hours, but a 15-minute sustained run is still
-// well past the 600 s default, and a swept lease mid-run would requeue a job
-// whose whole value is an unbroken curve.
-// build compiles for tens of minutes; app-soak runs for hours; the eval
-// workloads chew through a corpus on a phone.
-const LONG_LEASE_WORKLOADS = new Set([
-  "drain", "soak", "thermal", "build", "app-soak", "speech-eval", "embed-eval",
-  // A conversion quantises a multi-GB checkpoint; a dataset is downloaded and
-  // resized; a served model is up for as long as someone is using it.
-  "model-convert", "dataset-prep", "serve", "push-latency",
-]);
-const MAX_LEASE_TTL_S = 24 * 60 * 60;
 // Agents beacon every 60 s. Two missed beacons and a state claim is no longer
 // evidence of anything, which matters because these claims gate work rather
 // than merely describing it.
 const BEACON_TRUST_S = 180;
-const DEFAULT_MAX_ATTEMPTS = 3;
 
 const app = Fastify({ logger: { level: process.env.FLEET_LOG ?? "info" } });
 
@@ -108,66 +84,11 @@ app.addContentTypeParser("application/octet-stream", (_req, payload, done) => do
 // multi-GB GGUF must never be buffered into collector memory.
 app.addContentTypeParser("image/jpeg", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
 
-type JobSpec = {
-  schema: number;
-  job_id: string;
-  workload: string;
-  executor: "device" | "host";
-  // true fans out to every matching device; { distinct: "os" } fans out to one
-  // device per distinct value of that descriptor field.
-  fanout?: boolean | { distinct?: string };
-  // Named here rather than left to the index signature because capability
-  // routing reads it: an agent may declare a workload outright or only one
-  // backend of it ("batch:litert").
-  backend?: string;
-  // `sha256: "latest"` is resolved at enqueue time to the newest build uploaded
-  // under this app name -- see resolveLatestBuild.
-  app?: { name?: string; build?: string; sha256?: string; platform?: string };
-  targets?: {
-    pool?: string;
-    match?: string;
-    exclusive?: boolean;
-    device_id?: string;
-    // Which host executor should claim this. Not a capability label -- it is a
-    // statement about which machine can physically reach the toolchain or the
-    // device, which is not a property of any device, so a match expression
-    // cannot express it. iOS work needs the Mac with Xcode; Android shelf work
-    // needs the machine the shelf is cabled to.
-    executor?: string;
-    // web-test only: what to point the browser at.
-    url?: string;
-    // Honoured by the host executor when it picks devices to run on, not only
-    // when deciding who claims the job. `device_kind` says "real hardware" or
-    // "simulator" -- which no descriptor field expresses honestly, because it
-    // is a property of how a device is attached rather than of the device.
-    device_kind?: "device" | "simulator";
-  };
-  constraints?: Record<string, unknown>;
-  lease?: { ttl_s?: number; max_attempts?: number };
-  // Queue position and provenance. Both are collector bookkeeping rather than
-  // instructions to the runner, which ignores them.
-  priority?: number;
-  template_id?: string;
-  // Job ids this one waits for. The job is inserted 'waiting' and promoted to
-  // 'queued' when the last of them is 'done' — a build → install → ui-test
-  // chain is three POSTs and nothing watching the queue.
-  depends_on?: string[];
-  // The runner will stand down and checkpoint if higher-priority work arrives
-  // for the same claimant. Honoured by the collector's beacon reply; a runner
-  // that ignores it simply keeps running, which is the old behaviour.
-  preemptible?: boolean;
-  [k: string]: unknown;
-};
+// Before any route, so every route registered below is behind it. With
+// FLEET_AUTH unset it only records who asked; see src/auth.ts.
+registerAuth(app);
+registerDeprecations(app);
 
-// web-test and web-shots are host-executed like ui-test, but their target is a
-// URL rather than a device: no phone is involved and none is locked. web-test
-// runs Playwright suites; web-shots captures the screenshot matrix the
-// visual-regression pipeline diffs.
-// web-audit crawls and audits a site (SEO, structure, mobile-friendliness),
-// web-unfurl checks the raw-HTML link previews bots see, archive pulls an
-// external API's data (Search Console, App Store / Play reviews) into the
-// artifact store, and digest turns the week's archived reviews into a
-// summary by farming batch jobs to the shelf's on-device models.
 /**
  * The longest an ephemeral agent may ask to be remembered for. A day: past
  * that, "ephemeral" is not what the word means, and a permanent device is
@@ -175,98 +96,8 @@ type JobSpec = {
  */
 const MAX_DEVICE_TTL_S = 86_400;
 
-const WORKLOADS = new Set([
-  "benchmark", "batch", "pipeline", "install", "ui-test", "drain", "soak",
-  "web-test", "web-shots", "web-audit", "web-unfurl", "archive", "digest",
-  // thermal is a device workload the runners declare, and cold-start is a host
-  // one. Both are listed here anyway because the collector ships their result
-  // views and the dashboard ships their icons and skeletons — a workload the
-  // collector renders is a workload the collector knows about.
-  "thermal", "cold-start", "self-check",
-  // Wave 2. build and the eval workloads are claimed by agents that declare
-  // them; the rest are host work. All are listed because the collector renders
-  // their results, and a workload the dashboard draws is one it knows about.
-  "build", "speech-eval", "embed-eval", "vantage", "locale-shots", "app-soak", "a11y-audit",
-  // Wave 3: pipelines that feed the evals, and the workloads that need hardware.
-  "model-convert", "dataset-prep", "serve", "shell", "push-latency", "camera-eval", "desktop-ui-test",
-  // Wave 6: the fleet finally measures whether an answer is any good, not only
-  // how fast it arrived.
-  "llm-eval",
-  // Wave 7: the app under test, from angles a pass/fail suite does not cover.
-  "size-report", "upgrade-test",
-  // The brain reaching the device, for every screen with no keyboard worth
-  // using. See src/workloads/enrol/.
-  "enrol",
-  // Another tool's hardware suite, run on a device the fleet lends it. See
-  // src/workloads/tvloop/.
-  "tvloop",
-]);
-
 function touchDevice(deviceId: string) {
   db.prepare("UPDATE devices SET last_seen = datetime('now') WHERE device_id = ?").run(deviceId);
-}
-
-/** Devices a `targets` clause selects. Shared by fan-out and by the composer's
- *  "N devices match" preview, so the preview cannot disagree with what fan-out
- *  will actually do. */
-export function matchingDevices(pool?: string, match?: string, workload?: string, backend?: string | null) {
-  return (
-    db.prepare(
-      `SELECT device_id, pools, pools_override, descriptor, capabilities, ttl_s,
-              ${AGE("last_seen")} AS age_s
-       FROM devices`,
-    ).all() as {
-      device_id: string;
-      pools: string;
-      pools_override: string | null;
-      descriptor: string;
-      capabilities: string | null;
-      ttl_s: number | null;
-      age_s: number | null;
-    }[]
-  ).filter((d) => {
-    const pools = effectivePools(d);
-    const capabilities = deviceCapabilities(d);
-    // An expired ephemeral agent is gone, not idle. Fanning out to it would
-    // mint a child job pinned to a browser tab that was closed an hour ago,
-    // which then sits queued forever with nothing to explain why.
-    if (isExpired(d, d.age_s)) return false;
-    if (pool && !pools.includes(pool)) return false;
-    // Checked before the expression, so a match expression can narrow the set
-    // but never widen an agent past what its own code can run.
-    if (workload && !capabilityMatches(capabilities, workload, backend)) return false;
-    if (match) {
-      try {
-        return evalMatch(match, {
-          ...JSON.parse(d.descriptor), device_id: d.device_id, pools, capabilities: capabilities ?? [],
-        });
-      } catch {
-        return false;
-      }
-    }
-    return true;
-  });
-}
-
-/**
- * Is there any agent on the fleet that could run this workload? The built-in
- * set is always serviceable — those workloads live in the executor, which does
- * not register as a device. Anything else has to be claimed by an agent that
- * says it can run it, which is what stops a typo'd workload sitting queued
- * forever with no explanation.
- */
-function workloadServiceableBy(workload: string, backend?: string | null): boolean {
-  if (WORKLOADS.has(workload)) return true;
-  return (
-    db.prepare(
-      `SELECT capabilities, ttl_s, ${AGE("last_seen")} AS age_s FROM devices`,
-    ).all() as { capabilities: string | null; ttl_s: number | null; age_s: number | null }[]
-  ).filter((d) => !isExpired(d, d.age_s)).some((d) => {
-    const declared = deviceCapabilities(d);
-    // A legacy agent's null means "no opinion", which cannot be read as a claim
-    // to run a workload that did not exist when it registered.
-    return declared !== null && capabilityMatches(declared, workload, backend);
-  });
 }
 
 /**
@@ -568,8 +399,12 @@ function preemptionPending(job: {
   });
 }
 
-async function longPollClaim(executor: "device" | "host", claimant: string) {
-  for (let i = 0; i < LONG_POLL_S; i++) {
+async function longPollClaim(executor: "device" | "host", claimant: string, reply: FastifyReply) {
+  // A claim made for a poller that has hung up is handed to nobody, and the
+  // job sits claimed until its lease lapses.
+  let gone = false;
+  reply.raw.once("close", () => (gone = true));
+  for (let i = 0; i < LONG_POLL_S && !gone; i++) {
     const spec = claimTx(executor, claimant);
     if (spec) {
       // Announced here rather than inside claimTx: the transaction has
@@ -725,7 +560,7 @@ app.get("/devices/:id/next-job", async (req, reply) => {
   touchDevice(id);
   // Pools and capabilities are read inside the claim rather than passed in, so
   // an override applied mid-poll takes effect on the next second's attempt.
-  const spec = await longPollClaim("device", id);
+  const spec = await longPollClaim("device", id, reply);
   if (!spec) return reply.code(204).send();
   return spec;
 });
@@ -739,7 +574,7 @@ app.get("/executor/next-job", async (req, reply) => {
     `INSERT INTO executors (name, last_seen, polls) VALUES (?, datetime('now'), 1)
      ON CONFLICT(name) DO UPDATE SET last_seen = excluded.last_seen, polls = polls + 1`,
   ).run(claimant);
-  const spec = await longPollClaim("host", claimant);
+  const spec = await longPollClaim("host", claimant, reply);
   if (!spec) return reply.code(204).send();
   db.prepare("UPDATE executors SET last_job = ? WHERE name = ?").run(spec.job_id, claimant);
   // Hand back the lease the collector actually granted, not the one the job
@@ -754,183 +589,11 @@ app.get("/executor/next-job", async (req, reply) => {
 // --- jobs ---
 
 app.post("/jobs", async (req, reply) => {
-  let spec = req.body as JobSpec;
-  if (spec?.schema !== 1) return reply.code(400).send({ error: "schema must be 1" });
-  if (!spec.job_id) return reply.code(400).send({ error: "job_id required" });
-  if (typeof spec.workload !== "string" || !spec.workload)
-    return reply.code(400).send({ error: "workload required" });
-  // The set below is what the collector and the host executor ship with. Beyond
-  // it, an agent that declares a capability defines the workload — which is how
-  // a new runner adds work the collector has never heard of without a release
-  // here. Refusing when nothing on the fleet can run it keeps the failure at
-  // enqueue time, where the caller sees it, rather than as a job queued forever.
-  if (!workloadServiceableBy(spec.workload, spec.backend ?? null))
-    return reply.code(422).send({
-      error: `no agent can run workload '${spec.workload}'` +
-        (spec.backend ? ` with backend '${spec.backend}'` : "") +
-        "; a device must declare it in the capabilities it registers with",
-    });
-  // A job spec is stored in SQLite, served by the API and rendered on the
-  // dashboard, so anything in one is effectively published to everyone on the
-  // LAN. Refuse secrets outright rather than trusting every future caller to
-  // remember: the executor resolves passwords from its own host Keychain, and
-  // a spec only ever names the account.
-  {
-    const flat = JSON.stringify(spec).toLowerCase();
-    for (const banned of ["\"password\"", "\"passwd\"", "\"secret\"", "\"token\"", "\"api_key\"", "\"apikey\""]) {
-      if (flat.includes(banned)) {
-        return reply.code(400).send({
-          error: `job specs must not carry secrets (${banned.replace(/"/g, "")}); ` +
-            "name the account instead and keep the password in the executor host's Keychain",
-        });
-      }
-    }
-  }
-  // `latest` is the documented contract for CI and for hand-written jobs, not
-  // a scheduler-only convenience. Resolving here means a job posted directly
-  // is never pinned to a string that cannot name an artifact.
-  try {
-    spec = resolveLatestBuild(spec);
-  } catch (e) {
-    return reply.code(400).send({ error: String((e as Error).message ?? e) });
-  }
-  if (spec.executor !== "device" && spec.executor !== "host")
-    return reply.code(400).send({ error: "executor must be 'device' or 'host'" });
-
-  if (spec.lease !== undefined && (typeof spec.lease !== "object" || spec.lease === null || Array.isArray(spec.lease)))
-    return reply.code(400).send({ error: "lease must be an object" });
-  const ttlS =
-    spec.lease?.ttl_s ??
-    (LONG_LEASE_WORKLOADS.has(spec.workload) ? LONG_LEASE_TTL_S : DEFAULT_LEASE_TTL_S);
-  if (!Number.isInteger(ttlS) || ttlS < 1 || ttlS > MAX_LEASE_TTL_S)
-    return reply.code(400).send({ error: `lease.ttl_s must be an integer between 1 and ${MAX_LEASE_TTL_S}` });
-  const maxAttempts = spec.lease?.max_attempts ?? DEFAULT_MAX_ATTEMPTS;
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 1)
-    return reply.code(400).send({ error: "lease.max_attempts must be an integer >= 1" });
-  // Persist the effective lease so runners see it in the spec they claim and
-  // can pace their beacons against it.
-  spec.lease = { ttl_s: ttlS, max_attempts: maxAttempts };
-
-  const priority = spec.priority ?? 0;
-  if (!Number.isInteger(priority)) return reply.code(400).send({ error: "priority must be an integer" });
-  const templateId = typeof spec.template_id === "string" ? spec.template_id : null;
-
-  if (spec.preemptible !== undefined && typeof spec.preemptible !== "boolean")
-    return reply.code(400).send({ error: "preemptible must be a boolean" });
-
-  // Dependencies. Refused at enqueue rather than discovered later: a chain that
-  // names a job nobody ever posted would otherwise sit in 'waiting' forever,
-  // looking exactly like a chain whose build is merely slow.
-  let deps: string[] = [];
-  if (spec.depends_on !== undefined) {
-    if (!Array.isArray(spec.depends_on) || spec.depends_on.some((d) => typeof d !== "string" || !d))
-      return reply.code(400).send({ error: "depends_on must be an array of job ids" });
-    deps = [...new Set(spec.depends_on)];
-    const bad = validateDependencies(spec.job_id, deps);
-    if (bad) return reply.code(400).send({ error: bad });
-  }
-  const badRef = validateDepRefs(JSON.stringify(spec), deps);
-  if (badRef) return reply.code(400).send({ error: badRef });
-
-  const depState = dependencyState(deps);
-  // A chain whose dependencies are all closed already gets no promotion event,
-  // so the substitution that promotion would have done happens here instead.
-  if (depState.status === "queued" && deps.length > 0) {
-    const filled = substituteDepRefs(spec);
-    if (filled.unresolved.length > 0)
-      return reply.code(422).send({ error: `cannot resolve ${filled.unresolved.join("; ")}` });
-    spec = filled.spec;
-  }
-  const dependsOn = deps.length > 0 ? JSON.stringify(deps) : null;
-
-  // Fan-out: one queued child per registered device in the target pool, each
-  // pinned via targets.device_id. Host jobs already fan across attached
-  // targets inside the executor, so fanout is a device-executor concept.
-  if (spec.targets?.match && !isValidMatch(spec.targets.match))
-    return reply.code(400).send({ error: `invalid targets.match expression: ${spec.targets.match}` });
-
-  if (spec.fanout) {
-    const pool = spec.targets?.pool;
-    const match = spec.targets?.match;
-    // Host jobs fan out too now. A host child is pinned with targets.device_id
-    // exactly as a device child is, and the executor's own selectTargets
-    // already honours that field, so nothing downstream needed teaching.
-    const distinct = typeof spec.fanout === "object" && spec.fanout !== null
-      ? (spec.fanout as { distinct?: string }).distinct
-      : undefined;
-    if (distinct !== undefined && typeof distinct !== "string")
-      return reply.code(400).send({ error: "fanout.distinct must be a descriptor field name" });
-
-    // Same predicate the claim uses, so fan-out cannot mint a child job for a
-    // device that will then never be offered it. For host jobs the capability
-    // belongs to the executor rather than the device, so it is not applied.
-    let devices = spec.executor === "device"
-      ? matchingDevices(pool, match, spec.workload, spec.backend ?? null)
-      : matchingDevices(pool, match);
-    if (devices.length === 0)
-      return reply.code(400).send({
-        error: `no registered devices${pool ? ` in pool ${pool}` : ""}${match ? ` matching ${match}` : ""}` +
-          ` can run ${spec.workload}`,
-      });
-
-    // "One per distinct OS" is the canary shape: a smoke pass on every OS on
-    // the shelf without paying for every phone. Newest-seen wins within a
-    // group, because that is the device most likely to still be plugged in.
-    if (distinct) {
-      const seen = new Map<string, typeof devices[number]>();
-      for (const d of devices) {
-        const key = String(
-          (JSON.parse(d.descriptor) as Record<string, unknown>)[distinct] ?? "",
-        );
-        // matchingDevices returns registry order, which is last_seen DESC.
-        if (!seen.has(key)) seen.set(key, d);
-      }
-      devices = [...seen.values()];
-    }
-
-    // Every child inherits the parent's dependencies, so a fan-out can hang off
-    // a single build the same way one pinned job can.
-    const insert = db.prepare(
-      `INSERT OR IGNORE INTO jobs (job_id, executor, workload, spec, lease_ttl_s, max_attempts, priority, parent_job_id, template_id, depends_on, status, last_error)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-    const created: string[] = [];
-    for (const d of devices) {
-      const child: JobSpec = {
-        ...spec,
-        job_id: `${spec.job_id}--${d.device_id}`,
-        targets: { ...spec.targets, device_id: d.device_id },
-      };
-      delete child.fanout;
-      const r = insert.run(
-        child.job_id, child.executor, child.workload, JSON.stringify(child), ttlS, maxAttempts,
-        priority, spec.job_id, templateId, dependsOn, depState.status,
-        depState.status === "failed" ? depState.reason : null,
-      );
-      if (r.changes > 0) created.push(child.job_id);
-    }
-    if (depState.status === "failed")
-      for (const jobId of created)
-        db.prepare("UPDATE jobs SET finished_at = datetime('now') WHERE job_id = ?").run(jobId);
-    for (const jobId of created)
-      announce({ type: "job", job_id: jobId, status: depState.status, workload: spec.workload, executor: spec.executor, parent: spec.job_id });
-    return reply.code(201).send({ ok: true, fanout: created, status: depState.status });
-  }
-
-  try {
-    db.prepare(
-      `INSERT INTO jobs (job_id, executor, workload, spec, lease_ttl_s, max_attempts, priority, template_id, depends_on, status, last_error, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${depState.status === "failed" ? "datetime('now')" : "NULL"})`,
-    ).run(
-      spec.job_id, spec.executor, spec.workload, JSON.stringify(spec), ttlS, maxAttempts, priority, templateId,
-      dependsOn, depState.status, depState.status === "failed" ? depState.reason : null,
-    );
-  } catch (e: unknown) {
-    if (isUniqueViolation(e)) return reply.code(409).send({ error: "job_id already exists" });
-    throw e;
-  }
-  announce({ type: "job", job_id: spec.job_id, status: depState.status, workload: spec.workload, executor: spec.executor });
-  return reply.code(201).send({ ok: true, job_id: spec.job_id, status: depState.status });
+  const out = enqueueJob(req.body as JobSpec, { provenance: provenanceOf(req) });
+  if (!out.ok) return reply.code(out.http).send({ error: out.message });
+  return reply.code(201).send(
+    out.fanout ? { ok: true, fanout: out.fanout, status: out.status } : { ok: true, job_id: out.job_id, status: out.status },
+  );
 });
 
 // Runs on a timer too; exposed so an operator (or the smoke test) can force a
@@ -1333,39 +996,6 @@ app.delete("/schedules/:id", async (req, reply) => {
   return { ok: true };
 });
 
-/**
- * Resolve `app.sha256: "latest"` to the newest build uploaded for `app.name`.
- *
- * This is what stops a nightly from testing yesterday's code. A schedule that
- * pins a literal hash tests that hash forever, which is how one of these spent
- * six days guarding an APK older than the code it was meant to guard; a
- * schedule that asks for "latest" tests whatever CI pushed most recently.
- *
- * Throws when there is nothing to test, rather than enqueueing a job pinned to
- * a build that does not exist.
- */
-function resolveLatestBuild(spec: JobSpec): JobSpec {
-  if (spec.app?.sha256 !== "latest") return spec;
-  const appName = spec.app?.name;
-  if (!appName) throw new Error("app.sha256 is 'latest' but app.name is missing");
-  const row = db
-    .prepare(
-      `SELECT sha256, build FROM artifacts WHERE app = ?
-       ORDER BY COALESCE(publish_seq, rowid) DESC LIMIT 1`,
-    )
-    .get(appName) as { sha256: string; build: string | null } | undefined;
-  if (!row) throw new Error(`no build has been uploaded for ${appName}`);
-  // Record the build string the artifact carries, so a result says which build
-  // actually ran. Falling back to the template's build would write the literal
-  // word "latest" into the result, which is untraceable to any commit; the
-  // short hash is at least a real answer.
-  const templateBuild = spec.app.build === "latest" ? undefined : spec.app.build;
-  return {
-    ...spec,
-    app: { ...spec.app, sha256: row.sha256, build: row.build ?? templateBuild ?? row.sha256.slice(0, 12) },
-  };
-}
-
 // Fire due schedules for the current minute (at most once per minute each).
 // Enqueues through POST /jobs via inject so fanout and validation apply.
 async function schedulerTick(now = new Date()): Promise<string[]> {
@@ -1388,13 +1018,12 @@ async function schedulerTick(now = new Date()): Promise<string[]> {
       announce({ type: "schedule", event: "skipped", id: s.id, reason: String((e as Error).message ?? e) });
       continue;
     }
-    const res = await app.inject({
-      method: "POST", url: "/jobs",
-      payload: { ...payload, job_id: jobId },
+    const out = enqueueJob({ ...payload, job_id: jobId } as JobSpec, {
+      provenance: { requested_by: `schedule:${s.id}`, source: "schedule" },
     });
-    if (res.statusCode === 201) fired.push(jobId);
-    else if (res.statusCode !== 409)
-      app.log.error({ schedule: s.id, status: res.statusCode, body: res.body }, "schedule enqueue failed");
+    if (out.ok) fired.push(jobId);
+    else if (out.code !== "duplicate_job")
+      app.log.error({ schedule: s.id, status: out.http, error: out.message }, "schedule enqueue failed");
   }
   return fired;
 }
@@ -1429,6 +1058,7 @@ app.post("/artifacts", async (req, reply) => {
   const tmp = path.join(ARTIFACT_DIR, `.upload-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const hash = createHash("sha256");
   let size = 0;
+  let head: Buffer | null = null;
   try {
     await pipeline(
       stream,
@@ -1436,6 +1066,9 @@ app.post("/artifacts", async (req, reply) => {
         for await (const chunk of source) {
           hash.update(chunk);
           size += chunk.length;
+          // Enough of the start to tell what it is, without holding more.
+          if (head === null || head.length < 4096)
+            head = head === null ? chunk.subarray(0, 4096) : Buffer.concat([head, chunk]).subarray(0, 4096);
           yield chunk;
         }
       },
@@ -1462,9 +1095,13 @@ app.post("/artifacts", async (req, reply) => {
   const app_ = (req.headers["x-artifact-app"] as string | undefined) ?? null;
   const build = (req.headers["x-artifact-build"] as string | undefined) ?? null;
   const platform = (req.headers["x-artifact-platform"] as string | undefined) ?? null;
+  const mediaType = cleanMediaType(req.headers["x-artifact-media-type"]) ?? sniffMediaType(head ?? Buffer.alloc(0), name);
   db.prepare(
-    "INSERT OR IGNORE INTO artifacts (sha256, name, size, app, build, platform) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(sha256, name, size, app_, build, platform);
+    "INSERT OR IGNORE INTO artifacts (sha256, name, size, app, build, platform, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(sha256, name, size, app_, build, platform, mediaType);
+  // Bytes uploaded before media types were recorded learn theirs the next time
+  // somebody uploads them.
+  db.prepare("UPDATE artifacts SET media_type = ? WHERE sha256 = ? AND media_type IS NULL").run(mediaType, sha256);
   // Content-addressing means re-uploading identical bytes is an ignored insert,
   // so a revert that republishes an earlier build would otherwise keep that
   // build's original created_at and sort BEHIND the build it just replaced.
@@ -1480,7 +1117,7 @@ app.post("/artifacts", async (req, reply) => {
     ).run(app_, build, platform, sha256);
   }
   announce({ type: "artifact", sha256, name, size, app: app_, build });
-  return reply.code(201).send({ ok: true, sha256, size, app: app_, build });
+  return reply.code(201).send({ ok: true, sha256, size, app: app_, build, media_type: mediaType });
 });
 
 app.get("/artifacts/:sha256", async (req, reply) => {
@@ -1688,6 +1325,24 @@ export async function listen(): Promise<{ port: number; addresses: string[]; id:
       alertTick().catch((e) => app.log.error(e, "alert tick failed"));
     }, ALERT_TICK_MS).unref(),
   );
+  // The night-QA morning digest (src/findings.ts). Checked every minute and
+  // sent at most once per local day, only when FLEET_FINDINGS_DIGEST_AT and
+  // FLEET_ALERT_WEBHOOK are both set -- the same channel alerts use.
+  // A malformed repo map files nothing; said once here rather than discovered
+  // when the first issue that should have been composed is not.
+  if (FINDINGS_REPOS_ERROR) app.log.warn(FINDINGS_REPOS_ERROR);
+  for (const w of authWarnings()) app.log.warn(w);
+  {
+    const opts = digestTickOptions((o, m) => app.log.warn(o, m));
+    if (opts.at && opts.webhook) {
+      const tick = () => digestTick(new Date(), opts).catch((e) => app.log.error(e, "findings digest failed"));
+      void tick();
+      running.timers.push(setInterval(tick, 60_000).unref());
+      app.log.info(`night-QA digest daily at ${opts.at} local, covering ${opts.hours}h`);
+    } else if (opts.at) {
+      app.log.warn("FLEET_FINDINGS_DIGEST_AT is set but FLEET_ALERT_WEBHOOK is not; the digest has nowhere to go");
+    }
+  }
   return { port: PORT, addresses: BIND, id: me.id, name: me.name };
 }
 

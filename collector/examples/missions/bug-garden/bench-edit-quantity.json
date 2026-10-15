@@ -1,0 +1,30 @@
+{
+  "id": "bench-edit-quantity",
+  "app": "bug-garden",
+  "title": "Change Monstera's quantity to 5",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "You now have five Monstera plants. Change the Monstera's quantity to 5 and save it.",
+  "success": "Monstera shows 'Qty 5 · Living room'",
+  "budget": {
+    "steps": 20,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "detail",
+    "edit"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Monstera",
+      "Qty 5 · Living room"
+    ]
+  }
+}

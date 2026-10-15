@@ -217,12 +217,18 @@ the first `codesign` invocation.
 
 ## Status
 
-Be suspicious of this whole directory. **None of the Rust has ever been
-compiled**, on this machine or any other — there is no Rust toolchain here
-(`cargo` and `rustc` are both absent), so `cargo check` was never run.
+Be suspicious of this whole directory. **The Rust compiles, and that is all
+that is known about it.** There is no Rust toolchain on the machine it was
+written on, so CI does the compiling: `desktop / cargo check` stages the
+sidecar and runs `cargo check --all-targets` on macOS for every pull request
+that touches `desktop/`.
 
 What **has** actually been checked:
 
+- **`cargo check` passes.** Its first run failed in the build script, before
+  any Rust was compiled, because the bundled resource and the sidecar were
+  both named `fleet` in `target/debug`. With the resource renamed `fleet-tree`
+  the Rust compiled without errors on the first try, Tauri 2 APIs included.
 - Every JSON file validates (`python3 -m json.tool`), and both plists lint
   (`plutil -lint`).
 - `ui/app.js` parses (`node --check`), and every element id it reaches for
@@ -239,10 +245,9 @@ What **has** actually been checked:
 What has **not**:
 
 - **It has never run.** Not the tray, not the settings window, not the sidecar
-  under Tauri, not a notification, not the dashboard window. Assume the first
-  `cargo check` produces a list of errors; the Tauri 2 APIs most likely to have
-  moved are `App::on_menu_event`, `TrayIcon::set_menu`, and
-  `tauri::async_runtime::spawn_blocking`. The Cargo package is `fleet-desktop`
+  under Tauri, not a notification, not the dashboard window. Compiling says
+  the Tauri 2 calls exist with those signatures, not that they do what the
+  code assumes. The Cargo package is `fleet-desktop`
   and `productName` is `Fleet`; if the bundler cannot find its binary, that
   mismatch is why, and `mainBinaryName` in `tauri.conf.json` is the knob.
 - **The Local Network hypothesis.** See The bet, above. Everything this app is
@@ -250,8 +255,10 @@ What has **not**:
 - **Info.plist merging.** That Tauri's bundler merges `src-tauri/Info.plist` into
   the generated one is assumed, not observed. Step 2 of the day-one checklist is
   there because of this.
-- **The resource layout.** `bundle.resources` maps `resources/fleet` to `fleet`;
-  where that actually lands inside `Contents/Resources` is unconfirmed, which is
+- **The resource layout.** `bundle.resources` maps `resources/fleet` to
+  `fleet-tree` (not `fleet`, which collides with the sidecar's own name in
+  `target/debug`); where that actually lands inside `Contents/Resources` is
+  unconfirmed, which is
   why the shim searches four candidate paths and fails with a message naming
   what it looked for rather than assuming one.
 - **Signing and notarisation.** Not attempted. The entitlements are reasoned

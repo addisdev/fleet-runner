@@ -1,0 +1,21 @@
+{
+  "id": "bench-up-from-leaving-home",
+  "app": "dozehound-tv",
+  "title": "Back up from Leaving Home",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the channel bar, move down to Leaving Home, then go back up to the channels. The bar hides itself six seconds after the last key press, so stop with it open.",
+  "success": "a channel tile (Naptime, the one above Leaving Home) has focus",
+  "budget": {
+    "steps": 8,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "channel_bar"
+  ],
+  "check": {
+    "focused_label": "Naptime"
+  }
+}

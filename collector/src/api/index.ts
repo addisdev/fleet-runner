@@ -12,6 +12,7 @@ import { registerDevices } from "./devices.js";
 import { registerMirror } from "./mirror.js";
 import { registerEnroll } from "./enroll.js";
 import { registerEvals } from "./evals.js";
+import { registerFindings } from "./findings.js";
 import { registerJobs } from "./jobs.js";
 import { registerMutations } from "./mutations.js";
 import { registerOverview } from "./overview.js";
@@ -20,6 +21,7 @@ import { registerResults } from "./results.js";
 import { registerStream } from "./stream.js";
 import { registerSystem } from "./system.js";
 import { registerVisual } from "./visual.js";
+import { registerMetrics, registerV1 } from "./v1/index.js";
 
 type Announce = (event: { type: string; [k: string]: unknown }) => void;
 type MatchingDevices = (
@@ -40,11 +42,17 @@ export function registerApi(app: FastifyInstance, announce: Announce, matchingDe
   registerJobs(app);
   registerResults(app);
   registerEvals(app);
+  // Night QA. Takes announce because executors post here and the Findings
+  // page should hear about it without polling.
+  registerFindings(app, announce);
   registerSystem(app);
   registerVisual(app);
   registerPeers(app);
   registerStream(app);
   registerMutations(app, announce, matchingDevices);
+  // The control API for programs: CLI, MCP, CI. Same database, its own contract.
+  registerV1(app);
+  registerMetrics(app);
 
   // A JSON 404 for unknown /api paths: without it a typo'd endpoint returns
   // the SPA's index.html and the client tries to JSON.parse an HTML document.

@@ -1,0 +1,30 @@
+{
+  "id": "bench-meadow-cancel",
+  "app": "dozehound-tvos",
+  "title": "Back out of Meadow",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the Meadow channel, then cancel the account-linking screen and return to the channels.",
+  "success": "the channels are showing again and the linking screen is gone",
+  "budget": {
+    "steps": 10,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "text": [
+      "Meadow"
+    ],
+    "absent_text": [
+      "Link your Dozehound account"
+    ]
+  },
+  "screens": [
+    "link",
+    "channel_bar"
+  ]
+}

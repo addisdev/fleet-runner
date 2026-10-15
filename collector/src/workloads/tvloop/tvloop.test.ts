@@ -12,7 +12,9 @@ import os from "node:os";
 import path from "node:path";
 import { NoTargetsError } from "../../fleet-client.js";
 import type { Job, Target, WorkloadCtx } from "../types.js";
-import { CLI, commandFor, junitCounts, runWith, stepsFor, type Deps, type StepRunner } from "./index.js";
+import {
+  CLI, TV_ALIAS, androidTvParams, commandFor, deviceToml, junitCounts, runWith, stepsFor, type Deps, type StepRunner,
+} from "./index.js";
 
 type Check = (name: string, cond: boolean, detail?: string) => void;
 type Row = Record<string, unknown>;
@@ -28,6 +30,7 @@ function fakeCtx(opts: {
   const rows: Row[] = [];
   const uploads: { name: string; text: string }[] = [];
   const lockCalls: string[] = [];
+  const keychainReads = { n: 0 };
   const ctx: WorkloadCtx = {
     host: "test-host",
     log: () => {},
@@ -59,14 +62,14 @@ function fakeCtx(opts: {
       // The real redact, in miniature: every occurrence, replaced.
       redact: (s, secrets) => secrets.reduce((acc, x) => acc.split(x).join("[redacted]"), s),
       rokuDevPassword: async () =>
-        opts.password === "missing"
+        (keychainReads.n++, opts.password) === "missing"
           ? { ok: false, reason: "missing", detail: "not found" }
           : opts.password === "denied"
             ? { ok: false, reason: "denied", detail: "keychain locked" }
             : { ok: true, password: SECRET },
     },
   };
-  return { ctx, rows, uploads, lockCalls };
+  return { ctx, rows, uploads, lockCalls, keychainReads };
 }
 
 /** A built checkout: just the file whose presence means "built". */
@@ -231,5 +234,132 @@ export async function runTvloopChecks(check: Check): Promise<void> {
     const { ctx, lockCalls } = fakeCtx({});
     await runWith(job({}, false), ctx, deps(checkout(), fakeRunner({}, JUNIT_PASS).runStep));
     check("tvloop: a non-exclusive job takes no locks", lockCalls.length === 0);
+  }
+
+  await runAndroidTvChecks(check);
+}
+
+// ---------------------------------------------------------------------------
+// Fire TV / Android TV
+// ---------------------------------------------------------------------------
+
+const firetv = (id = "emulator-5556"): Target => ({ id, platform: "android", kind: "simulator", driver: "adb" });
+const phone = (id = "R58M123"): Target => ({ id, platform: "android", kind: "device", driver: "adb" });
+const TV_PARAMS = { androidtv: { package: "com.taylab.dozehound.debug" } };
+
+/** deps() with an adb that says which targets are TVs, and counts how often it was asked. */
+function tvDeps(dir: string, runStep: StepRunner, tvIds: string[]) {
+  const asked: string[] = [];
+  const d: Deps = {
+    ...deps(dir, runStep),
+    isTv: async (t) => {
+      asked.push(t.id);
+      return tvIds.includes(t.id);
+    },
+  };
+  return { d, asked };
+}
+
+async function runAndroidTvChecks(check: Check): Promise<void> {
+  // --- pure pieces --------------------------------------------------------
+  const tvToml = deviceToml(
+    { platform: "androidtv", serial: "emulator-5556", package: "com.taylab.dozehound.debug" },
+    { flows: "/t/tests/flows", goldens: "/t/tests/goldens" },
+  );
+  check("tvloop/tv: the generated config names one androidtv device by serial and package",
+    tvToml.includes(`[device.${TV_ALIAS}]`) && tvToml.includes('platform = "androidtv"') &&
+      tvToml.includes('serial = "emulator-5556"') && tvToml.includes('package = "com.taylab.dozehound.debug"') &&
+      tvToml.includes('dir = "/t/tests/flows"'), tvToml);
+  const rokuToml = deviceToml({ platform: "roku", host: "127.0.0.1", ports: { ecp: 61000, dev: 61001 } });
+  check("tvloop/tv: a Roku config carries a password REFERENCE, never a value",
+    rokuToml.includes('password = "env:TVLOOP_PASSWORD"') && rokuToml.includes("ecp_port = 61000"), rokuToml);
+  check("tvloop/tv: no params.androidtv is null (the old behaviour)", androidTvParams(job()) === null);
+  check("tvloop/tv: a package that is not an application id is refused",
+    typeof androidTvParams(job({ androidtv: { package: "dozehound" } })) === "string");
+  const viaConfig = commandFor("replay", { host: "emulator-5556", outDir: "/o", flows: ["tv"], node: "node", configDir: "/o" });
+  check("tvloop/tv: a TV is addressed through its generated config, not as a Roku address",
+    viaConfig.args.join(" ").endsWith(`--cwd /o --device ${TV_ALIAS}`) && !viaConfig.args.includes("emulator-5556"),
+    viaConfig.args.join(" "));
+
+  // --- a TV-only job ------------------------------------------------------
+  {
+    const { ctx, rows, keychainReads } = fakeCtx({ targets: [firetv(), phone()] });
+    const configs: string[] = [];
+    const r = fakeRunner({}, JUNIT_PASS);
+    const runStep: StepRunner = async (cmd, args, o) => {
+      const cwd = args[args.indexOf("--cwd") + 1];
+      configs.push(readFileSync(path.join(cwd, "tvloop.toml"), "utf8"));
+      return r.runStep(cmd, args, o);
+    };
+    const dir = checkout();
+    const { d, asked } = tvDeps(dir, runStep, ["emulator-5556"]);
+    await runWith(job(TV_PARAMS), ctx, d);
+    const dev = rows.find((x) => x.device_id === "emulator-5556") ?? {};
+    check("tvloop/tv: only doctor and replay run on a TV",
+      r.calls.map((c) => c.step).join(",") === "doctor,replay", r.calls.map((c) => c.step).join(","));
+    check("tvloop/tv: a phone is asked about and left out", asked.includes("R58M123") && !rows.some((x) => x.device_id === "R58M123"));
+    check("tvloop/tv: the TV gets no Roku password, and the Keychain is never read",
+      r.calls.every((c) => c.env.TVLOOP_PASSWORD === undefined) && keychainReads.n === 0);
+    check("tvloop/tv: its config points at the checkout's flows by absolute path",
+      configs.length === 2 && configs[0].includes(JSON.stringify(path.join(dir, "tests", "flows"))), configs[0]);
+    check("tvloop/tv: the row is ok and says two steps were skipped",
+      dev.ok === true && (dev.metrics as { skipped_steps?: number })?.skipped_steps === 2, JSON.stringify(dev));
+    check("tvloop/tv: closes with an ok final row", rows.at(-1)?.final === true && rows.at(-1)?.ok === true);
+  }
+
+  // --- the same targets, but the job did not ask for TVs -------------------
+  {
+    const { ctx } = fakeCtx({ targets: [firetv()] });
+    const { d, asked } = tvDeps(checkout(), fakeRunner({}).runStep, ["emulator-5556"]);
+    let err: unknown;
+    try {
+      await runWith(job(), ctx, d);
+    } catch (e) {
+      err = e;
+    }
+    check("tvloop/tv: without params.androidtv a TV is not a target, and adb is not even asked",
+      err instanceof NoTargetsError && asked.length === 0);
+  }
+
+  // --- a Roku with no password beside a TV ----------------------------------
+  {
+    const { ctx, rows } = fakeCtx({ targets: [roku(), firetv()], password: "missing" });
+    const r = fakeRunner({}, JUNIT_PASS);
+    const { d } = tvDeps(checkout(), r.runStep, ["emulator-5556"]);
+    await runWith(job(TV_PARAMS), ctx, d);
+    const rk = rows.find((x) => x.device_id === "roku-X1") ?? {};
+    const tv = rows.find((x) => x.device_id === "emulator-5556") ?? {};
+    check("tvloop/tv: the Roku is skipped for its password and the TV still runs",
+      /^skipped: no Roku developer password/.test(String(rk.error)) && tv.ok === true &&
+        r.calls.every((c) => !c.args.includes("192.168.50.218")), JSON.stringify(rows));
+  }
+
+  // --- both, with a password: each gets what is its own -------------------
+  {
+    const { ctx, rows, uploads } = fakeCtx({ targets: [roku(), firetv()] });
+    const r = fakeRunner({}, JUNIT_PASS);
+    const { d } = tvDeps(checkout(), r.runStep, ["emulator-5556"]);
+    await runWith(job(TV_PARAMS), ctx, d);
+    const rokuCalls = r.calls.filter((c) => !c.args.includes("--cwd"));
+    const tvCalls = r.calls.filter((c) => c.args.includes("--cwd"));
+    check("tvloop/tv: the Roku still gets all four steps and its password",
+      rokuCalls.map((c) => c.step).join(",") === "doctor,install,hardware,replay" &&
+        rokuCalls.every((c) => c.env.TVLOOP_PASSWORD === SECRET));
+    check("tvloop/tv: ...the TV gets two steps and no password",
+      tvCalls.length === 2 && tvCalls.every((c) => c.env.TVLOOP_PASSWORD === undefined));
+    check("tvloop/tv: ...and no artifact carries the password", uploads.every((u) => !u.text.includes(SECRET)));
+    check("tvloop/tv: ...and both rows are ok", rows.filter((x) => x.ok === true && !x.final).length === 2, JSON.stringify(rows));
+  }
+
+  // --- a bad params.androidtv is a failed job, not a quiet skip -----------
+  {
+    const { ctx } = fakeCtx({ targets: [firetv()] });
+    let msg = "";
+    try {
+      await runWith(job({ androidtv: { flows: ["x"] } }), ctx, tvDeps(checkout(), fakeRunner({}).runStep, []).d);
+    } catch (e) {
+      msg = (e as Error).message;
+    }
+    check("tvloop/tv: params.androidtv without a package fails and says what it needs", /package/.test(msg), msg);
   }
 }

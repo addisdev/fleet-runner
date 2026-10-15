@@ -1,0 +1,22 @@
+{
+  "id": "bench-last-tile",
+  "app": "fakeroku",
+  "title": "Focus the last tile",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Move the focus to the last tile in the home row.",
+  "success": "Tile4 has focus on the home row",
+  "budget": {
+    "steps": 8,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home"
+  ],
+  "check": {
+    "screen": "home",
+    "focused_label": "Tile4"
+  }
+}

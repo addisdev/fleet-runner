@@ -1,0 +1,25 @@
+{
+  "id": "bench-pause-then-leaving-home",
+  "app": "dozehound-tv",
+  "title": "Leave while paused",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Pause the picture, then use Leaving Home anyway.",
+  "success": "Leaving Home replaced the pause: a banner says \"Leaving Home — Naptime is on until you're back.\" and not \"Paused\"",
+  "budget": {
+    "steps": 10,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "player",
+    "channel_bar",
+    "leaving_home"
+  ],
+  "check": {
+    "text": [
+      "Leaving Home — Naptime is on until you're back."
+    ]
+  }
+}

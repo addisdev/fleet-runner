@@ -1,0 +1,16 @@
+# Probe BG-05: Back up now freezes the app for eight seconds.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. The flow taps Back up now; the script then taps the screen during the freeze and looks for the ANR.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_settings"
+- scrollUntilVisible:
+    element:
+      id: "button_backup"
+    direction: DOWN

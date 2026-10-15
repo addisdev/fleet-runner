@@ -1,0 +1,19 @@
+# Probe BG-10: Upgrade button label is cut off at the largest text size.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends on Profile at Largest text, for a screenshot.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn:
+    id: "button_settings"
+- tapOn:
+    id: "option_size_largest"
+- back
+- tapOn:
+    id: "button_profile"
+- assertVisible:
+    id: "button_upgrade"

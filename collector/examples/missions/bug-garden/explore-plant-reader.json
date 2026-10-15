@@ -1,0 +1,22 @@
+{
+  "id": "explore-plant-reader",
+  "app": "bug-garden",
+  "title": "A Spanish-speaking gardener checks every plant",
+  "persona": "A Spanish-speaking gardener doing the weekly round of their houseplants.",
+  "goal": "Switch the app to Spanish (Español), then open every plant in turn, read its care notes, water the ones that are due and mark your two favourites. Share one plant with a friend.",
+  "success": "the app is in Spanish and the agent opened most of the plants",
+  "budget": {
+    "steps": 60,
+    "minutes": 25
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "settings",
+    "home",
+    "detail",
+    "invite"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml"
+}

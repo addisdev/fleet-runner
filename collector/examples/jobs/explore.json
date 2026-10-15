@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "job_id": "explore-greenfolio-nightly",
+  "workload": "explore",
+  "executor": "host",
+  "app": { "name": "greenfolio-android", "build": "nightly", "sha256": "latest" },
+  "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
+  "constraints": { "window": { "from": 22, "to": 1 } },
+  "lease": { "ttl_s": 900, "max_attempts": 1 },
+  "params": {
+    "app_id": "com.taylab.greenfolio.debug",
+    "app_name": "GreenFolio",
+    "app_key": "greenfolio",
+    "minutes": 150,
+    "findings_per_night": 5,
+    "replay_attempts": 2,
+    "conditions": ["baseline", "dark", "locale:es", "large-text", "network:3g", "background"],
+    "changed": { "repo": "~/src/greenfolio-android", "since": "24 hours ago" }
+  }
+}

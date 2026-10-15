@@ -1,11 +1,12 @@
 {
   "name": "fleet-cli",
-  "version": "0.7.2",
+  "version": "0.8.0",
   "private": true,
   "type": "module",
   "description": "Fleet Runner's front door: one command that runs a brain, a runner, or both.",
   "bin": {
-    "fleet": "./dist/cli.mjs"
+    "fleet": "./dist/cli.mjs",
+    "fleetr": "./dist/cli.mjs"
   },
   "engines": {
     "node": ">=22.13"
@@ -14,9 +15,11 @@
     "start": "tsx src/cli.ts",
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
+    "skill:gen": "tsx scripts/gen-skill.ts",
     "test": "tsc --noEmit && node --import tsx --test test/*.test.ts"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/node": "^24.2.0",
     "esbuild": "^0.28.2",
     "tsx": "^4.20.0",

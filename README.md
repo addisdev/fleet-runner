@@ -68,6 +68,31 @@ curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.
 > **[docs/install/](https://addisdev.github.io/fleet-runner/install/)** is honest
 > per platform.
 
+## Drive it from a script or an AI agent
+
+```
+fleetr run benchmark --pool phones && deploy
+```
+
+Devices, workloads, jobs, results, artifacts, schedules and alerts are one
+versioned control API,
+[`/api/v1`](https://addisdev.github.io/fleet-runner/api/#control-api-apiv1),
+with an OpenAPI document and a generated client. Three wrappers sit on that
+client and nothing else:
+
+- **A CLI** (`fleetr`, the same program as `fleet`) whose exit code is the
+  verdict and whose `--json` is the API's answer, for scripts, CI and coding
+  agents.
+- **An MCP server**, `fleet mcp`, for agents that prefer tools to shell
+  commands, and a remote one, `fleet mcp --http`, that sits behind your
+  company's sign-in (OAuth 2.1, Entra ID or Okta) for chat tools.
+- **A skill**, installed with `fleet skill install`: a short file telling an
+  agent which commands to run in what order and what not to do, with tables
+  generated from the code so it cannot drift from the binary.
+
+Authentication is opt-in: `FLEET_AUTH=tokens` turns on scoped tokens and an
+audit log; a fleet on a LAN or tailnet works as before without it.
+
 ## Documentation
 
 **[addisdev.github.io/fleet-runner](https://addisdev.github.io/fleet-runner/)**
@@ -76,7 +101,9 @@ curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.
 |---|---|
 | **[Install](https://addisdev.github.io/fleet-runner/install/)** | Getting `fleet` onto macOS, Windows, Linux or Docker, and getting a phone, a television, a Roku or a browser to join it. |
 | **[Get started](https://addisdev.github.io/fleet-runner/getting-started/)** | `fleet up`, a real job, and a result on the dashboard. Needs Node 22.13 and nothing else -- no Xcode, no NDK, no phone. |
+| **[Exploratory QA](https://addisdev.github.io/fleet-runner/explore/)** | A vision model explores tonight's build on phones, simulators and TVs, and files only the bugs that reproduce on a clean install. |
 | **[Wire in your own app](https://addisdev.github.io/fleet-runner/integration/)** | Publish builds on merge, run a nightly on your own devices, and block a pull request on the verdict. |
+| **[AI agents and automation](https://addisdev.github.io/fleet-runner/agents/)** | The CLI, the skill, MCP over stdio, and the remote MCP gateway with company sign-in. |
 | **[The protocol](https://addisdev.github.io/fleet-runner/protocol/)** | Register, long-poll, claim, beacon, report. Enough to write a runner in a language none of these are in. |
 
 ## How it fits together
@@ -139,14 +166,14 @@ languages, sharing not one line
 | **[runner-ios/](runner-ios)** | Swift. SwiftUI, with llama.cpp and Core ML backends. The same sources build the tvOS and visionOS targets -- two conditions rather than a fork. |
 | **[runner-machine/](runner-machine)** | TypeScript. A Node process that makes a laptop, desktop, board or NAS a fleet device, so a phone's tok/s and a laptop's land in the same table. |
 | **[collector/runner-web/](collector/runner-web)** | JavaScript, one HTML file the collector serves at `/runner`: opening it enrols the browser that opened it. A smart TV, a console, a Chromebook -- anything with no way to install a signed app. |
-| **[runner-roku/](runner-roku)** | BrightScript, because it is the only language a Roku will run. A SceneGraph channel, so a streaming player or a Roku TV is a fleet device. It has never been run on a Roku, and it has never been *compiled* -- there is no emulator -- so read its README before you read a number from it. |
+| **[runner-roku/](runner-roku)** | BrightScript, because it is the only language a Roku will run. A SceneGraph channel, so a streaming player or a Roku TV is a fleet device. It has never been run on a Roku -- there is no emulator -- and CI compiling it with brighterscript is all that is checked, so read its README before you read a number from it. |
 
 **The front doors**
 
 | | What it is |
 |---|---|
 | **[fleet/](fleet)** | The CLI. `fleet up` runs this machine's components under a supervisor that backs off and gives up loudly rather than restarting a broken component forever; `fleet doctor` says what the machine can run and why not; `fleet service install` keeps it up. It wraps the three programs above and reimplements none of them. |
-| **[desktop/](desktop)** | A Tauri menu-bar app around that CLI: a tray menu, role switches, the dashboard in a window, and a notification when a component gives up. It exists to test one hypothesis about macOS local-network permissions, and **none of its Rust has ever been compiled** -- read its README before believing anything in it. |
+| **[desktop/](desktop)** | A Tauri menu-bar app around that CLI: a tray menu, role switches, the dashboard in a window, and a notification when a component gives up. It exists to test one hypothesis about macOS local-network permissions, and **it has never been launched**: CI compiles its Rust and that is all -- read its README before believing anything in it. |
 
 Each directory has its own README, its own tests and its own CI job, filtered by
 path so a change to a phone runner does not build the dashboard.

@@ -1,0 +1,13 @@
+# Probe BG-14: Favourite button has no label.
+#
+# Walks the shortest path to the planted defect on the default build
+# (defects on) and stops where it shows. Ends on Fern's detail page; the script reads button_favourite's content-desc.
+# Run by bug-garden/tools/verify-on-device.sh, which checks the signal.
+appId: dev.fleetrunner.buggarden
+---
+- launchApp:
+    clearState: true
+- runFlow: ../sign-in.yaml
+- tapOn: "Fern"
+- assertVisible:
+    id: "button_favourite"

@@ -1,0 +1,29 @@
+{
+  "id": "bench-dark-theme",
+  "app": "bug-garden",
+  "title": "Turn on the dark theme",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Switch the app to its dark theme.",
+  "success": "Settings says 'Dark theme is on'",
+  "budget": {
+    "steps": 10,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "settings"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "settings",
+    "text": [
+      "Dark theme is on"
+    ]
+  }
+}

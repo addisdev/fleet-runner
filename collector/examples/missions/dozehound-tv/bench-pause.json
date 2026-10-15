@@ -1,0 +1,23 @@
+{
+  "id": "bench-pause",
+  "app": "dozehound-tv",
+  "title": "Pause the picture",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Pause what is playing with the remote's play/pause button.",
+  "success": "a banner says \"Paused\"",
+  "budget": {
+    "steps": 4,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "player"
+  ],
+  "check": {
+    "text": [
+      "Paused"
+    ]
+  }
+}

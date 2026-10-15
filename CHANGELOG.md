@@ -16,6 +16,106 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-15
+
+The fleet as something a program or an AI agent can drive: a versioned control
+API, a CLI and MCP tools that are thin wrappers over it, an optional OAuth
+gateway for chat tools, and a skill that tells an agent how to use them. See
+[AI agents and automation](docs/agents.md).
+
+### Added
+
+- **A versioned control API, `/api/v1`.** Devices, workloads, jobs, results,
+  artifacts, schedules, alerts and an audit log, with one list envelope, one
+  error shape (`{error:{code,message,hint}}`) and OpenAPI 3.1 at
+  `/api/v1/openapi.json`. New: `POST /api/v1/jobs/validate` (a dry run that
+  names each problem and the devices a job would land on),
+  `GET /api/v1/jobs/{id}/summary` (one verdict across every device of a
+  fan-out) and `GET /api/v1/jobs/{id}/wait` (long-poll until it finishes). One
+  route table registers the routes, writes the OpenAPI document and generates
+  a typed client; the suite fails if they disagree.
+- **Work commands in `fleet`:** `devices`, `workloads`, `run`, `job`, `wait`,
+  `cancel`, `retry`, `results`, `flaky`, `artifact`, `login`, `whoami`, with
+  `--json` and the verdict as the exit code (0 passed, 1 failed, 2 usage or
+  invalid spec, 3 still running, 4 skipped, 5 refused or unreachable). `fleetr`
+  is installed alongside `fleet` as the same program.
+- **Opt-in authentication.** `FLEET_AUTH=tokens` requires scoped bearer tokens
+  (`read`, `run`, `admin`, `agent`, `delegate`) on the control API, managed with
+  `fleet token create|list|revoke`. Jobs record who asked and through which
+  front door; every change is audited. Off by default: a LAN or tailnet
+  collector behaves as before.
+- **A remote MCP gateway**, `fleet mcp --http`: Streamable HTTP, an OAuth 2.1
+  resource server for Entra ID, Okta or any OIDC provider (RFC 9728 metadata),
+  per-person rate limits, and jobs recorded as the person rather than the
+  gateway. The `shell` workload is never available through it.
+- **More MCP tools and resources:** `fleet_workloads`, `fleet_validate`,
+  `fleet_cancel`, `fleet_retry`, `fleet_flaky`, `fleet_whoami`; tool
+  annotations, output schemas, and jobs, devices, workloads and artifacts as
+  resources.
+- **An agent skill**, `skills/fleet-runner/SKILL.md`, installed with
+  `fleet skill install`. Its tool and exit-code tables are generated from the
+  code and checked by the tests.
+- `GET /metrics` in Prometheus text format.
+
+### Changed
+
+- **Job specs are validated strictly.** An unknown top-level field is now
+  refused (`invalid_spec`) instead of ignored, so a typo is an error rather than
+  a setting that silently did nothing.
+- The older read and enqueue routes (`/api/devices`, `/api/jobs`, `POST /jobs`
+  and others) answer with `Deprecation` and `Link: rel="successor-version"`
+  headers pointing at `/api/v1`. They keep working; there is no sunset date.
+  The runner protocol is not deprecated.
+- `FLEET_RUNNER_URL` and `FLEET_RUNNER_TOKEN` take precedence over `FLEET_URL`
+  and `FLEET_TOKEN` for the CLI and MCP server, so a shell configured for
+  another tool that reads those names cannot misdirect it.
+
+### Fixed
+
+- **A device that hung up mid-poll could swallow the next job.** The
+  collector kept claiming on behalf of a long-poll whose client had gone,
+  handing the job to nobody; it sat claimed until the lease ran out. The poll
+  now stops when the connection closes.
+- **The container image could not start on a fresh volume.** `VOLUME` named a
+  directory the image never created, so Docker made it root-owned and the
+  non-root `fleet` user died on `mkdir`. The image now creates it first.
+- **The desktop app's build script failed before compiling anything.** The
+  bundled resource directory was named `fleet`, the same name the sidecar is
+  copied to in `target/debug`, so the copy failed with "Not a directory". The
+  resource is now `fleet-tree`, and the sidecar shim also looks beside itself,
+  where a dev build puts it.
+
+### Now verified
+
+Four items from earlier "Not verified" lists, each now checked by CI on every
+pull request that touches them:
+
+- **The container image runs.** `fleet / container smoke` builds
+  `fleet/Dockerfile`, starts it, and waits for its own agent to register and
+  answer `fleet devices`, `fleet workloads` and `fleet whoami`. It found the
+  volume bug above on its first run. linux/amd64 only; the arm64 image is still
+  built and not run.
+- **`fleet service install` on systemd.** `fleet / systemd smoke` installs the
+  user unit on a real systemd, checks it with `systemd-analyze verify`, waits
+  for the collector it starts to answer, then uninstalls and checks nothing is
+  left answering. launchd and the Windows scheduled task are still unrun.
+- **The desktop app's Rust compiles.** `desktop / cargo check` stages the
+  sidecar and runs `cargo check --all-targets` on macOS. It found the resource
+  bug above; once that was fixed the Rust compiled with no errors. Compiling is
+  all it proves: the app has still never been launched.
+- **The Roku channel compiles.** `runner-roku / brighterscript` runs `bsc`
+  over the channel. It has still never run on a Roku.
+
+### Not verified
+
+- **The MCP gateway has not met a real identity provider.** Its tests use a
+  local fake that signs tokens the way Entra ID and Okta do; no tenant has an app
+  registration for it yet, and it is not on any company's approved-connector
+  list. [Authentication and the MCP gateway](docs/deploy/auth.md) has the setup.
+- **The dashboard does not use the generated client yet.** It still calls the
+  unversioned routes with hand-written types
+  ([#83](https://github.com/addisdev/fleet-runner/issues/83)).
+
 ## [0.7.2] — 2026-09-30
 
 ### Fixed
@@ -937,7 +1037,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/addisdev/fleet-runner/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/addisdev/fleet-runner/compare/v0.6.2...v0.7.0

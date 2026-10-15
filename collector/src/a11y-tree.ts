@@ -52,6 +52,16 @@ export type A11yNode = {
   bounds: { x: number; y: number; w: number; h: number } | null;
   /** Depth in the subtree, for naming a finding usefully. */
   depth: number;
+  /**
+   * Holds input focus. Only a TV is driven by focus rather than by touch, so
+   * this is what tells a remote-control driver where it is; absent means the
+   * source does not say, not false.
+   */
+  focused?: boolean;
+  /** Scrolls, per the tree. Lets a driver tell a list from a page. */
+  scrollable?: boolean;
+  /** A switch or checkbox that is on. Lets "nothing changed" notice a toggle. */
+  checked?: boolean;
 };
 
 /**
@@ -129,6 +139,9 @@ export function parseUiautomatorDump(xml: string): { nodes: A11yNode[]; problem:
       enabled: a["enabled"] !== "false",
       bounds: parseBoundsRect(a["bounds"]),
       depth,
+      focused: a["focused"] === "true",
+      scrollable: a["scrollable"] === "true",
+      checked: a["checked"] === "true",
     });
     if (m[2] !== "/") depth += 1;
   }
@@ -223,7 +236,12 @@ const TAPPABLE_IOS = new Set([
   "datepicker", "picker", "pickerwheel", "icon", "image",
 ]);
 
-function isTappableType(t: string): boolean {
+/**
+ * Exported for the explore workload's Apple actuator, which builds nodes from
+ * the FleetDriver's JSON tree and has to call a Button tappable by the same
+ * rule this parser does.
+ */
+export function isTappableType(t: string): boolean {
   return TAPPABLE_IOS.has(t.replace(/^XCUIElementType/, "").toLowerCase());
 }
 
@@ -284,6 +302,9 @@ export function parseXcuiDebugDescription(out: string): { nodes: A11yNode[]; pro
       enabled: !/,\s*Disabled\b/.test(rest),
       bounds: f ? { x: Number(f[1]), y: Number(f[2]), w: Number(f[3]), h: Number(f[4]) } : null,
       depth,
+      // tvOS prints `Focused` after the frame on the element holding focus;
+      // iOS never prints it, which is why the field is optional.
+      ...(/,\s*Focused\b/.test(rest) ? { focused: true } : {}),
     });
   }
   indents = [];
@@ -296,6 +317,20 @@ export function parseXcuiDebugDescription(out: string): { nodes: A11yNode[]; pro
 // ---------------------------------------------------------------------------
 // The checks
 // ---------------------------------------------------------------------------
+
+/**
+ * Whether any node inside `nodes[i]`'s subtree has text, a label or a value.
+ * The list is in document order with depths, so the subtree is the run of
+ * following nodes deeper than it.
+ */
+function descendantAnnounces(nodes: A11yNode[], i: number): boolean {
+  const d = nodes[i].depth;
+  for (let j = i + 1; j < nodes.length && nodes[j].depth > d; j++) {
+    const c = nodes[j];
+    if ([c.label, c.text, c.value].some((s) => s.trim() !== "")) return true;
+  }
+  return false;
+}
 
 /** How a node reads in a finding, when it has no label to name it by. */
 function nameOf(n: A11yNode): string {
@@ -353,13 +388,21 @@ export function a11yFindings(
   let sized = 0;
   const seen = new Set<string>();
 
-  for (const n of nodes) {
+  for (const [i, n] of nodes.entries()) {
     if (!n.tappable || !n.enabled) continue;
     // A zero-area node is not on screen; judging it produces findings nobody
     // can act on, because there is nothing there to look at.
     if (n.bounds && (n.bounds.w <= 0 || n.bounds.h <= 0)) continue;
 
-    const announced = [n.label, n.text, n.value].some((s) => s.trim() !== "");
+    // What a screen reader announces for a control includes its children:
+    // TalkBack and VoiceOver both read the text inside a focusable container
+    // that has none of its own. Compose puts a row's text, and an icon
+    // button's contentDescription, on CHILD nodes of the clickable one, so
+    // reading the clickable node alone flagged every list row and every icon
+    // button in a Compose app as unlabelled (found by explore's first real
+    // run on the bug garden: 4 false findings on one screen, each of which
+    // "reproduced" because the check is deterministic).
+    const announced = [n.label, n.text, n.value].some((s) => s.trim() !== "") || descendantAnnounces(nodes, i);
     if (!announced) {
       unlabelled++;
       const key = `unlabelled:${nameOf(n)}`;

@@ -17,10 +17,13 @@ seen the loop work.
 curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.sh | sh
 ```
 
-!!! warning "No release has been published yet, so that line does not work"
+That downloads the latest [release](https://github.com/addisdev/fleet-runner/releases),
+refuses it unless its checksum matches, and unpacks it into `~/.fleet`. It
+prints the `PATH` line to add if `~/.fleet/bin` is not already on it. On
+Windows the command is
+`irm https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.ps1 | iex`.
 
-    There are no tags and no archives, so the installer asks GitHub for the
-    latest release, finds nothing, and stops. **Build from a checkout instead:**
+??? note "Or build from a checkout"
 
     ```bash
     git clone https://github.com/addisdev/fleet-runner
@@ -36,8 +39,8 @@ curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.
     `PATH`, or type the whole thing -- the rest of this page says `fleet` either
     way.
 
-    [Install](install/index.md) has the same thing per platform, and is honest
-    about which of them anyone has actually run. macOS/arm64 is the answer.
+[Install](install/index.md) has the details per platform, and is honest about
+which of them anyone has actually run. macOS is the answer.
 
 ## 2. `fleet up`
 
@@ -46,7 +49,7 @@ fleet up
 ```
 
 ```
-fleet 0.5.0-dev
+fleet 0.8.0
   home     /Users/you/.fleet
   roles    brain, agent
   brain    http://127.0.0.1:8788  (bind 0.0.0.0)

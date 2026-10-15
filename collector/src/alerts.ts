@@ -348,31 +348,68 @@ export function expireSnoozes() {
 
 const WEBHOOK = process.env.FLEET_ALERT_WEBHOOK;
 
+/** One message for the phone: what ntfy calls a title, a body, and how loud. */
+export type WebhookMessage = {
+  title: string;
+  body: string;
+  priority?: "default" | "high";
+  tags?: string;
+  /** ntfy opens this when the notification is tapped; other receivers ignore it. */
+  click?: string;
+};
+
 /**
- * Push newly opened alerts somewhere a phone will see them. ntfy-shaped by
- * default (a plain POST body works for ntfy.sh and most webhook receivers).
- * Unset means the dashboard is the only channel, which is the default.
+ * Post one message to FLEET_ALERT_WEBHOOK, ntfy-shaped (a plain POST body works
+ * for ntfy.sh and most webhook receivers). Resolves false rather than throwing:
+ * a webhook that is down must never take the collector with it.
+ *
+ * Exported because alerts are no longer the only thing that goes to the phone
+ * -- the night-QA digest (src/findings.ts) uses the same channel, and two
+ * copies of these headers would drift the first time ntfy changed one.
+ * `url` exists for tests; everything else leaves it to the environment.
+ */
+export async function sendWebhook(
+  msg: WebhookMessage,
+  log: (o: object, m: string) => void,
+  url: string | undefined = WEBHOOK,
+): Promise<boolean> {
+  if (!url) return false;
+  try {
+    const headers: Record<string, string> = {
+      "content-type": "text/plain; charset=utf-8",
+      // ntfy reads these; other receivers ignore them harmlessly. Header values
+      // must be Latin-1 or fetch throws, so anything else is dropped from the
+      // title rather than failing the send.
+      title: msg.title.replace(/[^\x20-\x7e]/g, ""),
+      priority: msg.priority ?? "default",
+    };
+    if (msg.tags) headers.tags = msg.tags;
+    if (msg.click) headers.click = msg.click;
+    const res = await fetch(url, { method: "POST", headers, body: msg.body });
+    if (!res.ok) log({ status: res.status, title: msg.title }, "webhook rejected");
+    return res.ok;
+  } catch (e) {
+    log({ err: String(e), title: msg.title }, "webhook failed");
+    return false;
+  }
+}
+
+/**
+ * Push newly opened alerts somewhere a phone will see them. Unset means the
+ * dashboard is the only channel, which is the default.
  */
 export async function notify(alerts: AlertRow[], log: (o: object, m: string) => void) {
   if (!WEBHOOK || alerts.length === 0) return;
   for (const a of alerts) {
-    try {
-      const res = await fetch(WEBHOOK, {
-        method: "POST",
-        headers: {
-          "content-type": "text/plain; charset=utf-8",
-          // ntfy reads these; other receivers ignore them harmlessly.
-          title: `fleet: ${a.rule}`,
-          priority: a.severity === "critical" ? "high" : "default",
-          tags: a.severity === "critical" ? "rotating_light" : "warning",
-        },
+    await sendWebhook(
+      {
+        title: `fleet: ${a.rule}`,
+        priority: a.severity === "critical" ? "high" : "default",
+        tags: a.severity === "critical" ? "rotating_light" : "warning",
         body: a.message,
-      });
-      if (!res.ok) log({ status: res.status, rule: a.rule }, "alert webhook rejected");
-    } catch (e) {
-      // A webhook that is down must never take the collector with it.
-      log({ err: String(e), rule: a.rule }, "alert webhook failed");
-    }
+      },
+      log,
+    );
   }
 }
 

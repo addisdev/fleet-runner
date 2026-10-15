@@ -1,0 +1,26 @@
+{
+  "id": "bench-pause",
+  "app": "dozehound-tvos",
+  "title": "Pause the picture",
+  "persona": "A careful viewer with a Siri Remote who does exactly what they set out to do and nothing else.",
+  "goal": "Start any channel playing, then pause it with the remote's play/pause button.",
+  "success": "the channel shows as paused",
+  "budget": {
+    "steps": 10,
+    "minutes": 6
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "launch_args": [
+    "-uiTestStubCatalog"
+  ],
+  "check": {
+    "text": [
+      "Paused"
+    ]
+  },
+  "screens": [
+    "player"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "id": "explore-calming-playlist",
+  "app": "dozehound-tv",
+  "title": "Set up an evening of calm channels",
+  "persona": "A dog owner who has just installed Dozehound on the living-room Fire TV and wants something soothing on for the dog while the family is out tonight.",
+  "goal": "Find out what channels there are and what each one is like, try the ones that sound calming, settle on the one you would leave on, and make sure it will keep playing after you leave the room.",
+  "success": "a channel is playing and the agent can say why it chose it",
+  "budget": {
+    "steps": 40,
+    "minutes": 15
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "player",
+    "channel_bar",
+    "leaving_home"
+  ]
+}

@@ -255,6 +255,79 @@ const SCHEDULES: Record<string, Schedule> = {
       }
     }
   },
+  // Overnight exploratory QA (src/workloads/explore). The night slot the plan
+  // proposes is 22:00-00:30, before Dozehound's video queue takes the Studio's
+  // memory; the window constraint keeps a late claim from running into it.
+  // All three arrive switched off like every schedule here, and the TV one
+  // should stay off until the plan's phase-3 test says a model can drive a TV.
+  "nightly-explore-greenfolio": {
+    "cron": "0 22 * * *",
+    "template": {
+      "schema": 1,
+      "workload": "explore",
+      "executor": "host",
+      "app": { "name": "greenfolio-android", "build": "nightly", "sha256": "latest" },
+      "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
+      "constraints": { "window": { "from": 22, "to": 1 } },
+      "lease": { "ttl_s": 900, "max_attempts": 1 },
+      "params": {
+        "app_id": "com.taylab.greenfolio.debug",
+        "app_name": "GreenFolio",
+        "app_key": "greenfolio",
+        "minutes": 100,
+        "conditions": ["baseline", "dark", "locale:es", "large-text", "network:3g", "background"],
+        "changed": { "repo": "~/src/greenfolio-android", "since": "24 hours ago" }
+      }
+    }
+  },
+  "nightly-explore-dozehound-tv": {
+    "cron": "45 23 * * *",
+    "template": {
+      "schema": 1,
+      "workload": "explore",
+      "executor": "host",
+      "app": { "name": "dozehound-firetv", "build": "nightly", "sha256": "latest" },
+      "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
+      "constraints": { "window": { "from": 22, "to": 1 } },
+      "lease": { "ttl_s": 900, "max_attempts": 1 },
+      "params": {
+        "app_id": "com.taylab.dozehound.debug",
+        "app_name": "Dozehound",
+        "app_key": "dozehound-tv",
+        "surface": "dpad",
+        "minutes": 40
+      }
+    }
+  },
+  // Old hardware (O7): the Galaxy S8+ on Android 9 hangs off fleet-host, so
+  // this one runs on fleet-host's executor. That executor reaches the model on
+  // ultra through its FLEET_EXPLORE_BASE_URL (the .50 side can reach ultra on
+  // the Mini's side; the reverse is what cannot happen).
+  "weekly-explore-shelf": {
+    "cron": "0 23 * * 3",
+    "template": {
+      "schema": 1,
+      "workload": "explore",
+      "executor": "host",
+      "app": { "name": "greenfolio-android", "build": "nightly", "sha256": "latest" },
+      "targets": { "executor": "fleet-host", "match": "model ~ 'SM-G955'", "exclusive": true },
+      "constraints": { "window": { "from": 22, "to": 1 } },
+      "lease": { "ttl_s": 900, "max_attempts": 1 },
+      "params": { "app_id": "com.taylab.greenfolio.debug", "app_name": "GreenFolio", "app_key": "greenfolio", "minutes": 60 }
+    }
+  },
+  "weekly-explore-bench": {
+    "cron": "0 22 * * 0",
+    "template": {
+      "schema": 1,
+      "workload": "explore",
+      "executor": "host",
+      "app": { "name": "bug-garden", "build": "fixture", "sha256": "latest" },
+      "targets": { "executor": "ultra", "match": "os ~ 'android'", "exclusive": true },
+      "lease": { "ttl_s": 900, "max_attempts": 1 },
+      "params": { "app_id": "dev.fleetrunner.buggarden", "app_name": "Bug Garden", "app_key": "bug-garden", "bench": true, "minutes": 120 }
+    }
+  },
   "weekly-plant-id-eval": {
     "cron": "0 3 * * 1",
     "template": {

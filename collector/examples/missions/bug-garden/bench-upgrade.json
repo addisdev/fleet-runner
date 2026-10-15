@@ -1,0 +1,32 @@
+{
+  "id": "bench-upgrade",
+  "app": "bug-garden",
+  "title": "Buy Sprout Plus",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Upgrade to Sprout Plus and complete the purchase.",
+  "success": "the profile says 'You're on Sprout Plus'",
+  "budget": {
+    "steps": 12,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "profile"
+  ],
+  "allow": [
+    "purchase"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "profile",
+    "text": [
+      "You're on Sprout Plus"
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "bench-rename",
+  "app": "bug-garden",
+  "title": "Rename Pothos to Golden Pothos",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "Rename the plant Pothos to Golden Pothos.",
+  "success": "a plant named 'Golden Pothos' exists",
+  "budget": {
+    "steps": 20,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "detail",
+    "edit"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "text": [
+      "Golden Pothos"
+    ]
+  }
+}

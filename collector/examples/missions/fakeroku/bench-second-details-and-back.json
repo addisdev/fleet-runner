@@ -1,0 +1,23 @@
+{
+  "id": "bench-second-details-and-back",
+  "app": "fakeroku",
+  "title": "Open the second tile and come back",
+  "persona": "A careful viewer with a remote who does exactly what they set out to do and nothing else.",
+  "goal": "Open the details of the second tile, then return to the row with the Back button.",
+  "success": "the home row is showing with Tile1 focused",
+  "budget": {
+    "steps": 8,
+    "minutes": 5
+  },
+  "surfaces": [
+    "dpad"
+  ],
+  "screens": [
+    "home",
+    "details"
+  ],
+  "check": {
+    "screen": "home",
+    "focused_label": "Tile1"
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "id": "bench-delete-plant",
+  "app": "bug-garden",
+  "title": "Delete the Aloe Vera",
+  "persona": "A careful user who does exactly what they set out to do and nothing else.",
+  "goal": "The Aloe Vera died. Delete it from your plants, then go back to the plant list.",
+  "success": "the plant list says '8 plants' and has no Aloe Vera",
+  "budget": {
+    "steps": 20,
+    "minutes": 8
+  },
+  "surfaces": [
+    "touch"
+  ],
+  "screens": [
+    "home",
+    "detail"
+  ],
+  "allow": [
+    "delete"
+  ],
+  "setup_flow": "bug-garden/sign-in.yaml",
+  "launch_args": [
+    "garden_defects=false"
+  ],
+  "check": {
+    "screen": "home",
+    "text": [
+      "8 plants"
+    ],
+    "absent_text": [
+      "Aloe Vera"
+    ]
+  }
+}

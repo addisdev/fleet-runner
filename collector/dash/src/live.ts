@@ -9,7 +9,7 @@ export type LiveState = "connecting" | "live" | "down";
 
 type Handler = (event: Record<string, unknown>) => void;
 
-const TYPES = ["hello", "job", "device", "beacon", "result", "lock", "schedule", "artifact", "pipeline-event"] as const;
+const TYPES = ["hello", "job", "device", "beacon", "result", "lock", "schedule", "artifact", "pipeline-event", "finding"] as const;
 
 const handlers = new Map<string, Set<Handler>>();
 const stateWatchers = new Set<(s: LiveState) => void>();

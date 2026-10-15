@@ -107,6 +107,7 @@ if (existsSync(dash)) {
 for (const [from, to] of [
   ["collector/examples", "examples"],
   ["collector/schemas", "schemas"],
+  ["skills", "skills"],
 ]) {
   const src = path.join(ROOT, from);
   if (existsSync(src)) cpSync(src, path.join(OUT, to), { recursive: true });

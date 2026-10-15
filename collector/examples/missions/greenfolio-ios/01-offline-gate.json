@@ -1,0 +1,13 @@
+{
+  "id": "greenfolio-ios-offline-gate",
+  "app": "greenfolio-ios",
+  "title": "The sign-in gate, offline",
+  "persona": "Someone opening GreenFolio for the first time on a train with no signal, typing carelessly.",
+  "goal": "Try to get in: leave fields empty, type an email with no @, a very long email, a short password, tick and untick the terms box, press Sign in each time, open the Terms and Privacy links and come back. The phone is offline; see how the app explains that.",
+  "success": "Each attempt gets a clear message, being offline is explained rather than shown as a raw error, and the app is still on the sign-in screen.",
+  "budget": { "steps": 40, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["SignIn", "Auth", "Terms", "Offline"],
+  "launch_args": ["-UITesting", "-UITestingSignedOut", "-UITestingOffline"],
+  "block": ["\\bcreate account\\b", "\\bsign up\\b", "\\bregister\\b"]
+}
