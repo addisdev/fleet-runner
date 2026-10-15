@@ -29,9 +29,9 @@
 #
 # ## What has not been checked
 #
-# This has never been run against a published release, because there is no
-# published release yet, and the fleet CLI itself has never been run on Windows
-# at all -- see fleet/README.md's Status section. Treat every line below as
+# This has never been run, against a published release or anything else. The
+# fleet CLI's suite passes on windows-latest in CI, but nobody has run a fleet
+# on a Windows machine -- see docs/install/windows.md. Treat every line below as
 # untested against the real thing.
 
 $ErrorActionPreference = 'Stop'
@@ -128,7 +128,7 @@ function Resolve-FleetVersion {
         $latest = Invoke-RestMethod -Uri $api -UseBasicParsing -Headers @{ 'User-Agent' = 'fleet-install' }
     } catch {
         Die "could not work out the latest version from $api ($($_.Exception.Message)).
-  Either there is no published release yet, or this address is rate limited.
+  Either GitHub could not be reached, or this address is rate limited.
   Pick one from $Releases and set `$env:FLEET_VERSION = '<version>'."
     }
     if (-not $latest.tag_name) {

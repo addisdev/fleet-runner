@@ -4,19 +4,16 @@
 curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.sh | sh
 ```
 
-!!! warning "This cannot work yet"
+!!! note "What has been run"
 
-    **No release has been published**, so there is no archive for that script to
-    download and no `SHASUMS256.txt` to check it against. It will ask
-    `api.github.com` for the latest release, find nothing, and stop. Skip to
-    [from a checkout](#from-a-checkout) below, which is the path that has
-    actually been run on this platform.
-
-    The script itself has been exercised against locally built archives --
-    checksum verified, a tampered archive refused, a re-install leaving
-    `config.json` and `data/` intact. It has since been run against the real
-    v0.5.0 release on macOS/arm64: the checksum verified and the installed
-    binary reported its version.
+    The script downloads the latest [release](https://github.com/addisdev/fleet-runner/releases)
+    and refuses it unless it matches `SHASUMS256.txt`. It has been exercised
+    against locally built archives -- checksum verified, a tampered archive
+    refused, a re-install leaving `config.json` and `data/` intact -- and run
+    against real releases on arm64 and Intel, where the checksum verified, the
+    installed binary reported its version, and an install upgraded in place from
+    0.5.0 to 0.6.0. Set `FLEET_VERSION` to pin a release instead of taking the
+    latest.
 
 **You need Node 22.13 or newer on `PATH`.** The release carries no runtime, by
 decision rather than oversight -- see [why](index.md#what-the-installers-do-and-what-they-refuse-to-do).
@@ -29,8 +26,9 @@ line to add and the file to add it to, and leaves that to you.
 
 ## From a checkout
 
-This is the supported path today, and on macOS/arm64 it is the one that has been
-watched to work end to end.
+For working on Fleet Runner itself, or running something newer than the latest
+release. On macOS/arm64 this is the path that has been watched to work end to
+end.
 
 ```bash
 git clone https://github.com/addisdev/fleet-runner

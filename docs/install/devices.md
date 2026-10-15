@@ -135,9 +135,10 @@ Two things to know before you read a number off a Roku:
   interpreted folds. On a phone that is seconds; on a Roku nobody has measured
   one, and it could be many minutes per iteration.
 
-**None of this has ever run.** The channel has never been compiled either --
-BrightScript's only compiler is inside a television and no emulator exists.
-[Roku: the one that could not be compiled](../platforms.md#roku-the-one-that-could-not-be-compiled)
+**None of this has ever run.** No Roku emulator exists. CI compiles the channel
+with brighterscript's `bsc`, which catches syntax errors off the television;
+the firmware's own compiler has never seen it.
+[Roku: the one that has never run](../platforms.md#roku-the-one-that-has-never-run)
 and [`runner-roku/README.md`](https://github.com/addisdev/fleet-runner/tree/main/runner-roku)
 are the two places that say exactly which claims are untested.
 

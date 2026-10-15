@@ -65,6 +65,13 @@ fleet on. The answer is macOS; the suites run on all three.
     Publish builds on merge, run a nightly on your own devices, block a pull
     request on the verdict.
 
+-   __[AI agents and automation](agents.md)__
+
+    ---
+
+    `fleetr` for scripts and coding agents, a skill that tells an agent how to
+    use it, and MCP tools, locally or behind your company's sign-in.
+
 -   __[Deploy](deploy/index.md)__
 
     ---
@@ -115,13 +122,14 @@ Five runners, in five languages, sharing not one line:
 [`collector/runner-web/`](https://github.com/addisdev/fleet-runner/tree/main/collector/runner-web)
 (JavaScript) and
 [`runner-roku/`](https://github.com/addisdev/fleet-runner/tree/main/runner-roku)
-(BrightScript, and never compiled -- see [platforms](platforms.md)).
+(BrightScript, compiled in CI and never run on a Roku -- see [platforms](platforms.md)).
 
 And two front doors:
 [`fleet/`](https://github.com/addisdev/fleet-runner/tree/main/fleet), the CLI
 behind `fleet up`, and
 [`desktop/`](https://github.com/addisdev/fleet-runner/tree/main/desktop), a
-menu-bar app around it whose Rust has never been compiled.
+menu-bar app around it whose Rust compiles in CI and which has never been
+launched.
 
 [The history section](history/index.md) keeps the original architecture plan and
 the design journals as they were written. They are not maintained, and they are

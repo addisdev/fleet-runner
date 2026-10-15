@@ -157,6 +157,30 @@ this is the first rule rather than a nice sentiment.
 component suite is green **or skipped** — a change to one runner does not build
 the others.
 
+## Cutting a release
+
+One version covers every component, so a release is one number everywhere.
+
+1. On a branch from `develop`, run `node scripts/version.mjs set X.Y.Z`. It
+   writes `VERSION` and every component's own version. Then run
+   `npm --prefix collector run gen:api`, because `openapi.json` carries the
+   version and CI fails when it is stale. Android's `versionCode` is not
+   derived from it; bump that by hand if the Play Store build needs it.
+2. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`,
+   add a fresh empty `## [Unreleased]` above it, and update the compare links
+   at the bottom.
+3. Merge that into `develop`, then open a `develop` → `main` pull request named
+   `Release X.Y.Z` and merge it once `ci-ok` passes.
+4. Tag the merge commit on `main` and push the tag:
+   `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
+
+The tag runs `release.yml`. Its first job refuses to publish anything unless
+the tag, `VERSION` and every component agree. Then it builds the six
+platform archives and `SHASUMS256.txt`, pushes the container image, and creates
+the GitHub Release, which `install.sh` and `install.ps1` read. A version with a
+suffix (`0.9.0-rc.1`) is published as a pre-release and leaves `latest` alone.
+Pushing to `main` also publishes the docs site.
+
 ## Dependencies
 
 **Dependabot is deliberately limited to security alerts and security fixes.**

@@ -30,11 +30,10 @@ name: release
 #
 # ## What has not been proved
 #
-# This file has never run. There is no published release of Fleet Runner, so
-# neither installer has ever been pointed at a real one, and the container image
-# has never been built at all -- docs/platforms.md has said so since the
-# Dockerfile was written. Everything below is a first attempt with the reasoning
-# written down, not a proven pipeline.
+# It has published every release since v0.5.0. install.sh has been run against
+# those archives on macOS (arm64 and Intel); install.ps1 never has. The amd64
+# image is started by `container smoke` in fleet.yml on every pull request; the
+# arm64 image is built here and has never been started.
 
 on:
   push:

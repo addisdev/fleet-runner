@@ -10,8 +10,10 @@ and reports results.
 > **This has never run on a Roku.** No Roku hardware was available and no Roku
 > emulator exists -- Roku has never shipped one, and BrightScript only runs on
 > the device. Everything here was written against Roku's published API
-> documentation. It has not been compiled, because the only BrightScript
-> compiler is the one inside a television. [What is not
+> documentation. CI compiles it with
+> [brighterscript](https://github.com/rokucommunity/brighterscript)'s `bsc` on
+> every pull request that touches it, which catches syntax errors; the
+> firmware's own compiler has never seen it. [What is not
 > verified](#what-is-not-verified) lists the specific claims, and the last
 > column of [docs/platforms.md](../docs/platforms.md) says the same thing in the
 > table where somebody comparing platforms would look.
@@ -235,7 +237,7 @@ deciding whether to trust a number needs the list, not the footnotes.
 
 | Claim | Why it is uncertain |
 |---|---|
-| **The channel compiles at all** | BrightScript's only compiler is on the device. There is no linter, no `bsc` and no emulator here; the code was reviewed by hand line by line and never parsed. A first sideload may well report a syntax error. |
+| **The firmware compiles it** | CI parses and validates the channel with brighterscript's `bsc`, a separate implementation of the language. The compiler on the device has never seen it, and the two can disagree, so a first sideload could still report an error `bsc` accepted. |
 | **`roEVPDigest.Process()` reinitialises** | Roku documents it as a one-shot over the whole input but does not say whether it resets the context first. The code calls `Reset()` before every `Process()` so it is correct either way, at the cost of one interpreted call per round. |
 | **`Process()` returns lowercase hex** | Undocumented. The result is passed through `LCase()` before comparison, so a device that returns uppercase still agrees with the fleet. |
 | **`FormatJSON` writes `invalid` as `null`** | Three descriptor fields are deliberately `invalid`. If a firmware refuses to serialise them, `FormatJSON` returns `""` and the agent reports "cannot serialise the request body" rather than POSTing an empty body -- so the failure is legible, but it has not been seen either way. |

@@ -14,7 +14,7 @@ that says which ones somebody has watched register is worth something.
 | Android phone, tablet | `runner-android` | `adb install`, or sideload | **yes** — the original shelf |
 | iPhone, iPad | `runner-ios` | Xcode, TestFlight internal | **yes** |
 | iOS simulator | `runner-ios` | `simctl install` | **yes** |
-| macOS, Linux, Windows | `runner-machine` | `fleet up`, or `npm start`, or a LaunchAgent / systemd unit | **macOS yes, on both architectures** — an Apple M1 Pro and a 2016 Intel i7 both registered, passed `npm run conformance`, and produce comparable synthetic numbers with matching digests; both run under `fleet service`. Linux and Windows run their suite in CI on x64 and arm64, and neither has registered against a real collector — see [what each one reports](#what-a-cloud-runner-actually-reports) |
+| macOS, Linux, Windows | `runner-machine` | `fleet up`, or `npm start`, or a LaunchAgent / systemd unit | **macOS yes, on both architectures** — an Apple M1 Pro and a 2016 Intel i7 both registered, passed `npm run conformance`, and produce comparable synthetic numbers with matching digests; both run under `fleet service`. Linux and Windows run their suite in CI on x64 and arm64. On Linux x64 the agent also registers, inside the Docker image in CI, against the collector beside it; Windows has never registered against a real collector — see [what each one reports](#what-a-cloud-runner-actually-reports) |
 | Android emulator | `runner-android` | `adb install` to the emulator | **yes** |
 
 ## What Wave 5 added
@@ -28,13 +28,13 @@ that says which ones somebody has watched register is worth something.
 | **Apple TV (tvOS)** | `runner-ios`, `FleetRunnerTV` target | `devicectl` or `simctl` | **builds** — `xcodebuild -scheme FleetRunnerTV` succeeds. No Apple TV has run it |
 | **Vision Pro (visionOS)** | `runner-ios`, `FleetRunnerVision` target | `devicectl` or `simctl` | **no** — the target is written and has never been compiled; the visionOS platform is not installed on the machine it was written on |
 | **Raspberry Pi, Jetson, Steam Deck** | `runner-machine` | `install-agent.sh`, or the Docker image | **no** — but arm64 Linux in CI reports a nearly complete descriptor, so a board should register cleanly. No board has |
-| **Anything with Docker** | `fleet/Dockerfile` | `docker run ghcr.io/addisdev/fleet` | **builds** — CI built and published the image for linux/amd64 and linux/arm64 at v0.5.0. **No container has been run**: Docker was not available on the machine that wrote it, so the image assembling is all that is known |
+| **Anything with Docker** | `fleet/Dockerfile` | `docker run ghcr.io/addisdev/fleet` | **in CI** — every release publishes linux/amd64 and linux/arm64. CI starts the amd64 image on every pull request that touches it and waits for its own machine agent to register; the arm64 image has not been started |
 
 ## What Wave 6 added
 
 | Platform | Runner | How it joins | Verified |
 |---|---|---|---|
-| **Roku player, Roku TV** | `runner-roku` | `build.sh --install <ip>`, then an ECP launch | **no** -- and less verified than anything above it. No Roku was available and no Roku emulator exists, so the channel has never been *compiled*, let alone run: BrightScript's only compiler is inside a television. See [Roku: the one that could not be compiled](#roku-the-one-that-could-not-be-compiled) |
+| **Roku player, Roku TV** | `runner-roku` | `build.sh --install <ip>`, then an ECP launch | **no** -- and less verified than anything above it. No Roku was available and no Roku emulator exists, so the channel has never run. CI compiles it with brighterscript's `bsc` on every pull request that touches it; the firmware's own compiler has never seen it. See [Roku: the one that has never run](#roku-the-one-that-has-never-run) |
 | **Roku, from the executor** | `collector/src/drivers/roku.ts` | SSDP discovery on the LAN | **partly** -- the SSDP and device-info parsers are checked against recorded response shapes in `drivers.test.ts`; the UDP socket path is exercised by nothing, and no Roku has answered it |
 
 ## Android: one APK, every shape
@@ -129,7 +129,7 @@ hidden in that window would be measured through the throttle. It registers with
 a TTL, so a tab that is *closed* leaves the shelf instead of sitting there
 forever as an offline device nobody can find.
 
-## Roku: the one that could not be compiled
+## Roku: the one that has never run
 
 A Roku is the cheapest always-on ARM box in most houses, it is mains-powered,
 and it never moves. On paper it is an ideal shelf device.
@@ -137,14 +137,16 @@ and it never moves. On paper it is an ideal shelf device.
 is a SceneGraph channel that speaks the protocol: it registers, long-polls,
 runs the fold, beacons and reports.
 
-**None of it has been run, and none of it has been compiled.** Roku has never
-shipped an emulator and BrightScript exists only on the device, so there is no
-`bsc`, no linter and no parse step available anywhere off a television. Every
-other "no" in the tables above is a runner that at least builds. This one is a
-careful hand review and nothing more, and the first syntax error in it will be
-discovered by a sideload page. That is worth stating plainly here rather than
-only in its README, because this page exists so that a row's last column can be
-trusted.
+**None of it has been run.** Roku has never shipped an emulator and
+BrightScript runs only on the device. What CI does have is
+[brighterscript](https://github.com/rokucommunity/brighterscript)'s `bsc`, the
+community compiler: `runner-roku / brighterscript` parses and validates every
+`.brs` and SceneGraph `.xml` file in the channel on each pull request that
+touches it, so syntax errors and calls to functions that do not exist are
+caught off the television. Whether the firmware's own compiler agrees, and
+whether any of it behaves as written, is still for the first sideload to find
+out. That is worth stating plainly here rather than only in its README, because
+this page exists so that a row's last column can be trusted.
 
 ### It names its backend `roevp`, for the browser's reason
 
