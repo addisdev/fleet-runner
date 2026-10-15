@@ -143,9 +143,9 @@ step("every workload has an icon");
   };
   try {
     const workloads = literal(
-      await readFile(path.join(ROOT, "src/server.ts"), "utf8"),
+      await readFile(path.join(ROOT, "src/queue.ts"), "utf8"),
       /const WORKLOADS = new Set\(\[([\s\S]*?)\]\)/,
-      "WORKLOADS in src/server.ts",
+      "WORKLOADS in src/queue.ts",
     );
     const icons = literal(
       await readFile(path.join(ROOT, "dash/src/icons.tsx"), "utf8"),
@@ -194,6 +194,16 @@ if (!(await run(process.execPath, [TSX, "scripts/check-device-art.ts"]))) failed
 step("explore: leash, checks and a fake mission");
 if (!(await run(process.execPath, [TSX, "scripts/check-explore.ts"]))) failed = true;
 
+// openapi.json and the generated client are committed, so a route change that
+// was not regenerated shows up here instead of in a caller's 400.
+step("openapi.json and the client match the route table");
+if (!(await run(process.execPath, [TSX, "scripts/gen-api.ts", "--check"]))) failed = true;
+
+// Auth gets a collector of its own: FLEET_AUTH=tokens changes every route's
+// answer, and the smoke run below is written for the open default.
+step("auth: scopes, ownership, delegation, revocation (tokens mode)");
+if (!(await run(process.execPath, [TSX, "scripts/check-auth.ts"]))) failed = true;
+
 // --- 5. the collector starts and stops on demand -------------------------
 // Before the smoke run, because if the collector cannot be started from code
 // the smoke run's failure would be a much more confusing way to learn it.
@@ -236,6 +246,14 @@ try {
   if (!(await run(process.execPath, [TSX, "scripts/smoke.ts"], { env: { FLEET_URL: base } }))) {
     failed = true;
     console.error("\n--- collector output ---\n" + log.trimEnd());
+  }
+
+  // Same collector, after the smoke run has filled it: every v1 answer is
+  // checked against the schema the OpenAPI document gives it.
+  step("api v1 contract (against the same collector)");
+  if (!(await run(process.execPath, [TSX, "scripts/check-api-v1.ts"], { env: { FLEET_URL: base } }))) {
+    failed = true;
+    console.error("\n--- collector output ---\n" + log.slice(-6000).trimEnd());
   }
 } catch (e) {
   failed = true;

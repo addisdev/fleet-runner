@@ -1,30 +1,9 @@
-// Mutating calls, and the token they may need to carry.
-//
-// The token lives in localStorage rather than a cookie: it is a shared secret
-// for a single-operator LAN tool, and a cookie would ride along on every
-// request including the ones that do not need it.
-import { useEffect, useState } from "preact/hooks";
+// Mutating calls, and the token they may need to carry (see token.ts).
+import { useState } from "preact/hooks";
 import { ApiError } from "./api.js";
+import { getToken } from "./token.js";
 
-const KEY = "fleet.dash.token";
-
-export const getToken = () => localStorage.getItem(KEY) ?? "";
-
-export function setToken(token: string) {
-  if (token) localStorage.setItem(KEY, token);
-  else localStorage.removeItem(KEY);
-  dispatchEvent(new Event("fleet:token"));
-}
-
-export function useToken(): [string, (t: string) => void] {
-  const [token, set] = useState(getToken());
-  useEffect(() => {
-    const on = () => set(getToken());
-    addEventListener("fleet:token", on);
-    return () => removeEventListener("fleet:token", on);
-  }, []);
-  return [token, setToken];
-}
+export { getToken, setToken, useToken } from "./token.js";
 
 export async function mutate<T>(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const token = getToken();

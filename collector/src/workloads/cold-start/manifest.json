@@ -1,0 +1,36 @@
+{
+  "name": "cold-start",
+  "capability": "devices",
+  "executor": "host",
+  "description": "Launch from cold, warm and hot; p50 and p95 per state.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "app_id": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The package to launch. Falls back to suite.app_id."
+      },
+      "launches": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 10,
+        "description": "Measured launches per state, after one discarded warm-up launch."
+      },
+      "states": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "enum": ["cold", "warm", "hot"] },
+        "default": ["cold", "warm", "hot"],
+        "description": "Which launch states to measure. Each result row records the state the framework reported, which can differ from the one asked for."
+      }
+    },
+    "description": "Android only: iOS targets get a failed row naming why there is no honest time-to-first-frame. The app must already be installed; a device without it is skipped."
+  },
+  "example": {
+    "app": { "name": "", "build": "latest", "sha256": "latest" },
+    "params": { "app_id": "", "launches": 10, "states": ["cold", "warm", "hot"] },
+    "targets": { "match": "os ~ 'android'", "exclusive": true }
+  }
+}

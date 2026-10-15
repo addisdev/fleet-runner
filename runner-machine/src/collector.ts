@@ -26,6 +26,19 @@ export const DEFAULT_BASE = "http://127.0.0.1:8788";
 const POLL_TIMEOUT_MS = 40_000;
 const POST_TIMEOUT_MS = 30_000;
 
+/**
+ * `Authorization: Bearer $FLEET_TOKEN`, when one is set.
+ *
+ * Needed only against a collector running FLEET_AUTH=tokens with
+ * FLEET_AUTH_PROTOCOL=token; the token wants the `agent` scope. One token for
+ * every collector a multi-homed agent polls: each brain's operator issues it
+ * into their own tokens file.
+ */
+export function authHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const token = env.FLEET_TOKEN?.trim();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}
+
 export class CollectorError extends Error {
   constructor(readonly status: number, readonly path: string) {
     super(`${path} failed: HTTP ${status}`);
@@ -54,6 +67,7 @@ export class CollectorClient {
    */
   async nextJob(deviceId: string, signal?: AbortSignal): Promise<JobSpec | null> {
     const res = await fetch(`${this.base}/devices/${encodeURIComponent(deviceId)}/next-job`, {
+      headers: authHeaders(),
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(POLL_TIMEOUT_MS)]) : AbortSignal.timeout(POLL_TIMEOUT_MS),
     });
     if (res.status === 204) return null;
@@ -109,7 +123,7 @@ export class CollectorClient {
    */
   async fetchArtifact(sha256: string, dest: string): Promise<void> {
     await mkdir(path.dirname(dest), { recursive: true });
-    const res = await fetch(`${this.base}/artifacts/${sha256}`);
+    const res = await fetch(`${this.base}/artifacts/${sha256}`, { headers: authHeaders() });
     if (!res.ok || !res.body) throw new CollectorError(res.status, `artifact ${sha256}`);
     const tmp = `${dest}.part`;
     const hash = createHash("sha256");
@@ -145,6 +159,7 @@ export class CollectorClient {
     opts: { app?: string; build?: string; platform?: string | null } = {},
   ): Promise<{ sha256: string; size: number }> {
     const headers: Record<string, string> = {
+      ...authHeaders(),
       "content-type": "application/octet-stream",
       "x-artifact-name": name,
     };
@@ -176,7 +191,7 @@ export class CollectorClient {
   private async post(p: string, body: unknown): Promise<string> {
     const res = await fetch(`${this.base}${p}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { ...authHeaders(), "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(POST_TIMEOUT_MS),
     });

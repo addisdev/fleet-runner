@@ -24,6 +24,7 @@ import { runDescribeChecks } from "../src/describe.test.js";
 import { runPressureChecks } from "../src/pressure.test.js";
 import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
 import { runTvloopChecks } from "../src/workloads/tvloop/tvloop.test.js";
+import { runColdStartChecks } from "../src/workloads/cold-start/cold-start.test.js";
 import { runFindingsChecks } from "../src/findings.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
@@ -2665,6 +2666,9 @@ await runEnrolChecks(check);
 // The tvloop workload's decisions -- steps, refusals, locks and redaction --
 // against a fake context and a step runner that only returns exit codes.
 await runTvloopChecks(check);
+
+// cold-start's refusals and its iOS rows, against a fake context.
+await runColdStartChecks(check);
 
 // The night-QA findings store, decisions first: dedupe, the issue cap, the
 // armed GitHub path and the digest timer, against a temp database of its own.
