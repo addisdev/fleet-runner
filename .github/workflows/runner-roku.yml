@@ -1,0 +1,30 @@
+name: runner-roku
+
+# Called by ci.yml. BrightScript is interpreted on the television, so until
+# this ran the first parse error anyone saw was in a sideload response.
+# BrighterScript's compiler parses and validates plain .brs and the SceneGraph
+# XML without a device, which turns "it broke on the TV" into a red check.
+on:
+  workflow_call:
+
+jobs:
+  check:
+    name: brighterscript
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runner-roku
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+      # Pinned, so a new compiler release that adds a diagnostic is a change
+      # somebody makes on purpose rather than a red build on an unrelated PR.
+      - run: >
+          npx -y -p brighterscript@0.69.13 bsc
+          --rootDir .
+          --files manifest 'source/**/*' 'components/**/*' 'images/**/*'
+          --createPackage false --copyToStaging false
+      - name: The channel packages
+        run: ./build.sh && unzip -l build/fleet-runner-roku.zip | grep -q ' manifest$'
