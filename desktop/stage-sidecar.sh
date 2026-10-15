@@ -62,15 +62,18 @@ cat > "$out/binaries/fleet-$triple" <<'SHIM'
 set -eu
 self=$(cd "$(dirname "$0")" && pwd)
 
-# Contents/MacOS -> Contents/Resources on macOS; alongside the binary on Linux
-# and in a dev build. Every candidate is listed rather than one being assumed,
-# because "the sidecar is not where the bundler put it" and "the sidecar is
-# broken" produce the same silence otherwise.
+# Contents/MacOS -> Contents/Resources on macOS; alongside the binary in a dev
+# build; /usr/lib/<productName> on Linux; and the unbundled staging directory
+# when the shim is run straight out of binaries/. Every candidate is listed
+# rather than one being assumed, because "the sidecar is not where the bundler
+# put it" and "the sidecar is broken" produce the same silence otherwise. The
+# bundled name is fleet-tree, not fleet: a dev build copies this shim to
+# target/debug/fleet, and a resource of the same name cannot sit beside it.
 tree=""
 for candidate in \
-  "$self/../Resources/fleet" \
-  "$self/../Resources/resources/fleet" \
-  "$self/../lib/fleet" \
+  "$self/../Resources/fleet-tree" \
+  "$self/fleet-tree" \
+  "$self/../lib/Fleet/fleet-tree" \
   "$self/../resources/fleet"
 do
   if [ -f "$candidate/bin/fleet.mjs" ]; then tree=$candidate; break; fi

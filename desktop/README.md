@@ -250,8 +250,10 @@ What has **not**:
 - **Info.plist merging.** That Tauri's bundler merges `src-tauri/Info.plist` into
   the generated one is assumed, not observed. Step 2 of the day-one checklist is
   there because of this.
-- **The resource layout.** `bundle.resources` maps `resources/fleet` to `fleet`;
-  where that actually lands inside `Contents/Resources` is unconfirmed, which is
+- **The resource layout.** `bundle.resources` maps `resources/fleet` to
+  `fleet-tree` (not `fleet`, which collides with the sidecar's own name in
+  `target/debug`); where that actually lands inside `Contents/Resources` is
+  unconfirmed, which is
   why the shim searches four candidate paths and fails with a message naming
   what it looked for rather than assuming one.
 - **Signing and notarisation.** Not attempted. The entitlements are reasoned
