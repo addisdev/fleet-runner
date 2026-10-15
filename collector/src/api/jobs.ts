@@ -31,13 +31,15 @@ type JobRow = {
   parent_job_id: string | null;
   template_id: string | null;
   depends_on: string | null;
+  requested_by: string | null;
+  source: string | null;
   lease_remaining_s: number | null;
   duration_s: number | null;
 };
 
 const JOB_COLUMNS = `job_id, executor, workload, spec, status, created_at, claimed_by, claimed_at,
   finished_at, lease_ttl_s, max_attempts, attempts, lease_deadline, last_error,
-  priority, parent_job_id, template_id, depends_on,
+  priority, parent_job_id, template_id, depends_on, requested_by, source,
   CASE WHEN status = 'claimed' AND lease_deadline IS NOT NULL
        THEN CAST(strftime('%s', lease_deadline) - strftime('%s','now') AS INTEGER) END AS lease_remaining_s,
   CASE WHEN claimed_at IS NOT NULL
@@ -79,6 +81,10 @@ export function shapeJob(j: JobRow, opts: { spec?: boolean } = {}) {
     model: spec.model?.name ?? null,
     app: spec.app?.name ?? null,
     report_to: spec.report_to ?? null,
+    // Who asked, and through which front door. Verified only when the
+    // collector runs with FLEET_AUTH=tokens; otherwise it is what the caller said.
+    requested_by: j.requested_by ?? null,
+    source: j.source ?? null,
     ...(opts.spec ? { spec } : {}),
   };
 }
@@ -108,6 +114,14 @@ export function registerJobs(app: FastifyInstance) {
       // Either the device ran it, or it is pinned to that device and waiting.
       where.push("(claimed_by = ? OR json_extract(spec, '$.targets.device_id') = ?)");
       params.push(q.device, q.device);
+    }
+    if (q.requested_by) {
+      where.push("requested_by = ?");
+      params.push(q.requested_by);
+    }
+    if (q.source) {
+      where.push("source = ?");
+      params.push(q.source);
     }
     if (q.q) {
       where.push("job_id LIKE ?");

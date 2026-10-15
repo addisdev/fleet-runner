@@ -1,0 +1,3815 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Fleet Runner",
+    "version": "0.7.2",
+    "description": "The Fleet Runner control API.\n\nEvery list is `{items, page, per_page, total, pages}`. Every failure is\n`{error: {code, message, hint?}}`; branch on `code`. Timestamps are ISO 8601 UTC.\n\nThe usual sequence for running something: listWorkloads (pick one, copy its\nexample), validateJob (fix what it says), createJob, waitJob until\n`finished`, then read `verdict`. `skipped` means nothing ran; it is not a pass.\n\nAuth is off unless the collector runs with FLEET_AUTH=tokens. Then send\n`Authorization: Bearer <token>`; scopes are read, run (implies read), admin\n(implies run), agent (the runner protocol) and delegate (a gateway naming the\nperson it acts for in X-Fleet-Actor). Each operation's `x-fleet-scope` says\nwhich it needs. Send `X-Fleet-Source` (mcp, cli, ci...) so jobs record where\nthey came from.",
+    "license": {
+      "name": "MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The collector this document was served by."
+    }
+  ],
+  "security": [
+    {
+      "bearer": []
+    },
+    {}
+  ],
+  "tags": [
+    {
+      "name": "meta",
+      "description": "Health, identity, this document."
+    },
+    {
+      "name": "devices",
+      "description": "The shelf."
+    },
+    {
+      "name": "workloads",
+      "description": "What can be run, with example specs."
+    },
+    {
+      "name": "jobs",
+      "description": "Queue, validate, wait for, cancel and retry work."
+    },
+    {
+      "name": "results",
+      "description": "What ran and how it went."
+    },
+    {
+      "name": "artifacts",
+      "description": "Screenshots, logs, reports, builds."
+    },
+    {
+      "name": "fleet",
+      "description": "Schedules, alerts, audit."
+    },
+    {
+      "name": "protocol",
+      "description": "What runners speak. Not for composing work."
+    }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Is the collector up, which version, and is auth on.",
+        "tags": [
+          "meta"
+        ],
+        "x-fleet-scope": "public",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Up.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/whoami": {
+      "get": {
+        "operationId": "whoami",
+        "summary": "Who the collector thinks is asking, and with which scopes.",
+        "description": "Public so a client can ask before it has a token: without one, scopes is empty when auth is on.",
+        "tags": [
+          "meta"
+        ],
+        "x-fleet-scope": "public",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The caller.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoAmI"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/openapi.json": {
+      "get": {
+        "operationId": "getOpenApi",
+        "summary": "This document.",
+        "tags": [
+          "meta"
+        ],
+        "x-fleet-scope": "public",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices": {
+      "get": {
+        "operationId": "listDevices",
+        "summary": "The shelf: every device and agent, with status, pools, capabilities and current job.",
+        "description": "Expired ephemeral agents are hidden unless expired=true. Filters combine with AND.",
+        "tags": [
+          "devices"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated: online, stale, offline.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pool",
+            "in": "query",
+            "required": false,
+            "description": "Only devices in this pool.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "description": "android, ios, macos, linux, windows, roku, web...",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "description": "phone, tablet, tv, laptop, desktop, browser, ci...",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "simulator",
+            "in": "query",
+            "required": false,
+            "description": "false hides simulators and emulators.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Substring of id, model, OS or SoC.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "expired",
+            "in": "query",
+            "required": false,
+            "description": "Include expired ephemeral agents.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-based page.",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Items per page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Devices.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/devices/{id}": {
+      "get": {
+        "operationId": "getDevice",
+        "summary": "One device: descriptor, beacon, recent jobs and benchmarks.",
+        "tags": [
+          "devices"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The device id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The device.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workloads": {
+      "get": {
+        "operationId": "listWorkloads",
+        "summary": "What the fleet can be asked to do, with an example spec each and whether anything live can claim it.",
+        "description": "status: shipped (implemented here), reserved (the name is accepted but nothing here implements it), agent (declared by a live agent, undocumented). dangerous workloads are refused to non-admin tokens.",
+        "tags": [
+          "workloads"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "available",
+            "in": "query",
+            "required": false,
+            "description": "true: only workloads something live can claim now.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "executor",
+            "in": "query",
+            "required": false,
+            "description": "Only this executor.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "device",
+                "host"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workloads.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkloadList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workloads/{name}": {
+      "get": {
+        "operationId": "getWorkload",
+        "summary": "One workload: its params schema and a complete example spec.",
+        "tags": [
+          "workloads"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "The workload name.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Workload"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/templates": {
+      "get": {
+        "operationId": "listTemplates",
+        "summary": "Saved job specs: the team's known-good jobs, ready to run.",
+        "tags": [
+          "workloads"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-based page.",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Items per page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Templates.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs": {
+      "get": {
+        "operationId": "listJobs",
+        "summary": "Jobs, newest first, filterable.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated: waiting, queued, claimed, done, failed, cancelled.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workload",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated workload names.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "executor",
+            "in": "query",
+            "required": false,
+            "description": "device or host.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "device",
+                "host"
+              ]
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "description": "Claimed by, or pinned to, this device.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pool",
+            "in": "query",
+            "required": false,
+            "description": "Targeted at this pool.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requested_by",
+            "in": "query",
+            "required": false,
+            "description": "Started by this person or token.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "required": false,
+            "description": "true: only jobs the caller started.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "description": "mcp, cli, ci, dash, schedule, api.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Substring of the job id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "Created at or after (ISO 8601).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "Created at or before (ISO 8601).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-based page.",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Items per page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Jobs.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobList"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createJob",
+        "summary": "Queue a job. Validate it first with validateJob.",
+        "description": "schema and job_id may be omitted. A job_id you choose is an idempotency key: reposting it is refused with duplicate_job rather than running twice. A spec with fanout:true creates one child job per matching device; the returned job_id is then the parent, which summary and wait understand.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "run",
+        "requestBody": {
+          "required": true,
+          "description": "The job spec.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobSpecInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Queued (or waiting on dependencies).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed or the spec is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A token is required (FLEET_AUTH=tokens).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope, or the job is someone else's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The state does not allow it (already finished, duplicate id).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Valid, but nothing can run it (no capable agent, no matching device, no build).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/validate": {
+      "post": {
+        "operationId": "validateJob",
+        "summary": "Dry run: every check createJob makes, the devices it would land on, and why it might sit in the queue.",
+        "description": "Always 200 for a spec that could be read; valid says whether createJob would accept it.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "run",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "requestBody": {
+          "required": true,
+          "description": "The job spec.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobSpecInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The verdict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Validation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A token is required (FLEET_AUTH=tokens).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope, or the job is someone else's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}": {
+      "get": {
+        "operationId": "getJob",
+        "summary": "Everything about one job: spec, every result payload, beacons, artifacts, timeline.",
+        "description": "Large. For a verdict, use getJobSummary.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A job id, or a fan-out parent's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/summary": {
+      "get": {
+        "operationId": "getJobSummary",
+        "summary": "The verdict: passed, failed, skipped, mixed or still going, per device, with artifacts. Small.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A job id, or a fan-out parent's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The summary.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/wait": {
+      "get": {
+        "operationId": "waitJob",
+        "summary": "Hold the request until the job finishes or timeout_s passes, then return its summary.",
+        "description": "Check `finished` in the answer: at the timeout the summary is returned unfinished. Call again to keep waiting.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A job id, or a fan-out parent's id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeout_s",
+            "in": "query",
+            "required": false,
+            "description": "Seconds to wait, at most 120.",
+            "schema": {
+              "type": "integer",
+              "default": 30,
+              "minimum": 0,
+              "maximum": 120
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The summary, finished or not.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/cancel": {
+      "post": {
+        "operationId": "cancelJob",
+        "summary": "Stop a job, or every unfinished child of a fan-out. Jobs waiting on it fail.",
+        "description": "With auth on, a run token may cancel only jobs it started; admin may cancel any.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "run",
+        "x-fleet-destructive": true,
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A job id, or a fan-out parent's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional reason, kept on the job.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cancelled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope, or the job is someone else's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The state does not allow it (already finished, duplicate id).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/jobs/{id}/retry": {
+      "post": {
+        "operationId": "retryJob",
+        "summary": "Run a job again under a new id, optionally on another pool or device. The original stays on the record.",
+        "tags": [
+          "jobs"
+        ],
+        "x-fleet-scope": "run",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "A job id, or a fan-out parent's id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "description": "Optional retargeting.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetryInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RetryResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope, or the job is someone else's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/results": {
+      "get": {
+        "operationId": "listResults",
+        "summary": "Result rows, newest first. Payloads only on request.",
+        "tags": [
+          "results"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "job",
+            "in": "query",
+            "required": false,
+            "description": "A job id; a fan-out parent includes its children.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "description": "A device id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workload",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated workload names.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "requested_by",
+            "in": "query",
+            "required": false,
+            "description": "Jobs started by this person or token.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "final",
+            "in": "query",
+            "required": false,
+            "description": "true: only each run's final row.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "ok",
+            "in": "query",
+            "required": false,
+            "description": "Filter on the verdict.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "At or after (ISO 8601).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "At or before (ISO 8601).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "description": "payload: include the full result payload.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "payload"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-based page.",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Items per page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Results.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/results/flaky": {
+      "get": {
+        "operationId": "listFlaky",
+        "summary": "UI tests whose verdict flips across runs of the same build on the same device.",
+        "tags": [
+          "results"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "device",
+            "in": "query",
+            "required": false,
+            "description": "Only this device.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "app",
+            "in": "query",
+            "required": false,
+            "description": "Only builds of this app.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Flaky (build, device) cells.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlakyCellList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/artifacts/{sha256}": {
+      "get": {
+        "operationId": "getArtifact",
+        "summary": "What an artifact is: name, size, media type, the build it belongs to.",
+        "tags": [
+          "artifacts"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "sha256",
+            "in": "path",
+            "required": true,
+            "description": "The artifact's sha256 (64 hex).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The artifact.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Artifact"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request was malformed or the spec is invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/artifacts/{sha256}/content": {
+      "get": {
+        "operationId": "getArtifactContent",
+        "summary": "The artifact's bytes, with its media type.",
+        "description": "Types a browser would execute (HTML, SVG, XML, JavaScript) are always sent as attachments.",
+        "tags": [
+          "artifacts"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "sha256",
+            "in": "path",
+            "required": true,
+            "description": "The artifact's sha256 (64 hex).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "download",
+            "in": "query",
+            "required": false,
+            "description": "true: ask the browser to save it.",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bytes.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          },
+          "404": {
+            "description": "No such thing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/schedules": {
+      "get": {
+        "operationId": "listSchedules",
+        "summary": "Cron schedules, with next run and whether one was missed.",
+        "tags": [
+          "fleet"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "responses": {
+          "200": {
+            "description": "Schedules.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "operationId": "listAlerts",
+        "summary": "What the collector thinks is wrong: offline devices, missed schedules, stuck leases.",
+        "tags": [
+          "fleet"
+        ],
+        "x-fleet-scope": "read",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated: open, acked, snoozed, resolved. Default: all but resolved.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alerts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit": {
+      "get": {
+        "operationId": "listAudit",
+        "summary": "Who changed what: every mutating control request, newest first.",
+        "tags": [
+          "fleet"
+        ],
+        "x-fleet-scope": "admin",
+        "x-fleet-read-only": true,
+        "x-fleet-idempotent": true,
+        "parameters": [
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "description": "Only this person or token.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": false,
+            "description": "Only this front door.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "1-based page.",
+            "schema": {
+              "type": "integer",
+              "default": 1,
+              "minimum": 1
+            }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Items per page.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit entries.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditEntryList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A token is required (FLEET_AUTH=tokens).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The token lacks the scope, or the job is someone else's.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/devices/register": {
+      "post": {
+        "operationId": "registerDevice",
+        "summary": "A runner announcing itself (descriptor, pools, capabilities).",
+        "tags": [
+          "protocol"
+        ],
+        "x-fleet-scope": "protocol",
+        "responses": {
+          "200": {
+            "description": "Registered."
+          }
+        }
+      }
+    },
+    "/devices/{id}/next-job": {
+      "get": {
+        "operationId": "nextJobForDevice",
+        "summary": "A device long-polling for work. 204 when there is none.",
+        "tags": [
+          "protocol"
+        ],
+        "x-fleet-scope": "protocol",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "The device id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A claimed job spec."
+          },
+          "204": {
+            "description": "No work."
+          }
+        }
+      }
+    },
+    "/executor/next-job": {
+      "get": {
+        "operationId": "nextJobForExecutor",
+        "summary": "A host executor long-polling for host work.",
+        "tags": [
+          "protocol"
+        ],
+        "x-fleet-scope": "protocol",
+        "responses": {
+          "200": {
+            "description": "A claimed job spec."
+          },
+          "204": {
+            "description": "No work."
+          }
+        }
+      }
+    },
+    "/results": {
+      "post": {
+        "operationId": "postResult",
+        "summary": "A runner reporting a result row.",
+        "tags": [
+          "protocol"
+        ],
+        "x-fleet-scope": "protocol",
+        "responses": {
+          "200": {
+            "description": "Recorded."
+          }
+        }
+      }
+    },
+    "/artifacts": {
+      "post": {
+        "operationId": "uploadArtifact",
+        "summary": "Upload bytes (application/octet-stream). Answers with the sha256 and the detected media type.",
+        "description": "Headers: x-artifact-name, x-artifact-media-type (optional), x-artifact-app, x-artifact-build.",
+        "tags": [
+          "protocol"
+        ],
+        "x-fleet-scope": "protocol",
+        "responses": {
+          "201": {
+            "description": "Stored."
+          }
+        }
+      }
+    },
+    "/artifacts/{sha256}": {
+      "get": {
+        "operationId": "downloadArtifact",
+        "summary": "The bytes as application/octet-stream, with Range support. Runners fetch models and builds here.",
+        "tags": [
+          "protocol"
+        ],
+        "x-fleet-scope": "protocol",
+        "parameters": [
+          {
+            "name": "sha256",
+            "in": "path",
+            "required": true,
+            "description": "The artifact's sha256 (64 hex).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bytes.",
+            "content": {
+              "application/octet-stream": {}
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Alert": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "rule": {
+            "type": "string"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "severity": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "rule",
+          "state"
+        ]
+      },
+      "AlertList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "Artifact": {
+        "type": "object",
+        "properties": {
+          "sha256": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "media_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "build": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "platform": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "published_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "in_store": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sha256",
+          "name",
+          "size",
+          "media_type",
+          "in_store",
+          "url"
+        ]
+      },
+      "ArtifactRef": {
+        "type": "object",
+        "properties": {
+          "sha256": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "media_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "enum": [
+              "input",
+              "output"
+            ]
+          },
+          "in_store": {
+            "type": "boolean"
+          },
+          "url": {
+            "type": "string",
+            "description": "Where to fetch the bytes, relative to the collector."
+          }
+        },
+        "required": [
+          "sha256",
+          "name",
+          "size",
+          "media_type",
+          "role",
+          "in_store",
+          "url"
+        ]
+      },
+      "AuditEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "verified": {
+            "type": "boolean"
+          },
+          "token_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "method": {
+            "type": "string"
+          },
+          "route": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "subject": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ip": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "actor",
+          "verified",
+          "token_id",
+          "source",
+          "method",
+          "route",
+          "status",
+          "subject",
+          "ip"
+        ]
+      },
+      "AuditEntryList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuditEntry"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "Beacon": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "battery_pct": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "charging": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "thermal": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mem_mb": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "job_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "CancelInput": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        }
+      },
+      "CancelResult": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "cancelled": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Every job id this cancelled: one, or a fan-out's unfinished children."
+          },
+          "cascaded": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Jobs that were waiting on these and are now failed."
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "cancelled",
+          "cascaded",
+          "note"
+        ]
+      },
+      "CandidateDevice": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "os": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "device_id",
+          "model",
+          "os"
+        ]
+      },
+      "Device": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notes": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "descriptor": {
+            "type": "object"
+          },
+          "pools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Effective pools: the override when set, otherwise what the runner reported."
+          },
+          "pools_reported": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pools_override": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "capabilities": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "null: an agent that predates capabilities, offered everything."
+          },
+          "last_net": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "ttl_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "expired": {
+            "type": "boolean"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "simulator": {
+            "type": "boolean"
+          },
+          "status": {
+            "enum": [
+              "online",
+              "stale",
+              "offline"
+            ]
+          },
+          "age_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_seen": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "beacon": {
+            "$ref": "#/components/schemas/Beacon"
+          },
+          "current_job": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lock": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string"
+                  },
+                  "acquired_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "acquired_at"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "descriptor",
+          "pools",
+          "capabilities",
+          "platform",
+          "kind",
+          "simulator",
+          "status",
+          "last_seen"
+        ]
+      },
+      "DeviceDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Device"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "counts": {
+                "type": "object"
+              },
+              "jobs": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "benchmarks": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            },
+            "required": [
+              "jobs"
+            ]
+          }
+        ]
+      },
+      "DeviceList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Device"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "DeviceOutcome": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "waiting",
+              "queued",
+              "claimed",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "ok": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "skipped": {
+            "type": "boolean",
+            "description": "Nothing ran (no matching device, or a host refusing work). Not a pass."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metrics": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "test": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "passed": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "failed": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "skipped": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": []
+              }
+            ]
+          },
+          "failing_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "device_id",
+          "job_id",
+          "status",
+          "ok",
+          "skipped",
+          "error"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Stable and machine-readable. Branch on this, not on the message.",
+                "enum": [
+                  "bad_request",
+                  "invalid_spec",
+                  "not_found",
+                  "duplicate_job",
+                  "no_capable_agent",
+                  "no_matching_devices",
+                  "secret_in_spec",
+                  "no_build",
+                  "invalid_match",
+                  "invalid_dependency",
+                  "unresolved_reference",
+                  "conflict",
+                  "unauthorized",
+                  "insufficient_scope",
+                  "forbidden",
+                  "rate_limited",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string",
+                "description": "What to do about it, when there is something to do."
+              },
+              "required_scope": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "FlakyCell": {
+        "type": "object",
+        "properties": {
+          "build": {
+            "type": "string",
+            "description": "`<app> <build>`"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "runs": {
+            "type": "integer"
+          },
+          "passes": {
+            "type": "integer"
+          },
+          "failures": {
+            "type": "integer"
+          },
+          "latest": {
+            "type": "object",
+            "properties": {
+              "job_id": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "job_id",
+              "ok",
+              "at"
+            ]
+          }
+        },
+        "required": [
+          "build",
+          "device_id",
+          "runs",
+          "passes",
+          "failures",
+          "latest"
+        ]
+      },
+      "FlakyCellList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlakyCell"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "collector": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "started_at": {
+            "type": "string"
+          },
+          "uptime_s": {
+            "type": "integer"
+          },
+          "now": {
+            "type": "string"
+          },
+          "node": {
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "stream_clients": {
+            "type": "integer"
+          },
+          "guard": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          },
+          "auth": {
+            "enum": [
+              "off",
+              "tokens"
+            ]
+          },
+          "auth_protocol": {
+            "enum": [
+              "open",
+              "token"
+            ]
+          },
+          "api": {
+            "const": "v1"
+          }
+        },
+        "required": [
+          "ok",
+          "collector",
+          "name",
+          "version",
+          "auth",
+          "api"
+        ]
+      },
+      "Job": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "workload": {
+            "type": "string"
+          },
+          "executor": {
+            "enum": [
+              "device",
+              "host"
+            ]
+          },
+          "status": {
+            "enum": [
+              "waiting",
+              "queued",
+              "claimed",
+              "done",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "claimed_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "attempts": {
+            "type": "integer"
+          },
+          "max_attempts": {
+            "type": "integer"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "template_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "lease_ttl_s": {
+            "type": "integer"
+          },
+          "lease_deadline": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lease_remaining_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "duration_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claimed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "match": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "device_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "wants_executor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "exclusive": {
+            "type": "boolean"
+          },
+          "preemptible": {
+            "type": "boolean"
+          },
+          "backend": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "report_to": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "requested_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Verified only when the collector runs with FLEET_AUTH=tokens."
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Which front door: mcp, cli, ci, dash, schedule, api."
+          }
+        },
+        "required": [
+          "job_id",
+          "workload",
+          "executor",
+          "status",
+          "attempts",
+          "max_attempts",
+          "created_at",
+          "requested_by",
+          "source"
+        ]
+      },
+      "JobCreated": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "fanout": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One child job per device when the spec fanned out."
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "summary": {
+                "type": "string"
+              },
+              "wait": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "summary",
+              "wait",
+              "detail"
+            ]
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "links"
+        ]
+      },
+      "JobDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Job"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "spec": {
+                "type": "object"
+              },
+              "parent": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              },
+              "siblings": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              },
+              "results": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "device_id": {
+                      "type": "string"
+                    },
+                    "iter": {
+                      "type": "integer"
+                    },
+                    "created_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "payload": {
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "device_id",
+                    "iter",
+                    "created_at",
+                    "payload"
+                  ]
+                }
+              },
+              "beacons": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "artifacts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "sha256": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "size": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "created_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "in_store": {
+                      "type": "boolean"
+                    },
+                    "role": {
+                      "enum": [
+                        "input",
+                        "output"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "sha256",
+                    "name",
+                    "size",
+                    "created_at",
+                    "in_store",
+                    "role"
+                  ]
+                }
+              },
+              "locks": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "status_report": {
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "derived_timeline": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "what": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "at",
+                    "what"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "spec",
+              "results",
+              "artifacts"
+            ]
+          }
+        ]
+      },
+      "JobList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Job"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "JobSpecInput": {
+        "title": "Job spec",
+        "type": "object",
+        "required": [
+          "workload",
+          "executor"
+        ],
+        "properties": {
+          "schema": {
+            "const": 1
+          },
+          "job_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workload": {
+            "type": "string",
+            "minLength": 1,
+            "description": "No longer a closed enum. The names below are what the collector and the host executor ship with; beyond them, the collector accepts any workload some registered agent declares in its capabilities, and refuses the rest with a 422 naming the missing capability. That is what lets a new runner add work without a release in the collector.",
+            "examples": [
+              "benchmark",
+              "batch",
+              "pipeline",
+              "install",
+              "ui-test",
+              "drain",
+              "soak",
+              "web-test",
+              "web-shots",
+              "web-audit",
+              "web-unfurl",
+              "archive",
+              "digest",
+              "thermal",
+              "cold-start",
+              "self-check"
+            ]
+          },
+          "executor": {
+            "enum": [
+              "device",
+              "host"
+            ],
+            "description": "device = on-device runner app claims by polling; host = Mac-side executor drives devices from outside"
+          },
+          "model": {
+            "type": "object",
+            "description": "ML workloads: the model artifact to run",
+            "required": [
+              "name",
+              "format",
+              "sha256"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The on-disk shape of the model artifact. No longer a closed enum, for the same reason `workload` stopped being one: a runner that can load a format is the only thing that makes it real, and closing the set meant a new runtime could not be named in a job until the collector shipped a release. The three the phone runners ship with are listed first; the rest are formats a runner in this fleet loads today.",
+                "examples": [
+                  "gguf",
+                  "mlmodelc",
+                  "tflite",
+                  "onnx",
+                  "ort",
+                  "pte",
+                  "mlx",
+                  "safetensors"
+                ]
+              },
+              "quant": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  {
+                    "pattern": "^\\$\\{jobs\\.[^}]+\\}$"
+                  }
+                ],
+                "description": "A content hash, or a ${jobs.<id>.artifact} reference to a dependency's output, substituted at promotion."
+              }
+            }
+          },
+          "app": {
+            "type": "object",
+            "description": "App-testing workloads: the build artifact to install/run. Android artifacts are raw APKs; iOS artifacts are zips of the .app bundle.",
+            "required": [
+              "name",
+              "build",
+              "sha256"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "build": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "anyOf": [
+                  {
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  {
+                    "const": "latest"
+                  },
+                  {
+                    "pattern": "^\\$\\{jobs\\.[^}]+\\}$"
+                  }
+                ],
+                "description": "A content hash, or the literal \"latest\" — which resolves to the newest artifact published under this app name, ordered by publish_seq. Pinning a literal hash tests that build forever; one of these spent six days guarding a build older than the code it was meant to guard."
+              },
+              "platform": {
+                "type": "string",
+                "default": "android",
+                "description": "Which platform's build this artifact is, which decides how it gets installed: an APK over adb, a zipped .app over simctl or devicectl. Open like the rest, so a target added later is nameable here; the host executor refuses a platform it has no installer for by name, rather than guessing at one.",
+                "examples": [
+                  "android",
+                  "ios",
+                  "tvos",
+                  "watchos",
+                  "visionos",
+                  "macos"
+                ]
+              }
+            }
+          },
+          "backend": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Which implementation runs the workload. `synthetic` is a SHA-256 digest loop that every runner implements identically token for token -- real, device-comparable hardware numbers, never LLM numbers -- and it is the default a result row assumes when a spec names none. `mlx` is probed for by the machine agent but has no backend behind it yet.\n\nNo longer a closed enum, and enforced by capabilities instead: an agent declaring `benchmark:onnx` is what makes that pairing runnable, and the collector refuses a backend no registered agent declares with a 422 naming it. Closing the set meant every new runtime -- ONNX Runtime, ExecuTorch, WebGPU -- needed a collector release before a job could so much as mention it.\n\nIt is also how a workload picks among several toolchains for one job. `build` uses it for the build kind: a machine declares `build:xcode`, and naming that backend routes the job to the Mac rather than to whichever machine polled first. Build jobs carrying the kind only in `params.kind` keep working unchanged -- see the machine agent's capabilities.ts for why bare `build` stays declared alongside.\n\nThe browser runner declares neither `synthetic` nor a bare `benchmark`: its only native hash is asynchronous, so its rate is not the same quantity as a phone's. It names `jssha` and `webcrypto` instead, which is what keeps a browser's number out of a column of phones' numbers.",
+            "examples": [
+              "synthetic",
+              "llama.cpp",
+              "coreml",
+              "litert",
+              "whisper.cpp",
+              "mlx",
+              "onnx",
+              "ort-web",
+              "executorch",
+              "webgpu",
+              "webllm",
+              "jssha",
+              "webcrypto",
+              "gradle",
+              "xcode",
+              "npm"
+            ]
+          },
+          "suite": {
+            "type": "object",
+            "description": "ui-test, web-test and web-shots workloads. For playwright, `flows` is a spec directory under web-specs/ and params.browser picks the config project(s): one name, an array run in sequence, or \"all\" for every project in playwright.config.ts. web-shots reads `flows`/shots.json — the manifest of pages to capture and the profiles to capture them under (params.browser overrides the manifest's profiles).",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "maestro",
+                  "xcuitest",
+                  "playwright"
+                ]
+              },
+              "flows": {
+                "type": "string"
+              }
+            }
+          },
+          "params": {
+            "type": "object",
+            "description": "Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; any host job network and network_to; a preempted job resume_from."
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Job ids this one waits for. The job is enqueued as 'waiting' and becomes 'queued' when the last of them finishes; if any of them fails or is cancelled, this one fails with last_error naming it. While waiting, a spec may reference a dependency's output: \"${jobs.<id>.artifact}\" resolves to the first sha256 in that job's final row, and \"${jobs.<id>.metrics.<key>}\" to one of its metrics. A whole-string reference keeps the value's type, so a metric stays a number. Referencing a job not listed here is refused at enqueue."
+          },
+          "preemptible": {
+            "type": "boolean",
+            "description": "Whether a higher-priority job may ask this one to step aside. When true, a beacon is answered with preempt:true once a strictly higher-priority queued job would go to the same claimant; the runner is expected to checkpoint, upload its progress, and post a final row with preempted:true. That requeues the job with params.resume_from set to the uploaded sha256 and hands the attempt back, so stepping aside never counts against max_attempts. Equal priority does not preempt."
+          },
+          "lease": {
+            "type": "object",
+            "description": "How long a claim stays valid without proof of life. The runner renews it by posting POST /results kind=beacon with this job_id; a lapsed lease is requeued by the collector's sweep, and failed once max_attempts is spent. Omit for the defaults: 600 s, or 14400 s for drain/soak, which run for hours between beacons.",
+            "properties": {
+              "ttl_s": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400,
+                "description": "Lease length in seconds. Set this above the longest gap expected between beacons for the workload."
+              },
+              "max_attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 3,
+                "description": "Total claims allowed before an expiry marks the job failed instead of requeueing it."
+              }
+            },
+            "additionalProperties": false
+          },
+          "fanout": {
+            "description": "Enqueue one child job per selected device, each pinned via targets.device_id with job_id suffixed --<device_id>. true selects every device targets.pool/match matches. { \"distinct\": \"os\" } selects one device per distinct value of that descriptor field, newest-seen first — the canary shape: a smoke pass on every OS on the shelf without paying for every phone. Host jobs may fan out too; a host child is pinned the same way and the executor's target selection already honours it.",
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "distinct"
+                ],
+                "properties": {
+                  "distinct": {
+                    "type": "string",
+                    "description": "descriptor field to group by, e.g. \"os\" or \"soc\""
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "targets": {
+            "type": "object",
+            "properties": {
+              "pool": {
+                "type": "string"
+              },
+              "device_id": {
+                "type": "string",
+                "description": "pin this job to exactly one device-executor agent"
+              },
+              "match": {
+                "type": "string",
+                "description": "descriptor expression, e.g. \"ram_mb >= 4000 && os ~ 'android'\" — fields: model, soc, ram_mb, os, app_ver, device_id, pools; ops == != < <= > >= ~(regex) && || ! ( )"
+              },
+              "exclusive": {
+                "type": "boolean",
+                "description": "host jobs: hold collector device locks on all targets while running, starving device-executor agents until release"
+              },
+              "executor": {
+                "type": "string",
+                "description": "which host executor should claim this — a statement about which machine can reach the toolchain or the device, which no descriptor field can express"
+              },
+              "url": {
+                "type": "string",
+                "description": "web-test only: what to point the browser at; no device is involved and none is locked"
+              },
+              "device_kind": {
+                "enum": [
+                  "device",
+                  "simulator"
+                ],
+                "description": "host jobs: narrow selection to real hardware or simulators — a property of how a device is attached, which no descriptor field expresses honestly"
+              }
+            }
+          },
+          "constraints": {
+            "type": "object",
+            "description": "Device-state preconditions. require_charging and min_battery_pct are enforced by the runner app at claim time, against live state: it refuses the job with a failed result. The rest are enforced by the collector before the claim, against the device's last beacon, so the job stays queued and is offered again later rather than burning an attempt. The split is deliberate — a laptop that is merely busy has not failed at anything.",
+            "properties": {
+              "require_charging": {
+                "type": "boolean"
+              },
+              "min_battery_pct": {
+                "type": "number"
+              },
+              "require_ac": {
+                "type": "boolean",
+                "description": "Only claim while on mains power. A laptop on battery throttles hard enough to turn a benchmark trend line into noise."
+              },
+              "require_idle_s": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Only claim after the machine has been idle this long. Keeps a job from spinning up the fans while someone is typing."
+              },
+              "max_load": {
+                "type": "number",
+                "description": "Only claim while the 1-minute load average is at or below this."
+              },
+              "window": {
+                "type": "object",
+                "description": "Only claim inside this local-time window. Crossing midnight is allowed: from 22 to 06 means the night, not an empty set.",
+                "required": [
+                  "from",
+                  "to"
+                ],
+                "properties": {
+                  "from": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
+                  },
+                  "to": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 23
+                  },
+                  "tz_offset_min": {
+                    "type": "integer",
+                    "description": "Minutes east of UTC for the window's clock; omit for the collector's own."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "report_to": {
+            "type": "object",
+            "properties": {
+              "github_status": {
+                "type": "string",
+                "description": "owner/repo@sha to post a commit status to (Phase 5)"
+              }
+            }
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Higher is claimed first. Default 0."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "The saved template this spec came from."
+          }
+        },
+        "additionalProperties": false,
+        "description": "A Fleet Runner job spec (schema 1). `schema` and `job_id` may be omitted; the API fills in 1 and a generated id. A caller that sets job_id is choosing an idempotency key: a second POST with the same id is refused with duplicate_job. GET /api/v1/workloads/{name} returns a complete example for each workload."
+      },
+      "JobSummary": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "workload": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "description": "The row's status, or for a fan-out parent the status of the whole family."
+          },
+          "finished": {
+            "type": "boolean"
+          },
+          "verdict": {
+            "enum": [
+              "passed",
+              "failed",
+              "skipped",
+              "cancelled",
+              "running",
+              "queued",
+              "waiting",
+              "mixed"
+            ],
+            "description": "skipped means nothing ran; it is not a pass. mixed: some devices passed and some failed."
+          },
+          "fanout": {
+            "type": "boolean",
+            "description": "True when job_id names a fan-out parent and devices are its children."
+          },
+          "requested_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "claimed_by": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "counts": {
+            "type": "object",
+            "properties": {
+              "devices": {
+                "type": "integer"
+              },
+              "passed": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "skipped": {
+                "type": "integer"
+              },
+              "running": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "devices",
+              "passed",
+              "failed",
+              "skipped",
+              "running"
+            ]
+          },
+          "devices": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceOutcome"
+            }
+          },
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactRef"
+            }
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "self": {
+                "type": "string"
+              },
+              "detail": {
+                "type": "string"
+              },
+              "wait": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "self",
+              "detail",
+              "wait"
+            ]
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "finished",
+          "verdict",
+          "counts",
+          "devices",
+          "artifacts",
+          "links"
+        ]
+      },
+      "Result": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "iter": {
+            "type": "integer"
+          },
+          "workload": {
+            "type": "string"
+          },
+          "final": {
+            "type": "boolean"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "skipped": {
+            "type": "boolean",
+            "description": "error starts with `skipped:`: nothing ran."
+          },
+          "error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "metrics": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "test": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "payload": {
+            "type": "object",
+            "description": "Only with include=payload."
+          }
+        },
+        "required": [
+          "job_id",
+          "device_id",
+          "iter",
+          "workload",
+          "final",
+          "ok",
+          "skipped",
+          "error",
+          "created_at"
+        ]
+      },
+      "ResultList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Result"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "RetryInput": {
+        "type": "object",
+        "properties": {
+          "pool": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "integer"
+          }
+        }
+      },
+      "RetryResult": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "retry_of": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "retry_of"
+        ]
+      },
+      "Schedule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "cron": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_run": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "next_run": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "cron",
+          "enabled"
+        ]
+      },
+      "ScheduleList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Schedule"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "Template": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "spec": {
+            "type": "object"
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "spec",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "TemplateList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Template"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      },
+      "Validation": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "job_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "What the job would be on enqueue: queued, waiting or failed."
+          },
+          "fanout": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spec": {
+            "type": "object",
+            "description": "The spec as it would be stored: `latest` resolved, lease filled in."
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CandidateDevice"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Reasons a valid job would sit in the queue."
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ]
+          },
+          "schema_errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "valid"
+        ]
+      },
+      "WhoAmI": {
+        "type": "object",
+        "properties": {
+          "auth": {
+            "enum": [
+              "off",
+              "tokens"
+            ]
+          },
+          "protocol": {
+            "enum": [
+              "open",
+              "token"
+            ]
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who the collector thinks is asking."
+          },
+          "verified": {
+            "type": "boolean",
+            "description": "False when the name came from a header anyone could send (auth off)."
+          },
+          "token": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "name"
+                ]
+              }
+            ]
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "auth",
+          "protocol",
+          "actor",
+          "verified",
+          "token",
+          "scopes"
+        ]
+      },
+      "Workload": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "executor": {
+            "enum": [
+              "device",
+              "host"
+            ]
+          },
+          "runs_on": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "device",
+                "host",
+                "machine"
+              ]
+            }
+          },
+          "summary": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "shipped",
+              "reserved",
+              "agent"
+            ]
+          },
+          "docs": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "params": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "example": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "dangerous": {
+            "type": "boolean"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "Something live could claim it right now."
+          },
+          "agents": {
+            "type": "integer",
+            "description": "Live devices declaring it (device workloads) or live host executors (host workloads)."
+          }
+        },
+        "required": [
+          "name",
+          "executor",
+          "summary",
+          "status",
+          "example",
+          "available",
+          "agents"
+        ]
+      },
+      "WorkloadList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Workload"
+            }
+          },
+          "page": {
+            "type": "integer"
+          },
+          "per_page": {
+            "type": "integer"
+          },
+          "total": {
+            "type": "integer"
+          },
+          "pages": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "per_page",
+          "total",
+          "pages"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A Fleet Runner token (fr_...), or the MCP gateway's delegating token."
+      }
+    }
+  }
+}

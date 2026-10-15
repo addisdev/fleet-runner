@@ -6,15 +6,21 @@
 // stray tab, a bookmarked URL, or a misfired script cannot *cancel* or *delete*
 // without carrying it. Unset (the default) means every mutation is allowed,
 // exactly as before this existed.
+//
+// With FLEET_AUTH=tokens the real thing is on: src/auth.ts has already checked
+// a scoped token before any handler runs, so this steps aside rather than
+// demanding a second, different secret.
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { AUTH } from "../config.js";
 
 const TOKEN = process.env.FLEET_DASH_TOKEN;
 
-export const guardEnabled = () => !!TOKEN;
+export const guardEnabled = () => AUTH === "tokens" || !!TOKEN;
 
 /** Returns true when the request may proceed; sends 401 and returns false when
  *  it may not, so callers can `if (!requireToken(req, reply)) return;`. */
 export function requireToken(req: FastifyRequest, reply: FastifyReply): boolean {
+  if (AUTH === "tokens") return true;
   if (!TOKEN) return true;
   const supplied = req.headers["x-fleet-token"];
   if (typeof supplied === "string" && supplied === TOKEN) return true;

@@ -12,6 +12,7 @@ import { db } from "../db.js";
 import { powerRetention } from "../power.js";
 import { isValidMatch } from "../match.js";
 import { requireToken } from "./guard.js";
+import { forward } from "../auth.js";
 import { iso, parse, sha256Refs } from "./shared.js";
 
 /** How long explore keeps a whole night's trajectories before only the findings' remain (plan, phase 5). */
@@ -348,7 +349,7 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
     if (Number.isInteger(body.priority)) retry.priority = body.priority;
     if (row.template_id) retry.template_id = row.template_id;
 
-    const res = await app.inject({ method: "POST", url: "/jobs", payload: retry });
+    const res = await forward(app, req, { method: "POST", url: "/jobs", payload: retry });
     if (res.statusCode !== 201)
       return reply.code(res.statusCode).send({ error: `enqueue failed: ${res.body}` });
     return reply.code(201).send({ ok: true, job_id: jobId, retry_of: id });
@@ -372,7 +373,7 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
   // The composer's enqueue. Guarded, then handed to POST /jobs unchanged.
   app.post("/api/jobs", async (req, reply) => {
     if (!requireToken(req, reply)) return;
-    const res = await app.inject({ method: "POST", url: "/jobs", payload: req.body as object });
+    const res = await forward(app, req, { method: "POST", url: "/jobs", payload: req.body as object });
     return reply.code(res.statusCode).send(res.json());
   });
 
@@ -521,7 +522,7 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
       // Forwarded to the long-standing /schedules routes rather than
       // reimplemented: cron validation and the no-job_id rule live there.
       const id = req.params?.id ? `/${encodeURIComponent(req.params.id)}` : "";
-      const res = await app.inject({ method, url: `/schedules${id}`, payload: req.body as object });
+      const res = await forward(app, req, { method, url: `/schedules${id}`, payload: req.body as object });
       return reply.code(res.statusCode).send(res.statusCode === 204 ? null : res.json());
     };
     if (method === "POST") app.post(path, handler);
@@ -541,7 +542,7 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
     // scheduler's own, and cannot collide with the minute-keyed id it uses.
     const stamp = new Date().toISOString().replace(/[^0-9]/g, "").slice(0, 14);
     const jobId = `${id}-manual-${stamp}`;
-    const res = await app.inject({
+    const res = await forward(app, req, {
       method: "POST",
       url: "/jobs",
       payload: { ...parse<Record<string, unknown>>(row.template, {}), job_id: jobId },
@@ -725,20 +726,20 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
 
   app.post("/api/system/sweep", async (req, reply) => {
     if (!requireToken(req, reply)) return;
-    const res = await app.inject({ method: "POST", url: "/jobs/sweep" });
+    const res = await forward(app, req, { method: "POST", url: "/jobs/sweep" });
     return reply.code(res.statusCode).send(res.json());
   });
 
   app.post("/api/system/scheduler-tick", async (req, reply) => {
     if (!requireToken(req, reply)) return;
-    const res = await app.inject({ method: "POST", url: "/schedules/tick" });
+    const res = await forward(app, req, { method: "POST", url: "/schedules/tick" });
     return reply.code(res.statusCode).send(res.json());
   });
 
   app.post("/api/power/:pool/:state", async (req, reply) => {
     if (!requireToken(req, reply)) return;
     const { pool, state } = req.params as { pool: string; state: string };
-    const res = await app.inject({ method: "POST", url: `/power/${encodeURIComponent(pool)}/${encodeURIComponent(state)}` });
+    const res = await forward(app, req, { method: "POST", url: `/power/${encodeURIComponent(pool)}/${encodeURIComponent(state)}` });
     return reply.code(res.statusCode).send(res.json());
   });
 

@@ -61,6 +61,19 @@ export type Settings = {
   findingsDigestAt: string | null;
   /** How far back the daily digest looks, in hours. */
   findingsDigestHours: number;
+  /**
+   * "off" is the posture the project has always had: the network is the access
+   * control. "tokens" requires a scoped bearer token on the control API. See
+   * src/auth.ts.
+   */
+  auth: "off" | "tokens";
+  /**
+   * Whether the runner protocol needs a token too when auth is on. "open" by
+   * default because the phone, TV and Roku runners cannot send one yet.
+   */
+  authProtocol: "open" | "token";
+  /** Where the hashed tokens live. Re-read when the file changes. */
+  tokensFile: string;
 };
 
 /**
@@ -170,6 +183,12 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): Settings {
       : null,
     // A day, so a daily send covers every finding exactly once.
     findingsDigestHours: Math.min(168, Math.max(1, Number(env.FLEET_FINDINGS_DIGEST_HOURS ?? 24) || 24)),
+    // Anything but the exact word is off: a typo must not be read as "secure"
+    // by the operator and as "open" by the collector, so it is also reported
+    // at startup.
+    auth: env.FLEET_AUTH === "tokens" ? "tokens" : "off",
+    authProtocol: env.FLEET_AUTH_PROTOCOL === "token" ? "token" : "open",
+    tokensFile: env.FLEET_TOKENS_FILE ?? path.join(env.FLEET_DATA_DIR ?? path.resolve("data"), "tokens.json"),
   };
 }
 
@@ -186,7 +205,12 @@ let frozen = false;
  */
 export function configure(overrides: Partial<Settings>): void {
   if (frozen) throw new Error("configure() must be called before the collector starts");
+  // The tokens file lives beside the database unless somebody said otherwise,
+  // so moving the data directory moves it too.
+  const tokensFollowData = overrides.dataDir !== undefined && overrides.tokensFile === undefined &&
+    !process.env.FLEET_TOKENS_FILE;
   settings = { ...settings, ...overrides };
+  if (tokensFollowData) settings.tokensFile = path.join(settings.dataDir, "tokens.json");
   apply();
 }
 
@@ -224,6 +248,9 @@ export let FINDINGS_REPOS_ERROR: string | null;
 export let GITHUB_ISSUES_ARMED: boolean;
 export let FINDINGS_DIGEST_AT: string | null;
 export let FINDINGS_DIGEST_HOURS: number;
+export let AUTH: "off" | "tokens";
+export let AUTH_PROTOCOL: "open" | "token";
+export let TOKENS_FILE: string;
 
 function apply(): void {
   PORT = settings.port;
@@ -248,6 +275,9 @@ function apply(): void {
   GITHUB_ISSUES_ARMED = settings.githubIssuesArmed;
   FINDINGS_DIGEST_AT = settings.findingsDigestAt;
   FINDINGS_DIGEST_HOURS = settings.findingsDigestHours;
+  AUTH = settings.auth;
+  AUTH_PROTOCOL = settings.authProtocol;
+  TOKENS_FILE = settings.tokensFile;
 }
 
 apply();

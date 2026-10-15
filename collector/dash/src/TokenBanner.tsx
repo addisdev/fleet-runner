@@ -18,11 +18,13 @@ export function TokenBanner() {
   // Silent unless the collector actually wants a token and we lack one.
   if (!health.data?.guard || token) return null;
 
+  const everything = health.data.auth === "tokens";
   return (
     <div class="banner warning token-banner">
       <span>
-        This collector requires a token before anything can be changed — renaming a device, cancelling a job, editing a
-        schedule. Reads work without it.
+        {everything
+          ? "This collector requires a token to see or change anything. `fleet token create NAME --scope read` on its host makes one; run or admin lets you change things too."
+          : "This collector requires a token before anything can be changed — renaming a device, cancelling a job, editing a schedule. Reads work without it."}
       </span>
       <form
         class="token-form"
@@ -34,7 +36,7 @@ export function TokenBanner() {
         <input
           type="password"
           value={draft}
-          placeholder="paste FLEET_DASH_TOKEN"
+          placeholder={everything ? "paste a fleet token" : "paste FLEET_DASH_TOKEN"}
           onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
         />
         <button type="submit" class="btn" disabled={!draft.trim()}>

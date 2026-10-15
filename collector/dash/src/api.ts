@@ -1,6 +1,7 @@
 // Typed access to the collector's read API, plus the hooks the pages use.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { onLive } from "./live.js";
+import { tokenHeader } from "./token.js";
 
 export class ApiError extends Error {
   constructor(
@@ -14,7 +15,7 @@ export class ApiError extends Error {
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path.startsWith("/") ? path : `/api/${path}`, {
     ...init,
-    headers: { accept: "application/json", ...(init?.headers ?? {}) },
+    headers: { accept: "application/json", ...tokenHeader(), ...(init?.headers ?? {}) },
   });
   if (!res.ok) {
     // The API answers unknown /api paths with JSON, so an HTML body here means
@@ -357,6 +358,8 @@ export type Health = {
   pid: number;
   stream_clients: number;
   guard: boolean;
+  /** "tokens" when every read needs a token too, not only changes. */
+  auth?: "off" | "tokens";
 };
 
 // --- night-QA findings (mirrors src/findings.ts) ---
