@@ -99,6 +99,9 @@ EXPOSE 8788
 
 # Everything a running fleet keeps: the database, the artifact store, the
 # config and the logs. Mount it, or a `docker rm` takes the fleet's history.
+# The directory has to exist, owned by fleet, before VOLUME: a fresh volume
+# copies the image's ownership, and a path the image lacks is created as root.
+RUN mkdir -p /home/fleet/.fleet
 VOLUME ["/home/fleet/.fleet"]
 
 # A health check the orchestrator can read, rather than "the process is alive".

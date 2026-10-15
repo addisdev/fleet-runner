@@ -69,6 +69,9 @@ a CI job fails when they disagree.
   collector kept claiming on behalf of a long-poll whose client had gone,
   handing the job to nobody; it sat claimed until the lease ran out. The poll
   now stops when the connection closes.
+- **The container image could not start on a fresh volume.** `VOLUME` named a
+  directory the image never created, so Docker made it root-owned and the
+  non-root `fleet` user died on `mkdir`. The image now creates it first.
 
 ## [0.7.2] — 2026-09-30
 

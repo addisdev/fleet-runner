@@ -1,0 +1,29 @@
+name: desktop
+
+# Called by ci.yml. The menu-bar app had never been compiled by CI, so a Tauri
+# or Rust change could only be found broken on the next person's Mac.
+# `cargo check` with the real sidecar staged: tauri-build refuses to run when
+# an externalBin is missing, and staging it is the step people forget.
+on:
+  workflow_call:
+
+jobs:
+  check:
+    name: cargo check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Stage the fleet sidecar
+        run: |
+          npm --prefix collector ci
+          npm --prefix fleet ci
+          ./desktop/stage-sidecar.sh
+      - working-directory: desktop/src-tauri
+        run: cargo check --all-targets
