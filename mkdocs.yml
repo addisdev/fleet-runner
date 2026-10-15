@@ -128,6 +128,7 @@ nav:
       - Add your app: integration/add-your-app.md
       - Add a workload: integration/add-a-workload.md
       - Cookbook: integration/cookbook.md
+  - AI agents and automation: agents.md
   - Reference:
       - The protocol: protocol.md
       - Platforms: platforms.md
@@ -140,6 +141,7 @@ nav:
       - The iOS executor: deploy/ios-executor.md
       - Exploratory QA on ultra: deploy/explore-on-ultra.md
       - Alerts: deploy/alerts.md
+      - Authentication and MCP gateway: deploy/auth.md
       - This lab: lab.md
   - Brand: brand.md
   - History:

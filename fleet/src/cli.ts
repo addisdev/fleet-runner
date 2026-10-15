@@ -25,7 +25,10 @@ import { paths, selfCommand, isCheckout, repoRoot } from "./paths.js";
 import { supervise, snapshot, type ChildSpec } from "./supervisor.js";
 import { runDoctor } from "./doctor.js";
 import { serviceCommand } from "./service.js";
-import { serveMcp } from "./mcp.js";
+import { serveMcp } from "./mcp/stdio.js";
+import { serveGateway } from "./mcp/http.js";
+import { connect } from "./connect.js";
+import { WORK_COMMANDS, WORK_USAGE, workCommand } from "./work.js";
 import { VERSION } from "./version.js";
 
 const USAGE = `fleet ${VERSION} -- a device lab you can send work to
@@ -43,7 +46,9 @@ const USAGE = `fleet ${VERSION} -- a device lab you can send work to
   fleet dash              Open the dashboard.
   fleet mcp [--url <brain>]
                           The lab as MCP tools, over stdio, for coding agents.
-
+  fleet mcp --http --issuer <idp> --audience <id> [--port 8790] [--public-url <url>]
+                          The same tools as a remote MCP server behind OAuth.
+${WORK_USAGE}
   fleet service install [--role ...]   Start at login, and stay up.
   fleet service uninstall|start|stop|status|logs
 
@@ -113,6 +118,7 @@ function childFor(role: Role, config: FleetConfig): ChildSpec {
 
 async function main(): Promise<number> {
   const [, , command, ...rest] = process.argv;
+  if (command && WORK_COMMANDS.has(command)) return workCommand(command, rest);
   const { positional, flags } = parse(rest);
 
   switch (command) {
@@ -149,8 +155,15 @@ async function main(): Promise<number> {
     case "dash":
       return dash();
 
-    case "mcp":
-      return serveMcp(typeof flags.url === "string" ? flags.url : undefined);
+    case "mcp": {
+      const url = typeof flags.url === "string" ? flags.url : undefined;
+      const token = typeof flags.token === "string" ? flags.token : undefined;
+      if (flags.http) {
+        const client = connect({ url, token, source: "mcp" });
+        return serveGateway(flags, client.baseUrl, client.token);
+      }
+      return serveMcp({ url, token });
+    }
 
     case "service":
       return serviceCommand(positional, flags);

@@ -327,6 +327,9 @@ main() {
   # than a copy, because Node resolves it before setting import.meta.url, so
   # assetRoot() still lands on the install directory.
   ln -sf fleet.mjs "${bin}/fleet"
+  # `fleetr`, for machines where another tool already answers to `fleet`, and
+  # the name the agent skill uses so it never reaches the wrong one.
+  ln -sf fleet.mjs "${bin}/fleetr"
 
   # Run the thing that was just installed. If the bundle is broken, or Node
   # cannot load it, that is worth finding out now rather than the first time

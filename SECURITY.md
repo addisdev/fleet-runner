@@ -2,12 +2,16 @@
 
 ## Read this before reporting
 
-**Fleet Runner has no authentication, by design.** The collector is built for a
-home LAN or a tailnet. Anyone who can reach it can enqueue a job, and a job can
-install software on a device, drive a browser, or run a UI suite.
+**By default, Fleet Runner has no authentication.** The collector is built for
+a home LAN or a tailnet. Anyone who can reach it can enqueue a job, and a job
+can install software on a device, drive a browser, or run a UI suite.
 
-That is the stated posture, not an oversight, and **"there is no authentication"
-is not a vulnerability report.** The network is the access control:
+That is the default posture, not an oversight, and **"there is no
+authentication" on a default install is not a vulnerability report.**
+`FLEET_AUTH=tokens` turns on scoped bearer tokens for the control API, and
+`fleet mcp --http` puts an OAuth resource server in front of it for remote MCP
+clients; see [Authentication](https://addisdev.github.io/fleet-runner/deploy/auth/).
+With auth off, the network is the access control:
 `FLEET_BIND` decides which network, and setting it to loopback plus a tailnet
 address is the configuration the documentation recommends.
 `FLEET_DASH_TOKEN` guards the dashboard's mutations and is explicitly described
@@ -47,6 +51,18 @@ failure.
 interface the configuration excluded, that is a real bug, because it is the
 control the whole posture rests on.
 
+**With `FLEET_AUTH=tokens`, any way past a scope check.** A request that
+succeeds without a token where one is required, with a scope that should not
+allow it, on someone else's job without `admin`, with a revoked or expired
+token, or a session cookie that can change anything. Also a way to set
+`requested_by` to someone else without the `delegate` scope, or a mutation that
+is not written to the audit log.
+
+**The remote MCP gateway.** A token the gateway accepts that the identity
+provider did not issue for it (wrong issuer or audience, expired, `alg: none`
+or HMAC, a forged signature), a remote caller running the `shell` workload,
+or a response that discloses the collector's internal address.
+
 **Anything that escapes the stated boundary**: a request that reaches the host
 beyond the documented API, a device left in a modified state that the journals
 do not record, or a way to get code execution on an executor from a job spec
@@ -54,9 +70,15 @@ alone.
 
 ## What is out of scope
 
-- The absence of authentication, authorisation, rate limiting, TLS or audit
-  logging on the collector.
-- That `POST /jobs` is open, or that `FLEET_DASH_TOKEN` does not protect it.
+- With `FLEET_AUTH` unset: the absence of authentication, authorisation, rate
+  limiting, TLS or audit logging on the collector.
+- With `FLEET_AUTH` unset: that `POST /jobs` is open, or that
+  `FLEET_DASH_TOKEN` does not protect it.
+- That the runner protocol answers without a token while
+  `FLEET_AUTH_PROTOCOL` is `open` (the default even with tokens on, because
+  shipped runners cannot send one).
+- TLS: the collector and gateway expect a proxy or private network to
+  provide it.
 - Anything that requires being on the LAN or tailnet as a precondition and then
   does what the API already documents.
 - Denial of service by enqueueing many jobs.

@@ -260,6 +260,9 @@ function Install-Fleet {
             '@echo off'
             'node "%~dp0fleet.mjs" %*'
         ) | Set-Content -LiteralPath $shim -Encoding ASCII
+        # `fleetr`, for machines where another tool already answers to
+        # `fleet`, and the name the agent skill uses.
+        Copy-Item -LiteralPath $shim -Destination (Join-Path $bin 'fleetr.cmd') -Force
 
         # Run the thing that was just installed. If the bundle is broken, or
         # Node cannot load it, that is worth finding out now rather than the
