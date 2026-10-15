@@ -182,6 +182,7 @@ jobs:
                 # elevation, and neither installer asks for either. A .cmd shim
                 # is what PATHEXT makes runnable as plain `fleet`.
                 printf '@echo off\r\nnode "%%~dp0fleet.mjs" %%*\r\n' > "stage/${name}/bin/fleet.cmd"
+                cp "stage/${name}/bin/fleet.cmd" "stage/${name}/bin/fleetr.cmd"
                 (cd stage && zip -qr "../out/${name}.zip" "${name}")
                 ;;
               *)
@@ -191,6 +192,9 @@ jobs:
                 # resolves it before setting import.meta.url, so assetRoot()
                 # still lands on the install directory.
                 ln -sf fleet.mjs "stage/${name}/bin/fleet"
+                # `fleetr`: the same program, for machines where another tool
+                # already answers to `fleet`.
+                ln -sf fleet.mjs "stage/${name}/bin/fleetr"
                 tar -czf "out/${name}.tar.gz" -C stage "${name}"
                 ;;
             esac

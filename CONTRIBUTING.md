@@ -28,7 +28,21 @@ Four components, four suites. Only run the one you touched.
     the smoke suite against it. It never touches a real fleet's history, which
     is why it can be wired to `npm test` at all.
 
-    It takes about four minutes.
+    It takes about five minutes. If you changed a route in
+    `src/api/v1/routes.ts`, run `npm run gen:api` first: the suite fails when
+    `openapi.json` or the generated client no longer match the route table.
+
+=== "fleet"
+
+    ```bash
+    cd fleet
+    npm install
+    npm test
+    ```
+
+    The CLI, the MCP server and the remote gateway, each tested against a real
+    collector it starts itself. `npm run skill:gen` after changing a tool or
+    an exit code; the suite fails when `skills/fleet-runner/SKILL.md` is stale.
 
 === "runner-android"
 
