@@ -199,7 +199,7 @@ resolve_version() {
     head -n 1)"
   if [ -z "$tag" ]; then
     die "could not work out the latest version from ${api}.
-  Either there is no published release yet, or this address is rate limited.
+  Either GitHub could not be reached, or this address is rate limited.
   Pick one from ${RELEASES} and set FLEET_VERSION=<version>."
   fi
   printf '%s' "${tag#v}"

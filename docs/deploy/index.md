@@ -51,14 +51,18 @@ depends on the machine:
 | Linux | a systemd **user** unit | `~/.config/systemd/user/fleet.service` |
 | Windows | a `schtasks` task that runs at logon | the task scheduler |
 
-!!! danger "`fleet service install` has never been run, on any platform"
+!!! warning "How much each backend has been run"
 
-    Not launchd, not systemd, not the Windows task. Every path it writes is
-    resolved absolutely -- launchd expands no `~` and reads no login `PATH`,
-    systemd is the same and Windows is worse -- and none of it has been watched
-    start at login. The code is written and reviewed; that is all.
+    - **launchd:** a real fleet's brain runs under it, on macOS 12.
+    - **systemd:** a CI smoke test installs the user unit on Ubuntu, checks it
+      with `systemd-analyze verify`, waits for the collector it starts to
+      answer, and uninstalls it. Nobody has watched it come back after a reboot.
+    - **Windows task:** never run.
 
-    What *has* been run, on macOS, are the older per-component plists in
+    Every path it writes is resolved absolutely -- launchd expands no `~` and
+    reads no login `PATH`, systemd is the same and Windows is worse.
+
+    Also run, on macOS, are the older per-component plists in
     `collector/deploy/` and `runner-machine/deploy/`. Those are what the
     reference deployment actually uses today, and they are documented in
     [headless hosts](headless.md). They are deprecated -- they ship one more

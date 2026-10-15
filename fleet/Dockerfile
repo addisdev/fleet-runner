@@ -33,11 +33,10 @@
 # fails to start without it, and `fleet doctor` says so in a sentence. An image
 # that needs them should install them in a layer of its own.
 #
-# STATUS: built, never run. The release workflow built and pushed it for
-# linux/amd64 and linux/arm64 at v0.5.0, so the file is at least correct enough
-# to assemble. Nothing has started a container from it -- Docker was not
-# available on the machine that wrote it -- so whether `fleet up` actually comes
-# up inside one is unknown.
+# STATUS: run in CI. Every release pushes it for linux/amd64 and linux/arm64,
+# and `container smoke` in .github/workflows/fleet.yml builds it on amd64,
+# starts `fleet up` in it, and waits for its own machine agent to register. The
+# arm64 image is built and has not been started.
 
 # --- build the bundle ------------------------------------------------------
 FROM node:22-bookworm-slim AS build

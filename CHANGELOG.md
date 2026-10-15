@@ -16,6 +16,13 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.8.0] — 2026-10-15
+
+The fleet as something a program or an AI agent can drive: a versioned control
+API, a CLI and MCP tools that are thin wrappers over it, an optional OAuth
+gateway for chat tools, and a skill that tells an agent how to use them. See
+[AI agents and automation](docs/agents.md).
+
 ### Added
 
 - **A versioned control API, `/api/v1`.** Devices, workloads, jobs, results,
@@ -72,6 +79,42 @@ a CI job fails when they disagree.
 - **The container image could not start on a fresh volume.** `VOLUME` named a
   directory the image never created, so Docker made it root-owned and the
   non-root `fleet` user died on `mkdir`. The image now creates it first.
+- **The desktop app's build script failed before compiling anything.** The
+  bundled resource directory was named `fleet`, the same name the sidecar is
+  copied to in `target/debug`, so the copy failed with "Not a directory". The
+  resource is now `fleet-tree`, and the sidecar shim also looks beside itself,
+  where a dev build puts it.
+
+### Now verified
+
+Four items from earlier "Not verified" lists, each now checked by CI on every
+pull request that touches them:
+
+- **The container image runs.** `fleet / container smoke` builds
+  `fleet/Dockerfile`, starts it, and waits for its own agent to register and
+  answer `fleet devices`, `fleet workloads` and `fleet whoami`. It found the
+  volume bug above on its first run. linux/amd64 only; the arm64 image is still
+  built and not run.
+- **`fleet service install` on systemd.** `fleet / systemd smoke` installs the
+  user unit on a real systemd, checks it with `systemd-analyze verify`, waits
+  for the collector it starts to answer, then uninstalls and checks nothing is
+  left answering. launchd and the Windows scheduled task are still unrun.
+- **The desktop app's Rust compiles.** `desktop / cargo check` stages the
+  sidecar and runs `cargo check --all-targets` on macOS. It found the resource
+  bug above; once that was fixed the Rust compiled with no errors. Compiling is
+  all it proves: the app has still never been launched.
+- **The Roku channel compiles.** `runner-roku / brighterscript` runs `bsc`
+  over the channel. It has still never run on a Roku.
+
+### Not verified
+
+- **The MCP gateway has not met a real identity provider.** Its tests use a
+  local fake that signs tokens the way Entra ID and Okta do; no tenant has an app
+  registration for it yet, and it is not on any company's approved-connector
+  list. [Authentication and the MCP gateway](docs/deploy/auth.md) has the setup.
+- **The dashboard does not use the generated client yet.** It still calls the
+  unversioned routes with hand-written types
+  ([#83](https://github.com/addisdev/fleet-runner/issues/83)).
 
 ## [0.7.2] — 2026-09-30
 
@@ -994,7 +1037,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/addisdev/fleet-runner/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/addisdev/fleet-runner/compare/v0.6.2...v0.7.0

@@ -17,10 +17,10 @@ a Mac collector reachable at all.
     one unit running `fleet up` instead of one unit per component. They ship one
     more release and are then removed.
 
-    They are documented here rather than deleted because of an awkward fact:
-    **`fleet service install` has never been run on any platform**, and these
-    have. Until somebody has watched the new path start at login, the old path
-    is the one with mileage on it.
+    They are documented here rather than deleted because they have more
+    mileage: `fleet service install` now runs a real fleet's brain under launchd
+    and passes a systemd smoke test in CI, but nobody has watched its systemd or
+    Windows backends start a machine at boot, and these have.
 
 ## The plists are templates, and that is not tidiness
 
