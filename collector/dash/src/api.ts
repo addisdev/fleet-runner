@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { onLive } from "./live.js";
 import { tokenHeader } from "./token.js";
+import type { JobDetail } from "./client.js";
 
 export class ApiError extends Error {
   constructor(
@@ -38,18 +39,31 @@ export type Loadable<T> = { data: T | null; error: Error | null; loading: boolea
  * of "3m ago" and lease countdowns goes stale on its own, with no event to say so.
  */
 export function useApi<T>(path: string | null, topics: string[] = [], refreshMs = 0): Loadable<T> {
+  return useLoad<T>(path, () => api<T>(path!), topics, refreshMs);
+}
+
+/**
+ * useApi for anything that returns a promise -- the generated /api/v1 client,
+ * mostly. `key` stands in for the path: it changes exactly when the request
+ * would, and null means "not yet".
+ */
+export function useLoad<T>(key: string | null, load: () => Promise<T>, topics: string[] = [], refreshMs = 0): Loadable<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<Error | null>(null);
-  const [loading, setLoading] = useState(path !== null);
+  const [loading, setLoading] = useState(key !== null);
   const [nonce, setNonce] = useState(0);
   // Guards against a slow first response overwriting a fast second one.
   const seq = useRef(0);
+  // The loader closes over the render that made it; the effect below runs on
+  // key changes only, so it reads the newest one from here.
+  const loader = useRef(load);
+  loader.current = load;
 
   useEffect(() => {
-    if (path === null) return;
+    if (key === null) return;
     const mine = ++seq.current;
     setLoading(true);
-    api<T>(path)
+    loader.current()
       .then((d) => {
         if (seq.current === mine) {
           setData(d);
@@ -62,7 +76,7 @@ export function useApi<T>(path: string | null, topics: string[] = [], refreshMs 
       .finally(() => {
         if (seq.current === mine) setLoading(false);
       });
-  }, [path, nonce]);
+  }, [key, nonce]);
 
   const reload = () => setNonce((n) => n + 1);
 
@@ -88,28 +102,16 @@ export function useApi<T>(path: string | null, topics: string[] = [], refreshMs 
   return { data, error, loading, reload };
 }
 
-// --- response shapes (mirrors src/api/*.ts) ---
+// --- response shapes ---
+//
+// Devices, jobs and their details come from /api/v1, so their types are the
+// generated client's (collector/src/client/api.gen.ts), re-exported here for
+// the pages that import them from this file. Do not redeclare them: a copy is
+// how the dashboard drifted from the server before.
+export type { Device, DeviceDetail, DeviceList, Job, JobDetail, JobList } from "./client.js";
+export type ResultRow = JobDetail["results"][number];
 
-export type DeviceStatus = "online" | "stale" | "offline";
-
-export type Beacon = {
-  battery_pct: number | null;
-  charging: boolean | null;
-  thermal: string | null;
-  mem_mb: number | null;
-  mem_method: string | null;
-  process_alive: boolean | null;
-  job_id: string | null;
-  /**
-   * Set when this device is running a job for a DIFFERENT collector.
-   *
-   * Rendered rather than ignored because "busy for another brain" and "idle,
-   * and nothing here is offering it work" look identical on this screen and are
-   * opposite problems -- one is working, the other is a queue that is not
-   * matching.
-   */
-  busy: { job_id: string | null; collector: string | null } | null;
-} | null;
+// The rest mirror unversioned /api/* routes that /api/v1 does not offer yet.
 
 export type Peer = {
   url: string;
@@ -124,76 +126,6 @@ export type Peers = {
   self: { id: string; name: string };
   peers: Peer[];
   configured: number;
-};
-
-export type Device = {
-  device_id: string;
-  name: string | null;
-  notes: string | null;
-  descriptor: Record<string, unknown>;
-  /** Effective pools: the override when set, otherwise what the runner reports. */
-  pools: string[];
-  /** null = an agent that predates capability routing; it is offered everything. */
-  capabilities: string[] | null;
-  /** /24 the agent last registered from. Distinguishes "offline" from "elsewhere". */
-  last_net: string | null;
-  pools_reported: string[];
-  pools_override: string[] | null;
-  /**
-   * What the agent says it runs. An open string, not a union: the fleet gained
-   * a laptop, a TV, a watch and a browser tab after this type was written, and
-   * a union here would have had to be edited before any of them could show up
-   * correctly. Agents that predate the field are still reported as ios/android
-   * by the collector's fallback.
-   */
-  platform: string;
-  /** Form factor, when the agent declared one: phone, tablet, laptop, tv, watch, sbc, browser… */
-  kind: string | null;
-  /** Seconds of silence an ephemeral agent survives; null for a shelf device. */
-  ttl_s: number | null;
-  /** True once an ephemeral agent's window closed. Such devices are hidden unless asked for. */
-  expired: boolean;
-  simulator: boolean;
-  status: DeviceStatus;
-  age_s: number | null;
-  last_seen: string | null;
-  beacon: Beacon;
-  current_job: string | null;
-  lock: { job_id: string; acquired_at: string | null } | null;
-};
-
-export type Job = {
-  job_id: string;
-  workload: string;
-  executor: "device" | "host";
-  /** `skipped`: claimed and closed without running anything (no device matched,
-   *  the app was not installed, a dependency skipped). Not a pass. */
-  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled" | "skipped";
-  /** Job ids this one waits for; it stays `waiting` until they are all done. */
-  depends_on?: string[] | null;
-  /** Whether a higher-priority job may ask this one to checkpoint and step aside. */
-  preemptible?: boolean;
-  claimed_by: string | null;
-  attempts: number;
-  max_attempts: number;
-  priority: number;
-  template_id: string | null;
-  lease_ttl_s: number;
-  lease_deadline: string | null;
-  lease_remaining_s: number | null;
-  duration_s: number | null;
-  last_error: string | null;
-  created_at: string | null;
-  claimed_at: string | null;
-  finished_at: string | null;
-  pool: string | null;
-  match: string | null;
-  device_id: string | null;
-  exclusive: boolean;
-  backend: string | null;
-  model: string | null;
-  app: string | null;
-  report_to: Record<string, string> | null;
 };
 
 export type Overview = {
@@ -252,38 +184,6 @@ export type Overview = {
   health: Health;
 };
 
-export type DeviceList = {
-  total: number;
-  /** Facets over every device, not the filtered set, so a filter never empties its own menu. */
-  pools: string[];
-  platforms: string[];
-  kinds: string[];
-  devices: Device[];
-};
-
-export type DeviceDetail = Device & {
-  counts: { results: number; beacons: number };
-  jobs: {
-    job_id: string;
-    workload: string;
-    executor: string;
-    status: Job["status"];
-    created_at: string | null;
-    finished_at: string | null;
-    attempts: number;
-    max_attempts: number;
-    last_error: string | null;
-  }[];
-  benchmarks: {
-    job_id: string;
-    at: string | null;
-    model: string;
-    quant: string | null;
-    backend: string;
-    metrics: Record<string, any> | null;
-  }[];
-};
-
 export type BeaconSample = {
   ts: string | null;
   battery_pct: number | null;
@@ -296,44 +196,6 @@ export type BeaconSample = {
 };
 
 export type BeaconHistory = { device_id: string; hours: number; count: number; samples: BeaconSample[] };
-
-export type JobList = {
-  page: number;
-  per_page: number;
-  total: number;
-  pages: number;
-  status_counts: Record<string, number>;
-  workloads: string[];
-  pools: string[];
-  jobs: Job[];
-};
-
-export type ResultRow = {
-  device_id: string;
-  iter: number;
-  created_at: string | null;
-  payload: Record<string, any>;
-};
-
-export type JobDetail = Job & {
-  spec: Record<string, any>;
-  parent: string | null;
-  children: Job[];
-  siblings: Job[];
-  results: ResultRow[];
-  beacons: (BeaconSample & { device_id: string })[];
-  artifacts: {
-    sha256: string;
-    name: string | null;
-    size: number | null;
-    created_at: string | null;
-    in_store: boolean;
-    role: "input" | "output";
-  }[];
-  locks: { device_id: string; acquired_at: string | null }[];
-  status_report: { target: string; state: string; posted: boolean; detail: string | null; created_at: string | null } | null;
-  derived_timeline: { at: string | null; what: string }[];
-};
 
 export type RecentResults = {
   results: {
@@ -351,6 +213,7 @@ export type RecentResults = {
 
 export type Locks = { locks: { device_id: string; job_id: string; acquired_at: string | null; held_s: number }[] };
 
+/** The health block inside /api/overview. The token banner reads /api/v1/health instead. */
 export type Health = {
   ok: boolean;
   instance: string;
@@ -367,85 +230,12 @@ export type Health = {
 
 // --- night-QA findings (mirrors src/findings.ts) ---
 
-export type FindingVerdict = "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed";
-
-export type RegressionState = "candidate" | "active" | "retired";
-
-export type FindingIssue = {
-  state: "dry_run" | "pending" | "filed" | "failed" | "capped" | "no_repo";
-  /** True means nothing was sent to GitHub. */
-  dry_run: boolean;
-  repo: string | null;
-  title: string;
-  body: string;
-  labels: string[];
-  url: string | null;
-  number: number | null;
-  detail: string;
-  at: string;
-};
-
-export type Finding = {
-  id: number;
-  fingerprint: string;
-  app: string;
-  build: string;
-  platform: string;
-  device_id: string;
-  job_id: string;
-  last_job_id: string | null;
-  mission_id: string;
-  /** An open string, like Device.platform: the workload gains checks before the dashboard learns their names. */
-  check: string;
-  severity: "high" | "medium" | "low";
-  title: string;
-  detail: string;
-  screen: string;
-  screen_name: string;
-  steps: string[];
-  replay: { kind: string; sha256: string | null; attempts: number; reproduced: number } | null;
-  /** "reproduced 2/2", "flaky 1/2", "crash log". */
-  replay_label: string;
-  artifacts: { shot?: string; sheet?: string; trajectory?: string; log?: string; replay?: string };
-  first_seen: string | null;
-  last_seen: string | null;
-  seen_count: number;
-  builds_seen: string[];
-  verdict: FindingVerdict | null;
-  verdict_note: string | null;
-  verdict_at: string | null;
-  duplicate_of: number | null;
-  issue: FindingIssue | null;
-  status: "open" | "triaged";
-  /** The regression test it became: a candidate once real, active (in the nightly) once fixed. */
-  regression: { state: RegressionState; kind: string; last_outcome: string | null } | null;
-};
-
-export type FindingDetail = Finding & {
-  duplicates: { id: number; title: string; seen_count: number }[];
-  duplicate_of_title: string | null;
-  regression: {
-    state: RegressionState;
-    kind: string;
-    asserts: "no_crash" | "replays";
-    runs: number;
-    activated_at: string | null;
-    last_run_at: string | null;
-    last_job_id: string | null;
-    last_outcome: string | null;
-    last_detail: string | null;
-  } | null;
-  history: { at: string | null; event: "verdict" | "regressed"; verdict: FindingVerdict | null; note: string | null; actor: string | null }[];
-};
-
-export type FindingList = {
-  findings: Finding[];
-  counts: { open: number; triaged: number; total: number };
-  /** Facets over every finding, not the filtered set. */
-  apps: string[];
-  checks: string[];
-  limit: number;
-};
+// Findings, one finding and the verdict come from /api/v1, so their types are
+// the generated client's. The precision table is not in /api/v1 and keeps its
+// own type below.
+export type { Finding, FindingDetail, FindingList } from "./client.js";
+import type { Finding as V1Finding } from "./client.js";
+export type FindingVerdict = NonNullable<V1Finding["verdict"]>;
 
 export type FindingPrecision = {
   floor: number;

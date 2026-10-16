@@ -80,6 +80,7 @@ async function call(method: string, url: string, o: Opts = {}) {
 
 let server: ChildProcess | undefined;
 let peer: ChildProcess | undefined;
+let guarded: ChildProcess | undefined;
 let log = "";
 try {
   server = spawn(process.execPath, [TSX, "src/server.ts"], {
@@ -339,13 +340,62 @@ try {
     check("/api/health tells the dashboard every read needs a token", health.status === 200 && health.body.auth === "tokens" && health.body.guard === true);
     check("the dashboard's reads carry X-Fleet-Token", (await call("GET", "/api/devices", { headers: { "x-fleet-token": READ } })).status === 200);
     check("and fail without it", (await call("GET", "/api/devices")).status === 401);
+    // The dashboard reads devices and jobs through the generated v1 client,
+    // which it gives the same header rather than a bearer token.
+    check("its /api/v1 reads carry X-Fleet-Token too", (await call("GET", "/api/v1/devices", { headers: { "x-fleet-token": READ } })).status === 200);
+    const mine = await call("POST", "/api/v1/jobs", { headers: { "x-fleet-token": ALICE, "x-fleet-source": "dash" }, body: spec });
+    check("and so does its enqueue, recorded as from the dashboard", mine.status === 201, `${mine.status} ${JSON.stringify(mine.body)}`);
+    const s = await call("GET", `/api/v1/jobs/${mine.body.job_id}/summary`, { token: READ });
+    check("as alice, via dash", s.body.requested_by === "alice" && s.body.source === "dash", JSON.stringify([s.body.requested_by, s.body.source]));
+  }
+
+  console.log("FLEET_DASH_TOKEN with auth off: /api/v1 cancel and retry carry the guard");
+  {
+    // A third collector: no tokens, only the dashboard's speed bump. v1 cancel
+    // and retry forward to the guarded unversioned routes, and used to drop
+    // the header on the way, so every one was a 401 whatever was sent.
+    const port3 = await freePort();
+    const BASE3 = `http://127.0.0.1:${port3}`;
+    guarded = spawn(process.execPath, [TSX, "src/server.ts"], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        FLEET_PORT: String(port3), FLEET_BIND: "127.0.0.1",
+        FLEET_DATA_DIR: path.join(dir, "data3"), FLEET_ARTIFACT_DIR: path.join(dir, "artifacts3"),
+        FLEET_LOG_FILE: path.join(dir, "collector3.log"), FLEET_TOKENS_FILE: path.join(dir, "tokens3.json"),
+        FLEET_AUTH: "", FLEET_AUTH_PROTOCOL: "", FLEET_DASH_TOKEN: "speed-bump",
+        FLEET_SWEEP_MS: "60000", FLEET_SCHEDULER_TICK_MS: "60000",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    guarded.stdout?.on("data", (d) => { log += d; });
+    guarded.stderr?.on("data", (d) => { log += d; });
+    await up(BASE3, guarded);
+    const at = async (method: string, url: string, body?: unknown, headers: Record<string, string> = {}) => {
+      const res = await fetch(`${BASE3}${url}`, {
+        method, headers: { ...headers, ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: res.status, body: (await res.json().catch(() => null)) as any };
+    };
+    await at("POST", "/devices/register", { ...device, device_id: "guard-dev" });
+    const job = await at("POST", "/api/v1/jobs", { ...spec, targets: { device_id: "guard-dev" } });
+    check("enqueue is open, as POST /jobs is", job.status === 201, `${job.status} ${JSON.stringify(job.body)}`);
+    const bare = await at("POST", `/api/v1/jobs/${job.body.job_id}/cancel`, {});
+    check("cancel without the token is refused, as unauthorized", bare.status === 401 && bare.body.error.code === "unauthorized", JSON.stringify(bare));
+    const wrong = await at("POST", `/api/v1/jobs/${job.body.job_id}/cancel`, {}, { "x-fleet-token": "nope" });
+    check("and with the wrong one", wrong.status === 401, String(wrong.status));
+    const ok = await at("POST", `/api/v1/jobs/${job.body.job_id}/cancel`, { reason: "cancelled from the dashboard" }, { "x-fleet-token": "speed-bump" });
+    check("cancel with the token works", ok.status === 200 && ok.body.cancelled?.[0] === job.body.job_id, `${ok.status} ${JSON.stringify(ok.body)}`);
+    const again = await at("POST", `/api/v1/jobs/${job.body.job_id}/retry`, {}, { "x-fleet-token": "speed-bump" });
+    check("and so does retry", again.status === 201 && again.body.retry_of === job.body.job_id, `${again.status} ${JSON.stringify(again.body)}`);
   }
 } catch (e) {
   failures++;
   console.error(`  FAIL  ${(e as Error).message}`);
 } finally {
   if (failures) console.error(`\n--- collector output ---\n${log.slice(-4000)}`);
-  for (const child of [server, peer]) {
+  for (const child of [server, peer, guarded]) {
     if (!child || child.exitCode !== null) continue;
     const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     child.kill("SIGTERM");

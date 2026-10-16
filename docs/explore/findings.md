@@ -226,7 +226,10 @@ finding.
 The same reads and the verdict are in the control API as `GET
 /api/v1/findings`, `GET /api/v1/findings/{id}` and `POST
 /api/v1/findings/{id}/verdict` (scope `run`, audited); both call the same
-functions. See [Control API](../api.md#findings).
+functions, and the dashboard uses the v1 ones. The older list, detail and
+verdict routes still answer, with `Deprecation` headers naming their
+successors; precision, digest and issues are only here. See [Control
+API](../api.md#findings).
 
 ### Regression runs (executors)
 

@@ -1,7 +1,8 @@
 // The shelf. What is online, what it is doing, and how to get to it.
 import { useState } from "preact/hooks";
-import { useApi, type Device, type DeviceList } from "../api.js";
+import { useLoad, type Device } from "../api.js";
 import { ArtNoDevices } from "../art.js";
+import { allDevices, read } from "../client.js";
 import { DeviceArt } from "../deviceArt.js";
 import { deviceArtKind } from "../deviceKind.js";
 import { Icon } from "../icons.js";
@@ -324,19 +325,18 @@ export function Devices() {
   // because the choice lives in the URL, a link to either stays that view.
   const view = q.get("view") === "table" ? "table" : "shelf";
 
-  const params = new URLSearchParams();
-  for (const [k, v] of [
-    ["status", status],
-    ["pool", pool],
-    ["platform", platform],
-    ["kind", kind],
-    ["q", search],
-    ["simulator", hideSims ? "false" : ""],
-  ] as const)
-    if (v) params.set(k, v);
+  const query = {
+    status: status || undefined,
+    pool: pool || undefined,
+    platform: platform || undefined,
+    kind: kind || undefined,
+    q: search || undefined,
+    simulator: hideSims ? false : undefined,
+  };
 
-  const state = useApi<DeviceList>(
-    `/api/devices${params.toString() ? `?${params}` : ""}`,
+  const state = useLoad(
+    `devices ${JSON.stringify(query)}`,
+    () => read(allDevices(query)),
     ["device", "beacon", "job", "lock"],
     30_000,
   );
@@ -359,13 +359,13 @@ export function Devices() {
                 onClear={() => setQuery({ status: null, pool: null, platform: null, kind: null, q: null, simulator: null })}
               >
                 <Select label="status" value={status} options={["online", "stale", "offline"]} onChange={(v) => setQuery({ status: v })} />
-                <Select label="pool" value={pool} options={d.pools} onChange={(v) => setQuery({ pool: v })} />
+                <Select label="pool" value={pool} options={d.facets.pools} onChange={(v) => setQuery({ pool: v })} />
                 {/* Faceted from the response, never hard-coded: the platform set is
                     open, so a literal list here would hide every device the fleet
                     learned to run on after this file was written. */}
-                <Select label="platform" value={platform} options={d.platforms} onChange={(v) => setQuery({ platform: v })} />
-                {d.kinds.length > 1 && (
-                  <Select label="kind" value={kind} options={d.kinds} onChange={(v) => setQuery({ kind: v })} />
+                <Select label="platform" value={platform} options={d.facets.platforms} onChange={(v) => setQuery({ platform: v })} />
+                {d.facets.kinds.length > 1 && (
+                  <Select label="kind" value={kind} options={d.facets.kinds} onChange={(v) => setQuery({ kind: v })} />
                 )}
                 <Search label="find" value={search} placeholder="id, model, SoC" onChange={(v) => setQuery({ q: v })} />
                 <label class="field checkbox">
@@ -384,25 +384,25 @@ export function Devices() {
               </Filters>
             </Panel>
 
-            <Panel title={`${d.devices.length} device${d.devices.length === 1 ? "" : "s"}`}>
-              {d.devices.length === 0 ? (
+            <Panel title={`${d.items.length} device${d.items.length === 1 ? "" : "s"}`}>
+              {d.items.length === 0 ? (
                 <ArtNoDevices
                   caption={active ? "No device matches these filters." : "No devices yet. Scan the code to enrol one."}
                 />
               ) : view === "shelf" ? (
-                <Shelf devices={d.devices} onDone={state.reload} />
+                <Shelf devices={d.items} onDone={state.reload} />
               ) : (
-                <Table devices={d.devices} onDone={state.reload} />
+                <Table devices={d.items} onDone={state.reload} />
               )}
             </Panel>
 
             <Panel title="Pools">
               <div class="stats">
-                {d.pools.length === 0 ? (
+                {d.facets.pools.length === 0 ? (
                   <p class="empty">No pools yet.</p>
                 ) : (
-                  d.pools.map((p) => (
-                    <Stat key={p} label={p} value={d.devices.filter((dev) => dev.pools.includes(p)).length} />
+                  d.facets.pools.map((p) => (
+                    <Stat key={p} label={p} value={d.items.filter((dev) => dev.pools.includes(p)).length} />
                   ))
                 )}
               </div>

@@ -439,5 +439,10 @@ export function forward(app: FastifyInstance, from: FastifyRequest | null, opts:
   if (ctx?.actor) headers["x-fleet-actor"] = ctx.actor;
   if (ctx?.source) headers["x-fleet-source"] = ctx.source;
   if (ctx?.verified) headers["x-fleet-verified"] = "1";
+  // FLEET_DASH_TOKEN's guard (api/guard.ts) reads this header on the route
+  // forwarded *to*. Dropping it here made every /api/v1 cancel and retry a 401
+  // on a collector with the guard set, whatever the caller sent.
+  const dash = from?.headers["x-fleet-token"];
+  if (typeof dash === "string" && dash) headers["x-fleet-token"] = dash;
   return app.inject({ ...opts, headers: { ...(opts.headers ?? {}), ...headers } });
 }

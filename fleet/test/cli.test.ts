@@ -166,7 +166,8 @@ test("findings, finding --flow and verdict: the morning brief and a finding beco
   const brief = await fleet(["findings", "--since", "24h", "--app", "cliapp", "--json"]);
   assert.equal(brief.code, 0, brief.stderr);
   const page = json(brief);
-  assert.deepEqual(Object.keys(page).sort(), ["items", "page", "pages", "per_page", "total"]);
+  assert.deepEqual(Object.keys(page).sort(), ["facets", "items", "page", "pages", "per_page", "total"]);
+  assert.ok(page.facets.apps.includes("cliapp"));
   assert.equal(page.items[0].id, id);
   assert.equal(page.items[0].verdict, null);
 

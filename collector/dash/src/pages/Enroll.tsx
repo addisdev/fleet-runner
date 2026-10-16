@@ -6,7 +6,8 @@
 // panel that watches the registry and tells you the moment the device appears.
 import { useEffect, useState } from "preact/hooks";
 import qrcode from "qrcode-generator";
-import { useApi, type DeviceList } from "../api.js";
+import { useApi } from "../api.js";
+import { allDevices } from "../client.js";
 import { onLive } from "../live.js";
 import { Link, Loaded, Panel, Pill, bytes, clock } from "../ui.js";
 
@@ -61,8 +62,8 @@ export function Enroll() {
   useEffect(() => {
     if (!before) return;
     const check = async () => {
-      const list = (await (await fetch("/api/devices")).json()) as DeviceList;
-      const fresh = list.devices.map((d) => d.device_id).filter((id) => !before.has(id));
+      const list = await allDevices();
+      const fresh = list.items.map((d) => d.device_id).filter((id) => !before.has(id));
       if (fresh.length) setArrived(fresh);
     };
     void check();

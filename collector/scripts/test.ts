@@ -128,10 +128,17 @@ if (!existsSync(path.join(ROOT, "dash/node_modules"))) {
   failed = true;
 }
 
+// The dashboard reads devices and jobs through the generated /api/v1 client.
+// The old routes still answer, so a screen that went back to them would work
+// and say so only in a header; this reads the source for that instead.
+step("the dashboard calls no deprecated route");
+if (!(await run(process.execPath, [TSX, "scripts/check-dash-requests.ts"]))) failed = true;
+
 // --- 3. the icon set keeps up with the workloads -------------------------
 // WORKLOAD_ICON says it covers every workload the collector accepts, and
-// nothing but this step enforces it. The dashboard deliberately does not
-// import collector types, so the two lists can only be compared as text —
+// nothing but this step enforces it. The dashboard imports the generated
+// client and nothing else of the collector's, so the two lists can only be
+// compared as text —
 // which means a regex that stops matching has to fail the step, not pass it
 // quietly, or the check silently stops checking.
 step("every workload has an icon");

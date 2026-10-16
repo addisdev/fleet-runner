@@ -231,7 +231,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Devices.",
+            "description": "Devices, and the facets a filter menu is built from.",
             "content": {
               "application/json": {
                 "schema": {
@@ -545,6 +545,15 @@
             }
           },
           {
+            "name": "has_error",
+            "in": "query",
+            "required": false,
+            "description": "true: only jobs with a last_error.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "page",
             "in": "query",
             "required": false,
@@ -569,7 +578,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Jobs.",
+            "description": "Jobs, and the facets a filter menu is built from.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1377,7 +1386,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Findings.",
+            "description": "Findings, and the facets a filter menu is built from.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2194,13 +2203,65 @@
               "null"
             ]
           },
+          "mem_method": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "How mem_mb was measured: iOS phys_footprint and Android PSS are different quantities."
+          },
+          "process_alive": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
           "job_id": {
             "type": [
               "string",
               "null"
             ]
+          },
+          "busy": {
+            "description": "Set when the device is running a job for a different collector.",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "collector": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "job_id",
+                  "collector"
+                ]
+              }
+            ]
           }
-        }
+        },
+        "required": [
+          "battery_pct",
+          "charging",
+          "thermal",
+          "mem_mb",
+          "mem_method",
+          "process_alive",
+          "job_id",
+          "busy"
+        ]
       },
       "CancelInput": {
         "type": "object",
@@ -2404,14 +2465,24 @@
         "required": [
           "device_id",
           "name",
+          "notes",
           "descriptor",
           "pools",
+          "pools_reported",
+          "pools_override",
           "capabilities",
+          "last_net",
+          "ttl_s",
+          "expired",
           "platform",
           "kind",
           "simulator",
           "status",
-          "last_seen"
+          "age_s",
+          "last_seen",
+          "beacon",
+          "current_job",
+          "lock"
         ]
       },
       "DeviceDetail": {
@@ -2423,23 +2494,123 @@
             "type": "object",
             "properties": {
               "counts": {
-                "type": "object"
+                "type": "object",
+                "properties": {
+                  "results": {
+                    "type": "integer"
+                  },
+                  "beacons": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "results",
+                  "beacons"
+                ]
               },
               "jobs": {
                 "type": "array",
                 "items": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "job_id": {
+                      "type": "string"
+                    },
+                    "workload": {
+                      "type": "string"
+                    },
+                    "executor": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "finished_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "attempts": {
+                      "type": "integer"
+                    },
+                    "max_attempts": {
+                      "type": "integer"
+                    },
+                    "last_error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "job_id",
+                    "workload",
+                    "executor",
+                    "status",
+                    "created_at",
+                    "finished_at",
+                    "attempts",
+                    "max_attempts",
+                    "last_error"
+                  ]
                 }
               },
               "benchmarks": {
                 "type": "array",
                 "items": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "job_id": {
+                      "type": "string"
+                    },
+                    "at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "model": {
+                      "type": "string"
+                    },
+                    "quant": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "backend": {
+                      "type": "string"
+                    },
+                    "metrics": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "job_id",
+                    "at",
+                    "model",
+                    "quant",
+                    "backend",
+                    "metrics"
+                  ]
                 }
               }
             },
             "required": [
-              "jobs"
+              "counts",
+              "jobs",
+              "benchmarks"
             ]
           }
         ]
@@ -2464,6 +2635,35 @@
           },
           "pages": {
             "type": "integer"
+          },
+          "facets": {
+            "type": "object",
+            "properties": {
+              "pools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "platforms": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "kinds": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "pools",
+              "platforms",
+              "kinds"
+            ],
+            "description": "Over every device, not the filtered set, so choosing a filter never empties its own menu."
           }
         },
         "required": [
@@ -2471,7 +2671,8 @@
           "page",
           "per_page",
           "total",
-          "pages"
+          "pages",
+          "facets"
         ]
       },
       "DeviceOutcome": {
@@ -2723,7 +2924,25 @@
           },
           "artifacts": {
             "type": "object",
-            "description": "Artifact sha256s by role: shot, sheet, trajectory, log, replay."
+            "properties": {
+              "shot": {
+                "type": "string"
+              },
+              "sheet": {
+                "type": "string"
+              },
+              "trajectory": {
+                "type": "string"
+              },
+              "log": {
+                "type": "string"
+              },
+              "replay": {
+                "type": "string"
+              }
+            },
+            "required": [],
+            "description": "Artifact sha256s by role: shot, sheet, trajectory, log, replay. Absent roles were not posted."
           },
           "first_seen": {
             "type": [
@@ -2776,11 +2995,79 @@
             ]
           },
           "issue": {
-            "type": [
-              "object",
-              "null"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "dry_run",
+                      "pending",
+                      "filed",
+                      "failed",
+                      "capped",
+                      "no_repo"
+                    ]
+                  },
+                  "dry_run": {
+                    "type": "boolean",
+                    "description": "True means nothing was sent to GitHub."
+                  },
+                  "repo": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "url": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "number": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "detail": {
+                    "type": "string"
+                  },
+                  "at": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "state",
+                  "dry_run",
+                  "repo",
+                  "title",
+                  "body",
+                  "labels",
+                  "url",
+                  "number",
+                  "detail",
+                  "at"
+                ]
+              }
             ],
-            "description": "The GitHub issue it would file, or did; dry_run true means nothing was sent."
+            "description": "The GitHub issue it would file, or did. Fleet Runner only ever creates issues; it never reads them back."
           },
           "status": {
             "enum": [
@@ -3188,6 +3475,8 @@
               }
             },
             "required": [
+              "duplicates",
+              "duplicate_of_title",
               "counts",
               "evidence",
               "replay_flow",
@@ -3218,6 +3507,48 @@
           },
           "pages": {
             "type": "integer"
+          },
+          "facets": {
+            "type": "object",
+            "properties": {
+              "apps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "checks": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "open": {
+                    "type": "integer"
+                  },
+                  "triaged": {
+                    "type": "integer"
+                  },
+                  "total": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "open",
+                  "triaged",
+                  "total"
+                ]
+              }
+            },
+            "required": [
+              "apps",
+              "checks",
+              "counts"
+            ],
+            "description": "apps and checks over every finding, so a filter never empties its own menu; counts over the app, check and since filters, before state and verdict."
           }
         },
         "required": [
@@ -3225,7 +3556,8 @@
           "page",
           "per_page",
           "total",
-          "pages"
+          "pages",
+          "facets"
         ]
       },
       "FindingVerdictInput": {
@@ -3598,9 +3930,30 @@
           "workload",
           "executor",
           "status",
+          "claimed_by",
           "attempts",
           "max_attempts",
+          "priority",
+          "template_id",
+          "depends_on",
+          "lease_ttl_s",
+          "lease_deadline",
+          "lease_remaining_s",
+          "duration_s",
+          "last_error",
           "created_at",
+          "claimed_at",
+          "finished_at",
+          "pool",
+          "match",
+          "device_id",
+          "wants_executor",
+          "exclusive",
+          "preemptible",
+          "backend",
+          "model",
+          "app",
+          "report_to",
           "requested_by",
           "source"
         ]
@@ -3760,13 +4113,62 @@
               "locks": {
                 "type": "array",
                 "items": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "device_id": {
+                      "type": "string"
+                    },
+                    "acquired_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "device_id",
+                    "acquired_at"
+                  ]
                 }
               },
               "status_report": {
-                "type": [
-                  "object",
-                  "null"
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "target": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string"
+                      },
+                      "posted": {
+                        "type": "boolean"
+                      },
+                      "detail": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "created_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "target",
+                      "state",
+                      "posted",
+                      "detail",
+                      "created_at"
+                    ]
+                  }
                 ]
               },
               "derived_timeline": {
@@ -3793,8 +4195,15 @@
             },
             "required": [
               "spec",
+              "parent",
+              "children",
+              "siblings",
               "results",
-              "artifacts"
+              "beacons",
+              "artifacts",
+              "locks",
+              "status_report",
+              "derived_timeline"
             ]
           }
         ]
@@ -3819,6 +4228,56 @@
           },
           "pages": {
             "type": "integer"
+          },
+          "facets": {
+            "type": "object",
+            "properties": {
+              "status_counts": {
+                "type": "object",
+                "properties": {
+                  "waiting": {
+                    "type": "integer"
+                  },
+                  "queued": {
+                    "type": "integer"
+                  },
+                  "claimed": {
+                    "type": "integer"
+                  },
+                  "done": {
+                    "type": "integer"
+                  },
+                  "failed": {
+                    "type": "integer"
+                  },
+                  "cancelled": {
+                    "type": "integer"
+                  },
+                  "skipped": {
+                    "type": "integer"
+                  }
+                },
+                "required": []
+              },
+              "workloads": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "pools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "status_counts",
+              "workloads",
+              "pools"
+            ],
+            "description": "Over the whole table, not this page: jobs per status, and every workload and pool a job has named."
           }
         },
         "required": [
@@ -3826,7 +4285,8 @@
           "page",
           "per_page",
           "total",
-          "pages"
+          "pages",
+          "facets"
         ]
       },
       "JobSpecInput": {
@@ -4447,12 +4907,71 @@
               "string",
               "null"
             ]
+          },
+          "next_run_in_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "prev_expected": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When it should last have fired."
+          },
+          "missed": {
+            "type": "boolean",
+            "description": "Enabled, has fired before, and its last expected firing did not happen."
+          },
+          "late_by_s": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "workload": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "executor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "fanout": {
+            "type": "boolean"
+          },
+          "pool": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "template": {
+            "type": "object",
+            "description": "The job spec each firing enqueues."
           }
         },
         "required": [
           "id",
           "cron",
-          "enabled"
+          "enabled",
+          "last_run",
+          "next_run",
+          "next_run_in_s",
+          "prev_expected",
+          "missed",
+          "late_by_s",
+          "workload",
+          "executor",
+          "fanout",
+          "pool",
+          "template"
         ]
       },
       "ScheduleList": {

@@ -5,11 +5,14 @@
 // before anything is enqueued, and the equivalent curl is shown throughout — so
 // the form teaches the API rather than hiding it.
 import { useEffect, useState } from "preact/hooks";
-import { api, useApi, type DeviceList } from "../api.js";
+import { useLoad } from "../api.js";
+import { allDevices, asSpec, change, fleet, read } from "../client.js";
 import { mutate, useMutation } from "../mutate.js";
 import { navigate, useQuery } from "../router.js";
 import { Actions, Button, ErrorBox, Field, Json, Loaded, Panel, Pill, Select } from "../ui.js";
 
+// The generated Template says only that spec is an object; the composer reads
+// a saved spec the way it reads its own free-form half, as loosely typed JSON.
 type Template = { id: string; name: string | null; spec: Record<string, any> };
 
 // Defaults per workload, matching schemas/job.schema.json. These are starting
@@ -94,8 +97,12 @@ function stamp(workload: string) {
 
 export function Compose() {
   const [q] = useQuery();
-  const devices = useApi<DeviceList>("/api/devices", ["device"]);
-  const templates = useApi<{ templates: Template[] }>("/api/templates", ["template"]);
+  const devices = useLoad("devices", () => read(allDevices()), ["device"]);
+  const templates = useLoad(
+    "templates",
+    () => read(fleet.listTemplates({ per_page: 500 })).then((t) => ({ templates: t.items as Template[] })),
+    ["template"],
+  );
 
   const [workload, setWorkload] = useState(q.get("workload") ?? "benchmark");
   const [jobId, setJobId] = useState(stamp(q.get("workload") ?? "benchmark"));
@@ -190,7 +197,9 @@ export function Compose() {
   }, [pool, matchExpr, deviceId, executor, workload]);
 
   const enqueue = useMutation(async () => {
-    const out = await mutate<{ ok: boolean; job_id?: string; fanout?: string[] }>("POST", "/api/jobs", spec);
+    // /api/v1 checks the spec strictly: an unknown top-level field or params
+    // the workload's manifest does not allow is refused, with the paths named.
+    const out = await change(fleet.createJob(asSpec(spec ?? {})));
     // Fan-out returns children; a single job returns its id. Land on whichever
     // page can actually show what just happened.
     if (out.fanout?.length) navigate(`/jobs?q=${encodeURIComponent(jobId)}`);
@@ -208,7 +217,7 @@ export function Compose() {
   });
 
   const curl = spec
-    ? `curl -X POST ${location.origin}/jobs \\\n  -H 'content-type: application/json' \\\n  -d '${JSON.stringify(spec)}'`
+    ? `curl -X POST ${location.origin}/api/v1/jobs \\\n  -H 'content-type: application/json' \\\n  -d '${JSON.stringify(spec)}'`
     : "";
 
   return (
@@ -235,11 +244,11 @@ export function Compose() {
           {(d) => (
             <>
               <div class="filters">
-                <Select label="pool" value={pool} options={d.pools} onChange={setPool} />
+                <Select label="pool" value={pool} options={d.facets.pools} onChange={setPool} />
                 <Select
                   label="pin to device"
                   value={deviceId}
-                  options={d.devices.map((dev) => dev.device_id)}
+                  options={d.items.map((dev) => dev.device_id)}
                   onChange={setDeviceId}
                 />
                 <Field label="match expression" hint="e.g. ram_mb >= 4000 && os ~ 'android'">

@@ -100,7 +100,8 @@ without a version note in the changelog:
       "status": "open", "issue": null, "regression": null
     }
   ],
-  "page": 1, "per_page": 50, "total": 1, "pages": 1
+  "page": 1, "per_page": 50, "total": 1, "pages": 1,
+  "facets": { "apps": ["greenfolio"], "checks": ["crash"], "counts": { "open": 1, "triaged": 0, "total": 1 } }
 }
 ```
 
@@ -116,7 +117,9 @@ The rules for reading it:
 - `regression` is `null`, or the state of the test it became: `candidate`
   (real), `active` (fixed, in the nightly) or `retired`.
 - The list envelope is the control API's; `--page N` and `--limit N` page it,
-  and `total` says how many match. The Finding schema in `openapi.json` is the
+  and `total` says how many match. `facets` lists every app and check (not
+  only the filtered ones) and counts open and triaged findings for the app,
+  check and `since` asked for. The Finding schema in `openapi.json` is the
   full contract.
 
 Then `fleetr finding ID --flow repro.yaml` gives the flow to reproduce it with

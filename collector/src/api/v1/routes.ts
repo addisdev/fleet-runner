@@ -33,6 +33,7 @@ import { CATALOG, catalogEntry, type CatalogEntry } from "../../workloads/catalo
 import { isTextual } from "../../media-type.js";
 import { AGE, capabilityMatches, deviceCapabilities, inClause, iso, isExpired, ONLINE_S, paging, parse, sha256Refs } from "../shared.js";
 import { needsAdmin, notOwned } from "../policy.js";
+import { dashTokenOk } from "../guard.js";
 import { schedulesView } from "../system.js";
 import { SCHEMAS } from "./schemas.js";
 import { isSkipError } from "../../skip.js";
@@ -126,7 +127,9 @@ async function inner<T>(app: FastifyInstance, req: FastifyRequest, method: "GET"
   const body = res.body ? (JSON.parse(res.body) as Record<string, unknown>) : {};
   if (res.statusCode >= 400) {
     const message = typeof body.error === "string" ? body.error : `upstream ${res.statusCode}`;
-    const code: ErrorCode = res.statusCode === 404 ? "not_found" : res.statusCode === 409 ? "conflict" : res.statusCode === 400 ? "bad_request" : "internal";
+    const code: ErrorCode =
+      res.statusCode === 404 ? "not_found" : res.statusCode === 409 ? "conflict" : res.statusCode === 400 ? "bad_request"
+        : res.statusCode === 401 ? "unauthorized" : res.statusCode === 403 ? "forbidden" : "internal";
     throw new ApiError(res.statusCode, code, message);
   }
   return body as T;
@@ -545,10 +548,12 @@ export const ROUTES: Route[] = [
       { name: "expired", in: "query", type: "boolean", description: "Include expired ephemeral agents." },
       ...PAGE,
     ],
-    responses: [{ status: 200, description: "Devices.", schema: "list:Device" }],
+    responses: [{ status: 200, description: "Devices, and the facets a filter menu is built from.", schema: "DeviceList" }],
     handler: async ({ app, req, q }) => {
-      const body = await inner<{ devices: unknown[] }>(app, req, "GET", `/api/devices${qs(q, ["status", "pool", "platform", "kind", "simulator", "q", "expired"])}`);
-      return pageOf(body.devices, q);
+      const body = await inner<{ devices: unknown[]; pools: string[]; platforms: string[]; kinds: string[] }>(
+        app, req, "GET", `/api/devices${qs(q, ["status", "pool", "platform", "kind", "simulator", "q", "expired"])}`,
+      );
+      return { ...pageOf(body.devices, q), facets: { pools: body.pools, platforms: body.platforms, kinds: body.kinds } };
     },
   },
   {
@@ -617,17 +622,24 @@ export const ROUTES: Route[] = [
       { name: "q", in: "query", type: "string", description: "Substring of the job id." },
       { name: "from", in: "query", type: "string", description: "Created at or after (ISO 8601)." },
       { name: "to", in: "query", type: "string", description: "Created at or before (ISO 8601)." },
+      { name: "has_error", in: "query", type: "boolean", description: "true: only jobs with a last_error." },
       ...PAGE,
     ],
-    responses: [{ status: 200, description: "Jobs.", schema: "list:Job" }],
+    responses: [{ status: 200, description: "Jobs, and the facets a filter menu is built from.", schema: "JobList" }],
     handler: async ({ app, req, q }) => {
       const query: Query = { ...q };
       if (q.mine === true) query.requested_by = authOf(req).actor ?? "\u0000nobody";
-      const body = await inner<{ jobs: unknown[]; page: number; per_page: number; total: number }>(
+      const body = await inner<{
+        jobs: unknown[]; page: number; per_page: number; total: number;
+        status_counts: Record<string, number>; workloads: string[]; pools: string[];
+      }>(
         app, req, "GET",
-        `/api/jobs${qs(query, ["status", "workload", "executor", "device", "pool", "requested_by", "source", "q", "from", "to", "page", "per_page"])}`,
+        `/api/jobs${qs(query, ["status", "workload", "executor", "device", "pool", "requested_by", "source", "q", "from", "to", "has_error", "page", "per_page"])}`,
       );
-      return list(body.jobs, body.page, body.per_page, body.total);
+      return {
+        ...list(body.jobs, body.page, body.per_page, body.total),
+        facets: { status_counts: body.status_counts, workloads: body.workloads, pools: body.pools },
+      };
     },
   },
   {
@@ -868,7 +880,7 @@ export const ROUTES: Route[] = [
       { name: "since", in: "query", type: "string", description: "Last seen at or after: ISO 8601, or a span back from now such as 90m, 24h, 7d." },
       ...PAGE,
     ],
-    responses: [{ status: 200, description: "Findings.", schema: "list:Finding" }, E400],
+    responses: [{ status: 200, description: "Findings, and the facets a filter menu is built from.", schema: "FindingList" }, E400],
     handler: async ({ q }) => {
       const { page, per_page, offset } = paging(q as Record<string, string | undefined>, 50, 500);
       const out = listFindings({
@@ -877,7 +889,8 @@ export const ROUTES: Route[] = [
         limit: per_page, offset,
       });
       if (!out.ok) throw new ApiError(400, "bad_request", out.error);
-      return list(out.body.findings, page, per_page, out.body.total);
+      const b = out.body;
+      return { ...list(b.findings, page, per_page, b.total), facets: { apps: b.apps, checks: b.checks, counts: b.counts } };
     },
   },
   {
@@ -903,6 +916,11 @@ export const ROUTES: Route[] = [
     ],
     handler: async ({ req, p }) => {
       const id = findingId(p.id);
+      // FLEET_DASH_TOKEN's speed bump, as on the dashboard's older route and on
+      // cancel (which forwards to a guarded route): a verdict decides what the
+      // nightly runs.
+      if (!dashTokenOk(req))
+        throw new ApiError(401, "unauthorized", "X-Fleet-Token required (FLEET_DASH_TOKEN is set on the collector)", "send the dashboard token as X-Fleet-Token");
       const body = parseVerdictBody(req.body);
       if (!body.ok) throw new ApiError(400, "bad_request", body.error);
       const ctx = authOf(req);

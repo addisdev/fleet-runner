@@ -58,6 +58,17 @@ be composed, enqueued, cancelled, retried and reprioritised; devices can be
 renamed, annotated and re-pooled; schedules enabled, fired now and deleted;
 artifacts uploaded and garbage-collected.
 
+**The composer enqueues through `POST /api/v1/jobs`**, so the spec is checked
+strictly: an unknown top-level field, or params the workload's manifest does
+not allow, is refused with each problem named by path, where the older
+`POST /api/jobs` took the spec and let the job fail later. The curl it shows
+is the same request. Jobs it enqueues record `source: dash`.
+
+**Findings read and judge through `/api/v1/findings`**, so a verdict from the
+dashboard is the same call, with the same refusals, as `fleetr verdict` and
+`fleet_verdict`. The precision table still reads `/api/findings/precision`,
+which has no `/api/v1` counterpart.
+
 Alerts appear as a banner on every screen. The layout works on a phone, and `?`
 lists the keyboard shortcuts — `g j` jobs, `g d` devices, `g f` findings, `g n` new job,
 `/` search, and on a finding `r`, `d`, `n`, `a` or `f` for its verdict (real,

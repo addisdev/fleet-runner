@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
-import { useApi, type BeaconHistory, type DeviceDetail as Detail } from "../api.js";
+import { useApi, useLoad, type BeaconHistory, type DeviceDetail as Detail } from "../api.js";
+import { fleet, read } from "../client.js";
 import { ThermalStrip, TimeSeries, runs } from "../chart.js";
 import { mutate, useMutation } from "../mutate.js";
 import { navigate, useQuery } from "../router.js";
@@ -98,7 +99,8 @@ export function DeviceDetail({ id }: { id: string }) {
   const [q, setQuery] = useQuery();
   const hours = Number(q.get("hours") ?? 24) || 24;
 
-  const state = useApi<Detail>(`/api/devices/${encodeURIComponent(id)}`, ["device", "beacon", "job", "lock"], 30_000);
+  const state = useLoad<Detail>(`device ${id}`, () => read(fleet.getDevice(id)), ["device", "beacon", "job", "lock"], 30_000);
+  // Beacon history is not in /api/v1 yet.
   const beacons = useApi<BeaconHistory>(`/api/devices/${encodeURIComponent(id)}/beacons?hours=${hours}`, ["beacon"], 60_000);
 
   return (
@@ -216,29 +218,34 @@ export function DeviceDetail({ id }: { id: string }) {
                       <th class="right">Peak mem</th>
                       <th>When</th>
                     </tr>
-                    {d.benchmarks.map((b) => (
-                      <tr key={b.job_id}>
-                        <td>
-                          <Link to={`/jobs/${encodeURIComponent(b.job_id)}`}>
-                            {b.model}
-                            {b.quant ? ` ${b.quant}` : ""}
-                          </Link>
-                        </td>
-                        <td class="dim">{b.backend}</td>
-                        <td class="num">{num(b.metrics?.prefill_tok_s)}</td>
-                        <td class="num">
-                          <strong>{num(b.metrics?.decode_tok_s)}</strong>
-                        </td>
-                        <td class="num">{num(b.metrics?.ttft_ms, 0)}</td>
-                        {/* Memory always carries the method that produced it: iOS
-                            phys_footprint and Android PSS are different quantities. */}
-                        <td class="num">
-                          {b.metrics?.peak_mem_mb ?? "—"}{" "}
-                          <span class="faint">{b.metrics?.mem_method ?? "?"}</span>
-                        </td>
-                        <td class="dim">{clock(b.at)}</td>
-                      </tr>
-                    ))}
+                    {d.benchmarks.map((b) => {
+                      // Metrics are whatever the runner reported; num() and the
+                      // "—" fallbacks below are what make a missing one safe.
+                      const m = b.metrics as Record<string, any> | null;
+                      return (
+                        <tr key={b.job_id}>
+                          <td>
+                            <Link to={`/jobs/${encodeURIComponent(b.job_id)}`}>
+                              {b.model}
+                              {b.quant ? ` ${b.quant}` : ""}
+                            </Link>
+                          </td>
+                          <td class="dim">{b.backend}</td>
+                          <td class="num">{num(m?.prefill_tok_s)}</td>
+                          <td class="num">
+                            <strong>{num(m?.decode_tok_s)}</strong>
+                          </td>
+                          <td class="num">{num(m?.ttft_ms, 0)}</td>
+                          {/* Memory always carries the method that produced it: iOS
+                              phys_footprint and Android PSS are different quantities. */}
+                          <td class="num">
+                            {m?.peak_mem_mb ?? "—"}{" "}
+                            <span class="faint">{m?.mem_method ?? "?"}</span>
+                          </td>
+                          <td class="dim">{clock(b.at)}</td>
+                        </tr>
+                      );
+                    })}
                   </table>
                 </div>
               )}

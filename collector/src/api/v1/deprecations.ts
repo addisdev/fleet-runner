@@ -15,7 +15,7 @@ import type { FastifyInstance } from "fastify";
 /** 2026-10-14, when /api/v1 shipped, as the RFC 9745 `@<epoch seconds>` form. */
 const SINCE = `@${Math.floor(Date.UTC(2026, 9, 14) / 1000)}`;
 
-const SUCCESSORS: [method: string, pattern: RegExp, successor: (m: RegExpExecArray) => string][] = [
+export const SUCCESSORS: [method: string, pattern: RegExp, successor: (m: RegExpExecArray) => string][] = [
   ["GET", /^\/api\/devices$/, () => "/api/v1/devices"],
   ["GET", /^\/api\/devices\/([^/]+)$/, (m) => `/api/v1/devices/${m[1]}`],
   ["GET", /^\/api\/jobs$/, () => "/api/v1/jobs"],
@@ -26,6 +26,11 @@ const SUCCESSORS: [method: string, pattern: RegExp, successor: (m: RegExpExecArr
   ["GET", /^\/api\/results$/, () => "/api/v1/results"],
   ["GET", /^\/devices$/, () => "/api/v1/devices"],
   ["GET", /^\/schedules$/, () => "/api/v1/schedules"],
+  // The list, one finding and the verdict. /api/findings/precision, /digest
+  // and /issues have no successor, and the id pattern leaves them alone.
+  ["GET", /^\/api\/findings$/, () => "/api/v1/findings"],
+  ["GET", /^\/api\/findings\/(\d+)$/, (m) => `/api/v1/findings/${m[1]}`],
+  ["POST", /^\/api\/findings\/(\d+)\/verdict$/, (m) => `/api/v1/findings/${m[1]}/verdict`],
 ];
 
 /** Must run before any route is declared, like every root hook. */
