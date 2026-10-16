@@ -28,6 +28,7 @@ export const VERDICT_LABEL: Record<FindingVerdict, string> = {
   duplicate: "Duplicate",
   not_a_bug: "Not a bug",
   agent_mistake: "Agent's mistake",
+  fixed: "Fixed",
 };
 
 const VERDICT_PILL: Record<FindingVerdict, string> = {
@@ -35,6 +36,7 @@ const VERDICT_PILL: Record<FindingVerdict, string> = {
   duplicate: "queued",
   not_a_bug: "cancelled",
   agent_mistake: "cancelled",
+  fixed: "done",
 };
 
 /** reproduced N/N is solid, flaky is a warning, a crash log is its own evidence. */
@@ -231,7 +233,9 @@ const typing = (t: EventTarget | null) => {
 /**
  * The four buttons, the note, and the duplicate picker.
  *
- * r / d / n / a do the same as the buttons. They are ignored straight after a
+ * r / d / n / a / f do the same as the buttons. Fixed is offered only once a
+ * finding is real (the collector refuses it otherwise): it makes the finding's
+ * replay flow a regression test in the app's nightly. They are ignored straight after a
  * `g`, because "g r" is already "go to Results" and a shortcut that filed a
  * verdict on the way out of the page would be a nasty surprise.
  */
@@ -243,6 +247,8 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
   const others = useApi<FindingList>(picking ? `/api/findings?app=${encodeURIComponent(f.app)}&status=all&limit=200` : null);
 
   const [pending, setPending] = useState<FindingVerdict | null>(null);
+  // Fixed follows real, or a regression test that brought the finding back.
+  const canFix = f.verdict === "real" || f.verdict === "fixed" || f.regression?.state === "active";
   const send = useMutation(async () => {
     const body: Record<string, unknown> = { verdict: pending, note: note.trim() || null };
     if (pending === "duplicate") body.duplicate_of = Number(dupOf);
@@ -288,7 +294,8 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
         afterG = false;
         return;
       }
-      const v = ({ r: "real", d: "duplicate", n: "not_a_bug", a: "agent_mistake" } as Record<string, FindingVerdict>)[e.key];
+      const v = ({ r: "real", d: "duplicate", n: "not_a_bug", a: "agent_mistake", f: "fixed" } as Record<string, FindingVerdict>)[e.key];
+      if (v === "fixed" && !canFix) return;
       if (v) {
         e.preventDefault();
         judge(v);
@@ -299,7 +306,7 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
       removeEventListener("keydown", onKey);
       clearTimeout(timer);
     };
-  }, [f.id, note]);
+  }, [f.id, note, canFix]);
 
   const candidates = (others.data?.findings ?? []).filter((o) => o.id !== f.id);
   return (
@@ -310,7 +317,7 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
           {VERDICT_LABEL[f.verdict]} · {clock(f.verdict_at)}{" "}
           <button type="button" class="linkish" onClick={() => void reopen.go()}>reopen</button>
         </span>
-      ) : <span class="faint">keys: r d n a</span>}
+      ) : <span class="faint">keys: r d n a f</span>}
     >
       <div class="verdicts">
         {(Object.keys(VERDICT_LABEL) as FindingVerdict[]).map((v) => (
@@ -318,12 +325,14 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
             key={v}
             tone={f.verdict === v ? "primary" : undefined}
             busy={send.busy && pending === v}
+            disabled={v === "fixed" && !canFix}
             onClick={() => judge(v)}
             title={{
               real: "A bug in the app. Counts towards this check's precision.",
               duplicate: "The same problem as another finding. Left out of precision.",
               not_a_bug: "The app is fine; the check was wrong. Counts against this check.",
               agent_mistake: "The model did something silly and the app reacted correctly. Counts against this check.",
+              fixed: "Real, and a fix has merged. Its replay flow joins the app's nightly ui-test as a regression test. Only after Real.",
             }[v]}
           >
             <kbd>{v === "not_a_bug" ? "n" : v[0]}</kbd> {VERDICT_LABEL[v]}
@@ -394,6 +403,42 @@ function IssuePanel({ issue }: { issue: NonNullable<Finding["issue"]> }) {
         <summary>issue body</summary>
         <pre>{issue.body}</pre>
       </details>
+    </Panel>
+  );
+}
+
+const REGRESSION_LABEL: Record<NonNullable<Detail["regression"]>["state"], string> = {
+  candidate: "candidate — joins the nightly when marked fixed",
+  active: "active — in the nightly",
+  retired: "retired",
+};
+
+/** The regression test a real finding became, and the verdict history that moved it. */
+function RegressionPanel({ r, history }: { r: NonNullable<Detail["regression"]>; history: Detail["history"] }) {
+  return (
+    <Panel
+      title="Regression test"
+      aside={<Pill kind={r.state === "active" ? "done" : r.state === "candidate" ? "queued" : "cancelled"}>{REGRESSION_LABEL[r.state]}</Pill>}
+    >
+      <p class="empty">
+        {r.kind} flow · {r.asserts === "no_crash" ? "asserts the app does not crash during it" : "asserts only that it replays without error"}
+        {" "}· run {r.runs}×
+        {r.last_outcome && <> · last {r.last_outcome}{r.last_run_at ? ` ${agoFrom(r.last_run_at)}` : ""}</>}
+        {r.last_job_id && <> in <Link to={`/jobs/${encodeURIComponent(r.last_job_id)}`}>{r.last_job_id}</Link></>}
+      </p>
+      {r.last_detail && <p class="stub">{r.last_detail}</p>}
+      {history.length > 0 && (
+        <ul class="dup-list">
+          {history.map((h, i) => (
+            <li key={i}>
+              <span class="faint">{clock(h.at)}</span>{" "}
+              {h.event === "regressed" ? "regressed" : h.verdict ? VERDICT_LABEL[h.verdict] : "reopened"}
+              {h.actor && <span class="faint"> · {h.actor}</span>}
+              {h.note && <> — {h.note}</>}
+            </li>
+          ))}
+        </ul>
+      )}
     </Panel>
   );
 }
@@ -493,6 +538,8 @@ export function FindingPage({ id }: { id: string }) {
                 </ul>
               </Panel>
             )}
+
+            {f.regression && <RegressionPanel r={f.regression} history={f.history} />}
 
             {f.issue && <IssuePanel issue={f.issue} />}
 

@@ -367,7 +367,9 @@ export type Health = {
 
 // --- night-QA findings (mirrors src/findings.ts) ---
 
-export type FindingVerdict = "real" | "duplicate" | "not_a_bug" | "agent_mistake";
+export type FindingVerdict = "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed";
+
+export type RegressionState = "candidate" | "active" | "retired";
 
 export type FindingIssue = {
   state: "dry_run" | "pending" | "filed" | "failed" | "capped" | "no_repo";
@@ -415,11 +417,25 @@ export type Finding = {
   duplicate_of: number | null;
   issue: FindingIssue | null;
   status: "open" | "triaged";
+  /** The regression test it became: a candidate once real, active (in the nightly) once fixed. */
+  regression: { state: RegressionState; kind: string; last_outcome: string | null } | null;
 };
 
 export type FindingDetail = Finding & {
   duplicates: { id: number; title: string; seen_count: number }[];
   duplicate_of_title: string | null;
+  regression: {
+    state: RegressionState;
+    kind: string;
+    asserts: "no_crash" | "replays";
+    runs: number;
+    activated_at: string | null;
+    last_run_at: string | null;
+    last_job_id: string | null;
+    last_outcome: string | null;
+    last_detail: string | null;
+  } | null;
+  history: { at: string | null; event: "verdict" | "regressed"; verdict: FindingVerdict | null; note: string | null; actor: string | null }[];
 };
 
 export type FindingList = {

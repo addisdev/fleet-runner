@@ -21,7 +21,7 @@ const GOTO: Record<string, [string, string]> = {
 export const SHORTCUTS = [
   ...Object.entries(GOTO).map(([k, [, label]]) => ({ keys: `g ${k}`, does: label })),
   { keys: "/", does: "Focus the search box on this screen" },
-  { keys: "r d n a", does: "On a finding: Real, Duplicate, Not a bug, Agent's mistake" },
+  { keys: "r d n a f", does: "On a finding: Real, Duplicate, Not a bug, Agent's mistake, Fixed (after Real)" },
   { keys: "?", does: "Show this help" },
   { keys: "Esc", does: "Close help, or leave the search box" },
 ];

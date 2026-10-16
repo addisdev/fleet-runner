@@ -89,7 +89,7 @@
     },
     "params": {
       "type": "object",
-      "description": "Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; any host job network and network_to; a preempted job resume_from."
+      "description": "Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; ui-test regressions (true, or the app its findings are filed under: run its fixed findings' replay flows too); any host job network and network_to; a preempted job resume_from."
     },
     "depends_on": {
       "type": "array",

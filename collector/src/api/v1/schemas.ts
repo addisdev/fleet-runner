@@ -268,9 +268,14 @@ export const SCHEMAS: Record<string, Schema> = {
   Artifact: object(
     {
       sha256: str, name: nstr, size: nint, media_type: nstr, app: nstr, build: nstr, platform: nstr,
-      created_at: nstr, published_at: nstr, pinned: bool, in_store: bool, url: str,
+      created_at: nstr, published_at: nstr, pinned: bool,
+      channel: {
+        enum: ["main", "pr"],
+        description: "pr: uploaded from a pull request (x-artifact-channel: pr); `\"sha256\": \"latest\"` never resolves to it. main: everything else.",
+      },
+      in_store: bool, url: str,
     },
-    ["sha256", "name", "size", "media_type", "in_store", "url"],
+    ["sha256", "name", "size", "media_type", "channel", "in_store", "url"],
   ),
 
   CancelResult: object(
@@ -283,6 +288,121 @@ export const SCHEMAS: Record<string, Schema> = {
   ),
 
   RetryResult: object({ job_id: str, retry_of: str }),
+
+  Finding: object(
+    {
+      id: int, fingerprint: str, app: { ...str, description: "The explore app key the finding was filed under." },
+      build: { ...str, description: "The build it was first seen on." }, platform: str, device_id: str,
+      job_id: { ...str, description: "The job that first found it." }, last_job_id: nstr, mission_id: str,
+      check: { type: "string", description: "crash, anr, frozen, blank, left_app, a11y, visual, goal, dead_control." },
+      severity: { enum: ["high", "medium", "low"] }, title: str, detail: str, screen: str, screen_name: str,
+      steps: { ...strs, description: "What to do to see it, in words, one step per entry." },
+      replay: {
+        oneOf: [
+          { type: "null" },
+          object({ kind: { enum: ["maestro", "tvloop", "none"] }, sha256: nstr, attempts: int, reproduced: int }),
+        ],
+        description: "The replay on a clean install: how many of `attempts` reproduced it. null only for a crash, whose crash log is the evidence.",
+      },
+      replay_label: { ...str, description: "reproduced 2/2, flaky 1/2, crash log." },
+      artifacts: { ...obj, description: "Artifact sha256s by role: shot, sheet, trajectory, log, replay." },
+      first_seen: nstr, last_seen: nstr, seen_count: int, builds_seen: strs,
+      verdict: {
+        enum: ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed", null],
+        description: "null: nobody has judged it, or a regression test reopened it. agent_mistake is NOT a bug in the app.",
+      },
+      verdict_note: nstr, verdict_at: nstr, duplicate_of: nint,
+      issue: { ...nobj, description: "The GitHub issue it would file, or did; dry_run true means nothing was sent." },
+      status: { enum: ["open", "triaged"] },
+      regression: {
+        oneOf: [
+          { type: "null" },
+          object({ state: { enum: ["candidate", "active", "retired"] }, kind: { enum: ["maestro", "tvloop"] }, last_outcome: nstr }),
+        ],
+        description: "The regression test it became: candidate once real, active (in the nightly) once fixed.",
+      },
+    },
+    [
+      "id", "fingerprint", "app", "build", "platform", "device_id", "job_id", "mission_id", "check", "severity", "title", "detail",
+      "screen_name", "steps", "replay", "replay_label", "artifacts", "seen_count", "builds_seen", "verdict", "status",
+      "first_seen", "last_seen", "regression",
+    ],
+  ),
+
+  FindingDetail: {
+    allOf: [
+      ref("Finding"),
+      object(
+        {
+          duplicates: arr(object({ id: int, title: str, seen_count: int })),
+          duplicate_of_title: nstr,
+          counts: object({ seen: int, builds: int, replay_attempts: nint, replay_reproduced: nint, regression_runs: int }),
+          evidence: arr(object({
+            role: { enum: ["shot", "sheet", "trajectory", "log", "replay"] }, label: str, sha256: str,
+            url: { ...str, description: "The bytes, relative to the collector." }, in_store: bool,
+          })),
+          replay_flow: {
+            oneOf: [
+              { type: "null" },
+              object({
+                kind: str, sha256: str, url: str, in_store: bool,
+                text: { ...nstr, description: "The flow itself when it is at most 16 KiB; otherwise fetch url." },
+                truncated: { ...bool, description: "True when the flow was too big to inline." },
+              }),
+            ],
+            description: "The Maestro (or tvloop) flow that replays the finding's steps.",
+          },
+          regression: {
+            oneOf: [
+              { type: "null" },
+              object(
+                {
+                  finding_id: int, app: str, platform: str, check: str,
+                  kind: { enum: ["maestro", "tvloop"] }, state: { enum: ["candidate", "active", "retired"] },
+                  asserts: { enum: ["no_crash", "replays"], description: "no_crash for crash and anr findings; replays (without error) for every other check." },
+                  flow: { ...str, description: "The flow text the nightly runs, copied when the finding was marked real." },
+                  flow_sha256: nstr, created_at: nstr, activated_at: nstr, retired_at: nstr,
+                  runs: int, last_run_at: nstr, last_job_id: nstr,
+                  last_outcome: { enum: ["passed", "reproduced", "failed", "skipped", null] }, last_detail: nstr,
+                },
+                ["finding_id", "state", "kind", "asserts", "flow", "runs"],
+              ),
+            ],
+          },
+          history: arr(object(
+            {
+              at: nstr, event: { enum: ["verdict", "regressed"] },
+              verdict: { enum: ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed", null] },
+              note: nstr, actor: nstr, source: nstr,
+            },
+            ["at", "event", "verdict", "note"],
+          )),
+          links: object({ self: str, verdict: str, dashboard: str }),
+        },
+        ["counts", "evidence", "replay_flow", "regression", "history", "links"],
+      ),
+    ],
+  },
+
+  FindingVerdictInput: object(
+    {
+      verdict: {
+        enum: ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed", null],
+        description: "fixed only after real, once the fix has merged. null reopens.",
+      },
+      note: { type: ["string", "null"], maxLength: 2000 },
+      duplicate_of: { ...nint, description: "Required with duplicate: the finding this one duplicates." },
+    },
+    ["verdict"],
+    { additionalProperties: false },
+  ),
+
+  FindingVerdictResult: object(
+    {
+      finding: ref("FindingDetail"),
+      change: { ...nstr, description: "What the verdict did to the finding's regression test, in one sentence, or null." },
+    },
+  ),
 
   AuditEntry: object(
     {

@@ -23,7 +23,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { onAnnounce } from "../../announce.js";
+import { announce, onAnnounce } from "../../announce.js";
 import { authOf, forward, type Scope } from "../../auth.js";
 import { ARTIFACT_DIR, AUTH, AUTH_PROTOCOL } from "../../config.js";
 import { APP_VERSION } from "../../version.js";
@@ -37,6 +37,7 @@ import { schedulesView } from "../system.js";
 import { SCHEMAS } from "./schemas.js";
 import { isSkipError } from "../../skip.js";
 import { errorsOf, paramsValidator, validateSpec, type SchemaError } from "./spec-check.js";
+import { findingDetail, listFindings, parseVerdictBody, setVerdict } from "../../findings.js";
 
 // --- the table's types ------------------------------------------------------------
 
@@ -71,7 +72,7 @@ export type Route = {
   method: "GET" | "POST";
   /** OpenAPI-style path: `/api/v1/jobs/{id}`. */
   path: string;
-  tag: "meta" | "devices" | "workloads" | "jobs" | "results" | "artifacts" | "fleet" | "protocol";
+  tag: "meta" | "devices" | "workloads" | "jobs" | "results" | "artifacts" | "findings" | "fleet" | "protocol";
   summary: string;
   description?: string;
   scope: "public" | "protocol" | Scope;
@@ -145,6 +146,12 @@ const PAGE: Param[] = [
   { name: "per_page", in: "query", type: "integer", description: "Items per page.", minimum: 1, maximum: 500 },
 ];
 const JOB_ID: Param = { name: "id", in: "path", type: "string", required: true, description: "A job id, or a fan-out parent's id." };
+const FINDING_ID: Param = { name: "id", in: "path", type: "integer", required: true, description: "The finding's id." };
+/** A finding id from the path, or a 404 for anything that cannot be one. */
+const findingId = (raw: string) => {
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) throw new ApiError(404, "not_found", `finding ${raw} not found`, "finding ids are positive integers");
+  return Number(raw);
+};
 const SHA: Param = { name: "sha256", in: "path", type: "string", required: true, description: "The artifact's sha256 (64 hex)." };
 
 const E400: Response = { status: 400, description: "The request was malformed or the spec is invalid.", schema: "Error" };
@@ -469,18 +476,19 @@ function listResults(q: Query) {
 
 type ArtifactRow = {
   sha256: string; name: string | null; size: number; media_type: string | null; app: string | null; build: string | null;
-  platform: string | null; created_at: string; published_at: string | null; pinned: number | null;
+  platform: string | null; created_at: string; published_at: string | null; pinned: number | null; channel: string | null;
 };
 
 function artifactMeta(sha: string) {
   if (!/^[a-f0-9]{64}$/.test(sha)) throw new ApiError(400, "bad_request", "sha256 must be 64 lowercase hex characters");
   const a = db
-    .prepare("SELECT sha256, name, size, media_type, app, build, platform, created_at, published_at, pinned FROM artifacts WHERE sha256 = ?")
+    .prepare("SELECT sha256, name, size, media_type, app, build, platform, created_at, published_at, pinned, channel FROM artifacts WHERE sha256 = ?")
     .get(sha) as ArtifactRow | undefined;
   if (!a) throw notFound("artifact");
   return {
     sha256: a.sha256, name: a.name, size: a.size, media_type: a.media_type, app: a.app, build: a.build,
     platform: a.platform, created_at: iso(a.created_at), published_at: iso(a.published_at), pinned: !!a.pinned,
+    channel: a.channel === "pr" ? ("pr" as const) : ("main" as const),
     in_store: existsSync(path.join(ARTIFACT_DIR, a.sha256)), url: `/api/v1/artifacts/${a.sha256}/content`,
   };
 }
@@ -632,8 +640,19 @@ export const ROUTES: Route[] = [
     body: { schema: "JobSpecInput", description: "The job spec.", required: true },
     responses: [
       { status: 201, description: "Queued (or waiting on dependencies).", schema: "JobCreated" },
-      E400, E401, E403, E409,
-      { status: 422, description: "Valid, but nothing can run it (no capable agent, no matching device, no build).", schema: "Error" },
+      {
+        status: 400,
+        description:
+          "Malformed or refused before queueing: invalid_spec, no_matching_devices (no registered device matches the targets), " +
+          "no_build (no artifact for app `latest`), invalid_match, invalid_dependency, secret_in_spec, bad_request.",
+        schema: "Error",
+      },
+      E401, E403, E409,
+      {
+        status: 422,
+        description: "Valid, but cannot be queued: no_capable_agent (nothing declares the workload), unresolved_reference (a template reference that does not resolve).",
+        schema: "Error",
+      },
     ],
     handler: async ({ req, reply }) => {
       const { spec } = prepareSpec(req);
@@ -834,6 +853,66 @@ export const ROUTES: Route[] = [
     },
   },
 
+  // findings
+  {
+    operationId: "listFindings", method: "GET", path: "/api/v1/findings", tag: "findings", scope: "read", readOnly: true, idempotent: true,
+    summary: "What night QA (the explore workload) found, newest sighting first.",
+    description:
+      "Each finding was replayed on a clean install before it was filed; `replay_label` says how often it reproduced. " +
+      "verdict agent_mistake means the model misread the app, not a bug in it. since=24h is the morning brief.",
+    params: [
+      { name: "app", in: "query", type: "string", description: "Only this app (the explore app key)." },
+      { name: "state", in: "query", type: "string", enum: ["open", "triaged", "all"], description: "open: no verdict yet (or reopened by a regression). Default all." },
+      { name: "verdict", in: "query", type: "string", description: "Comma-separated: real, duplicate, not_a_bug, agent_mistake, fixed." },
+      { name: "check", in: "query", type: "string", description: "crash, anr, frozen, blank, left_app, a11y, visual, goal, dead_control." },
+      { name: "since", in: "query", type: "string", description: "Last seen at or after: ISO 8601, or a span back from now such as 90m, 24h, 7d." },
+      ...PAGE,
+    ],
+    responses: [{ status: 200, description: "Findings.", schema: "list:Finding" }, E400],
+    handler: async ({ q }) => {
+      const { page, per_page, offset } = paging(q as Record<string, string | undefined>, 50, 500);
+      const out = listFindings({
+        app: q.app as string | undefined, status: q.state as string | undefined,
+        verdict: q.verdict as string | undefined, check: q.check as string | undefined, since: q.since as string | undefined,
+        limit: per_page, offset,
+      });
+      if (!out.ok) throw new ApiError(400, "bad_request", out.error);
+      return list(out.body.findings, page, per_page, out.body.total);
+    },
+  },
+  {
+    operationId: "getFinding", method: "GET", path: "/api/v1/findings/{id}", tag: "findings", scope: "read", readOnly: true, idempotent: true,
+    summary: "One finding: the steps in words, its evidence as links, the replay flow (inline when small), its regression test and verdict history.",
+    params: [FINDING_ID],
+    responses: [{ status: 200, description: "The finding.", schema: "FindingDetail" }, E404],
+    handler: async ({ p }) => findingDetail(findingId(p.id)) ?? (() => { throw notFound(`finding ${p.id}`, "GET /api/v1/findings lists them"); })(),
+  },
+  {
+    operationId: "setFindingVerdict", method: "POST", path: "/api/v1/findings/{id}/verdict", tag: "findings", scope: "run", idempotent: true,
+    summary: "Judge a finding: real, duplicate, not_a_bug, agent_mistake, or fixed (only after real). null reopens.",
+    description:
+      "real keeps the finding's replay flow as a candidate regression test; fixed makes it active, so the app's nightly " +
+      "ui-test (with params.regressions) runs it. duplicate, not_a_bug and agent_mistake retire it. Mark fixed only once a fix " +
+      "has merged. Each verdict counts towards the check's precision, which decides what night QA runs tomorrow.",
+    params: [FINDING_ID],
+    body: { schema: "FindingVerdictInput", description: "The verdict and an optional note.", required: true },
+    responses: [
+      { status: 200, description: "Recorded.", schema: "FindingVerdictResult" },
+      E400, E401, E403, E404,
+      { status: 409, description: "fixed on a finding that is not real (conflict).", schema: "Error" },
+    ],
+    handler: async ({ req, p }) => {
+      const id = findingId(p.id);
+      const body = parseVerdictBody(req.body);
+      if (!body.ok) throw new ApiError(400, "bad_request", body.error);
+      const ctx = authOf(req);
+      const out = setVerdict(id, body.verdict, body.note, body.duplicateOf, { who: { actor: ctx.actor, source: ctx.source ?? "api" } });
+      if (!out.ok) throw new ApiError(out.status, out.status === 404 ? "not_found" : out.status === 409 ? "conflict" : "bad_request", out.error, out.hint);
+      announce({ type: "finding", id, verdict: out.finding.verdict });
+      return { finding: findingDetail(id), change: out.change };
+    },
+  },
+
   // fleet
   {
     operationId: "listSchedules", method: "GET", path: "/api/v1/schedules", tag: "fleet", scope: "read", readOnly: true, idempotent: true,
@@ -902,8 +981,26 @@ export const ROUTES: Route[] = [
   {
     operationId: "uploadArtifact", method: "POST", path: "/artifacts", tag: "protocol", scope: "protocol", documentOnly: true,
     summary: "Upload bytes (application/octet-stream). Answers with the sha256 and the detected media type.",
-    description: "Headers: x-artifact-name, x-artifact-media-type (optional), x-artifact-app, x-artifact-build.",
+    description:
+      "Headers: x-artifact-name, x-artifact-media-type (optional), x-artifact-app, x-artifact-build, " +
+      "x-artifact-channel (optional: `pr` for a pull request's build, which `\"sha256\": \"latest\"` never resolves to; absent means a merged build).",
     responses: [{ status: 201, description: "Stored.", schema: null }],
+  },
+  {
+    operationId: "postFinding", method: "POST", path: "/findings", tag: "protocol", scope: "protocol", documentOnly: true,
+    summary: "The explore workload filing a finding (an ExploreFinding). Upserts on the fingerprint.",
+    responses: [{ status: 201, description: "New.", schema: null }, { status: 200, description: "Seen again.", schema: null }],
+  },
+  {
+    operationId: "listRegressionFlows", method: "GET", path: "/findings/regressions", tag: "protocol", scope: "protocol", documentOnly: true,
+    summary: "A nightly ui-test pulling an app's regression flows (?app= &state=active &platform=).",
+    responses: [{ status: 200, description: "{regressions: [...]}, each with its flow text.", schema: null }],
+  },
+  {
+    operationId: "postRegressionRun", method: "POST", path: "/findings/{id}/regression", tag: "protocol", scope: "protocol", documentOnly: true,
+    summary: "An executor reporting one regression run: {job_id, device_id, build, outcome: passed|reproduced|failed|skipped, detail}. reproduced reopens the finding.",
+    params: [{ name: "id", in: "path", type: "integer", required: true, description: "The finding's id." }],
+    responses: [{ status: 200, description: "Recorded.", schema: null }],
   },
   {
     operationId: "downloadArtifact", method: "GET", path: "/artifacts/{sha256}", tag: "protocol", scope: "protocol", documentOnly: true,

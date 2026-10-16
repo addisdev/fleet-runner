@@ -14,7 +14,7 @@ import { resolveBrain, resolveToken } from "../src/connect.js";
 import { handle, type Session } from "../src/mcp/protocol.js";
 import { localSession } from "../src/mcp/stdio.js";
 import { TOOLS } from "../src/mcp/tools.js";
-import { fakeDevice, FLEET, PNG, startCollector, TSX, upload, type Collector } from "./helpers.js";
+import { fakeDevice, FLEET, PNG, postFinding, startCollector, TSX, upload, type Collector } from "./helpers.js";
 
 let c: Collector;
 let session: Session;
@@ -168,4 +168,34 @@ test("interop: the MCP SDK client drives `fleet mcp` over stdio", async () => {
   } finally {
     await client.close();
   }
+});
+
+test("fleet_findings, fleet_finding with its flow, and fleet_verdict", async () => {
+  const { id, flow } = await postFinding(c.base, "mcpapp");
+  const list = await call("fleet_findings", { app: "mcpapp", since: "24h" });
+  assert.ok(!list.isError, list.content[0].text);
+  assert.equal(list.structuredContent.total, 1);
+  assert.equal(list.structuredContent.findings[0].id, id);
+  assert.equal(list.structuredContent.findings[0].replay, "reproduced 2/2");
+
+  const one = await call("fleet_finding", { id });
+  assert.ok(!one.isError, one.content[0].text);
+  assert.equal(one.structuredContent.replay_flow.text, flow, "a small flow comes back inline");
+  assert.deepEqual(one.structuredContent.steps, ["Open the app", "Tap Save"]);
+
+  const early = await call("fleet_verdict", { id, verdict: "fixed" });
+  assert.equal(early.isError, true);
+  assert.match(early.content[0].text ?? "", /conflict/);
+  assert.match(early.content[0].text ?? "", /real first/);
+  const real = await call("fleet_verdict", { id, verdict: "real", note: "reproduced locally" });
+  assert.equal(real.structuredContent.regression, "candidate");
+  const fixed = await call("fleet_verdict", { id, verdict: "fixed", note: "PR #1" });
+  assert.equal(fixed.structuredContent.verdict, "fixed");
+  assert.equal(fixed.structuredContent.regression, "active");
+
+  const { result } = await rpc("tools/list");
+  const by = Object.fromEntries(result.tools.map((t: { name: string }) => [t.name, t]));
+  assert.equal(by.fleet_verdict.annotations.readOnlyHint, false);
+  assert.equal(by.fleet_findings.annotations.readOnlyHint, true);
+  assert.ok(by.fleet_finding.outputSchema && by.fleet_findings.outputSchema && by.fleet_verdict.outputSchema);
 });

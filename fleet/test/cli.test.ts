@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fakeDevice, FLEET, startCollector, tempDir, TSX, type Collector } from "./helpers.js";
+import { fakeDevice, FLEET, postFinding, startCollector, tempDir, TSX, type Collector } from "./helpers.js";
 
 let c: Collector;
 let device: Awaited<ReturnType<typeof fakeDevice>>;
@@ -159,4 +159,38 @@ test("skill show prints the skill; install writes it and will not clobber a stra
   const refused = await fleet(["skill", "install", "--target", dir]);
   assert.match(refused.stderr, /not overwriting/);
   assert.equal(readFileSync(file, "utf8"), "my own notes\n");
+});
+
+test("findings, finding --flow and verdict: the morning brief and a finding becoming a test", async () => {
+  const { id, flow } = await postFinding(c.base, "cliapp");
+  const brief = await fleet(["findings", "--since", "24h", "--app", "cliapp", "--json"]);
+  assert.equal(brief.code, 0, brief.stderr);
+  const page = json(brief);
+  assert.deepEqual(Object.keys(page).sort(), ["items", "page", "pages", "per_page", "total"]);
+  assert.equal(page.items[0].id, id);
+  assert.equal(page.items[0].verdict, null);
+
+  const human = await fleet(["findings", "--app", "cliapp"]);
+  assert.equal(human.code, 0, human.stderr);
+  assert.match(human.stdout, /Crashes on Save/);
+
+  const file = path.join(tempDir("fleet-flow-"), "repro.yaml");
+  const wrote = await fleet(["finding", String(id), "--flow", file]);
+  assert.equal(wrote.code, 0, wrote.stderr);
+  assert.equal(readFileSync(file, "utf8"), flow);
+  const shown = await fleet(["finding", `#${id}`]);
+  assert.match(shown.stdout, /1\. Open the app/);
+
+  const early = await fleet(["verdict", String(id), "fixed"]);
+  assert.equal(early.code, 5, "fixed before real is refused");
+  assert.match(early.stderr, /conflict/);
+  assert.equal((await fleet(["verdict", String(id), "maybe"])).code, 2);
+  const real = await fleet(["verdict", String(id), "real", "--note", "seen it"]);
+  assert.equal(real.code, 0, real.stderr);
+  assert.match(real.stdout, /candidate/);
+  const fixed = await fleet(["verdict", String(id), "fixed", "--json"]);
+  assert.equal(fixed.code, 0, fixed.stderr);
+  assert.equal(json(fixed).finding.regression.state, "active");
+  const notABug = await fleet(["verdict", String(id), "not-a-bug"]);
+  assert.match(notABug.stdout, /retired/);
 });

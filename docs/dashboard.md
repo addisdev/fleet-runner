@@ -60,8 +60,10 @@ artifacts uploaded and garbage-collected.
 
 Alerts appear as a banner on every screen. The layout works on a phone, and `?`
 lists the keyboard shortcuts — `g j` jobs, `g d` devices, `g f` findings, `g n` new job,
-`/` search, and on a finding `r`, `d`, `n` or `a` for its verdict (real,
-duplicate, not a bug, the agent's mistake).
+`/` search, and on a finding `r`, `d`, `n`, `a` or `f` for its verdict (real,
+duplicate, not a bug, the agent's mistake, fixed). Fixed is offered only once a
+finding is real, and a finding with a regression test shows its state, last
+run and verdict history in a panel of its own.
 
 ## When the collector wants a token
 

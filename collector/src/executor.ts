@@ -55,6 +55,7 @@ import { FLOWS_DIR, MAESTRO, resolveFlow, runFlow } from "./workloads/flows.js";
 import { discoverWorkloads, resolveRun, type LoadedWorkload } from "./workloads/registry.js";
 import { bundledNames } from "./workloads/static.js";
 import { prepareInstallable } from "./workloads/install/index.js";
+import { fetchRegressions, regressionApp, runRegressions, type RegressionFlow, type RegressionResult } from "./workloads/regressions.js";
 import type { Target, WorkloadCtx } from "./workloads/types.js";
 
 
@@ -500,9 +501,13 @@ async function runUiTest(job: Job) {
   if (!suite) throw new Error("ui-test job needs a suite");
   if (suite.kind === "xcuitest") return runXcuitest(job);
   if (suite.kind !== "maestro") throw new Error(`suite kind ${suite.kind} not supported yet`);
-  if (!suite.flows) throw new Error("maestro suite needs flows");
-  const flows = path.resolve(FLOWS_DIR, suite.flows);
-  if (!existsSync(flows)) throw new Error(`flows not found: ${flows}`);
+  // params.regressions: the app's fixed findings, replayed after the suite's
+  // own flow on every device (src/workloads/regressions.ts). With it, a job
+  // may have no flow of its own and run only those.
+  const regressionsFor = regressionApp(job);
+  if (!suite.flows && !regressionsFor) throw new Error("maestro suite needs flows (or params.regressions to run only an app's regression flows)");
+  const flows = suite.flows ? path.resolve(FLOWS_DIR, suite.flows) : null;
+  if (flows && !existsSync(flows)) throw new Error(`flows not found: ${flows}`);
 
   // Maestro takes `-e KEY=value` and a flow reads it as ${KEY}, which is how a
   // flow types into a login form. Same Keychain, same rule: the job names the
@@ -524,13 +529,21 @@ async function runUiTest(job: Job) {
   // one flow that existed could never pass against the installed package.
   // A flow written as `appId: ${APP_ID}` takes the id from the job instead, and
   // the same flow then covers debug, smoke and release.
-  const appIdMatch = /^appId:\s*(\S+)/m.exec(readFileSync(flows, "utf8"));
+  const appIdMatch = flows ? /^appId:\s*(\S+)/m.exec(readFileSync(flows, "utf8")) : null;
   const declared = appIdMatch?.[1];
   const parameterised = !declared || /\$\{|^\$/.test(declared);
-  if (parameterised && !job.suite?.app_id) {
+  if (flows && parameterised && !job.suite?.app_id) {
     throw new Error(`${flows} takes its appId from the job, so suite.app_id is required`);
   }
   const appId = job.suite?.app_id ?? declared;
+
+  // Pulled once, at run time: a finding marked fixed yesterday is in
+  // tonight's run without anyone editing this job's schedule.
+  let regressionFlows: RegressionFlow[] = [];
+  if (regressionsFor) {
+    regressionFlows = await fetchRegressions(regressionsFor);
+    log(`ui-test: ${regressionFlows.length} active regression flow(s) for ${regressionsFor}`);
+  }
 
   // A job that names a build tests that build. Without this a ui-test ran its
   // flow against whatever was already on the phone -- so a CI run "pinned to
@@ -590,6 +603,14 @@ async function runUiTest(job: Job) {
       log(`ui-test on ${serial}: skipped (${appId} not installed)`);
       continue;
     }
+    const mineRegs = regressionFlows.filter((f) => f.platform === target.platform);
+    if (!flows && mineRegs.length === 0) {
+      await postResult({
+        job_id: job.job_id, device_id: serial, iter: 0, ok: true,
+        error: `skipped: no active regression flows for ${regressionsFor} on ${target.platform}`,
+      });
+      continue;
+    }
     const outDir = mkdtempSync(path.join(os.tmpdir(), "fleet-junit-"));
     const report = path.join(outDir, "report.xml");
     let failedToRun = false;
@@ -603,7 +624,7 @@ async function runUiTest(job: Job) {
     // unshaped — an offline suite that quietly ran online is a pass that proves
     // nothing.
     let shapeError: string | undefined;
-    try {
+    if (flows) try {
       await withNetwork(job, target, async () => {
         try {
           await exec(
@@ -628,7 +649,7 @@ async function runUiTest(job: Job) {
     }
 
     let passed = 0;
-    let failed = 1;
+    let failed = flows ? 1 : 0;
     let failure: string | null = null;
     let failingFlow: string | undefined;
     const artifacts: string[] = [];
@@ -647,15 +668,40 @@ async function runUiTest(job: Job) {
       if (creds) writeFileSync(report, redact(xml, [creds.password]));
       artifacts.push(await uploadArtifact(report, `${job.job_id}-${serial}-junit.xml`));
     }
-    if (failed > 0) allOk = false;
-    const error = shapeError
+    const suiteError = shapeError
       ? `params.network: ${shapeError}`
       : failedToRun
         ? `maestro produced no report: ${runError ?? "it never ran"}`
         : failure ?? undefined;
+
+    // The app's regression flows, after its own. A reproduced crash reopens
+    // its finding on the collector and fails this row by name.
+    let regs: RegressionResult[] = [];
+    if (mineRegs.length) {
+      regs = await runRegressions({
+        job, target, flows: mineRegs, appId,
+        env: creds ? { [creds.emailVar]: creds.account, [creds.passwordVar]: creds.password } : {},
+        secrets: creds ? [creds.password] : [],
+      });
+      passed += regs.filter((r) => r.outcome === "passed").length;
+      failed += regs.filter((r) => r.outcome === "reproduced" || r.outcome === "failed").length;
+      for (const r of regs) log(`ui-test on ${serial}: regression #${r.finding_id} ${r.outcome}: ${r.detail}`);
+    }
+    const badRegs = [...regs.filter((r) => r.outcome === "reproduced"), ...regs.filter((r) => r.outcome === "failed")];
+    if (!failingFlow && badRegs.length) failingFlow = `regression finding #${badRegs[0].finding_id}`;
+    const regressionError = badRegs.length
+      ? badRegs.map((r) => `regression #${r.finding_id} ${r.outcome === "reproduced" ? "reproduced (finding reopened)" : "failed"}: ${r.detail}`).join("; ")
+      : undefined;
+    const error = [suiteError, regressionError].filter(Boolean).join("; ").slice(0, 1000) || undefined;
+
+    if (failed > 0) allOk = false;
     await postResult({
       job_id: job.job_id, device_id: serial, iter: 0,
-      ok: failed === 0, test: { passed, failed, artifacts, ...(failingFlow ? { failing_flow: failingFlow } : {}) },
+      ok: failed === 0,
+      test: {
+        passed, failed, artifacts, ...(failingFlow ? { failing_flow: failingFlow } : {}),
+        ...(regs.length ? { regressions: regs } : {}),
+      },
       ...(error ? { error } : {}),
     });
     log(`ui-test on ${serial}: ${passed} passed / ${failed} failed${shapeError ? ` (network shaping: ${shapeError})` : ""}`);

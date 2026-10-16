@@ -15,7 +15,7 @@ builds it has been seen, how it replayed ("reproduced 2/2", "flaky 1/2",
 
 The **detail** view shows the screenshot, the steps in words, the detail text
 with every replay's outcome, links to the contact sheet, trajectory, log and
-replay file, and four buttons:
+replay file, and five buttons:
 
 | Button | Key | Means | Counts towards precision |
 |---|---|---|---|
@@ -23,11 +23,18 @@ replay file, and four buttons:
 | **Duplicate** | <kbd>d</kbd> | The same problem as another finding (pick which) | No |
 | **Not a bug** | <kbd>n</kbd> | The app is fine; the check was wrong | Yes, as a miss |
 | **Agent's mistake** | <kbd>a</kbd> | The explorer did something odd and reported its own doing | Yes, as a miss |
+| **Fixed** | <kbd>f</kbd> | Real, and a fix has merged. Only after Real | Yes, as a hit |
 
 A note is optional and is kept with the verdict. Setting the verdict to none
 reopens a finding. A duplicate follows its chain to the original, and a loop is
 refused. The keys are ignored straight after <kbd>g</kbd>, so <kbd>g</kbd>
 <kbd>r</kbd> still goes to Results.
+
+**Fixed** is greyed out until a finding is Real (the collector refuses it
+otherwise, with a 409). It turns the finding's replay flow into a regression
+test; see [Regression tests](#regression-tests). Once a finding has one, a
+**Regression test** panel shows its state, its last run and the verdict
+history.
 
 A **precision table** at the top shows, for every check that has verdicts, how
 often it was right and whether it has been switched off.
@@ -48,6 +55,58 @@ the next night for that app. A visual class (say `low_contrast`) is switched off
 on its own; the judge is told not to report it and the rest keep running. Any
 other check is switched off whole. **Crashes and ANRs are never switched off**:
 their evidence is the platform's own log, not a judgement.
+
+## Regression tests
+
+A finding that was real and is fixed becomes a test, with no hand-copying:
+
+| Verdict | What happens to the finding's replay flow |
+|---|---|
+| **Real** | Copied into the collector's `regressions` table as a **candidate**. Not run yet |
+| **Fixed** (only after Real) | The candidate becomes **active**. A finding marked Real before this release goes straight to active |
+| **Duplicate**, **Not a bug**, **Agent's mistake** | A candidate or active test is **retired** |
+| Real again, on a retired one | Back to **candidate** |
+| Reopen (none) | Left as it is |
+
+The flow is copied into the database, not written to the lab's flows
+directory: that directory is outside git and outside any backup this
+repository controls, and a copy in the database also outlives the artifact
+store's garbage collection. A finding with no replay file (some crashes) or
+whose file the store has already collected gets no test, and the verdict's
+answer says so.
+
+**How a test runs.** Nothing is scheduled automatically. An app's nightly
+`ui-test` opts in once with `params.regressions` (the app key the findings are
+filed under, or `true` for `app.name`), and from then on every finding marked
+Fixed is in the next night's run. The executor pulls the app's active flows
+from the collector at run time and runs each, after the suite's own flow, on
+every device of the same platform. See [ui-test](../workloads/host.md#ui-test).
+
+**What it asserts.** For a **crash** or **ANR** finding on Android, the
+executor reads the crash buffer (`logcat -b crash`, and `am_anr` in the events
+buffer) before and after the flow; a new crash of the package during it is the
+bug coming back. For **every other check** (frozen, blank, left_app, a11y,
+visual, goal, dead_control) the oracle that found the bug was a model or a
+heuristic the flow does not carry, so the honest claim is weaker: **the flow
+replays without error**. Such a flow failing fails the device's row but does
+not reopen anything, because a step that no longer replays may be the bug or
+may be a redesigned screen. On iOS no crash buffer is read, so a crash
+finding's flow is also "replays without error" there, and its detail says so.
+tvloop flows (a Roku's) are kept but not run: ui-test drives Maestro.
+
+**When it comes back.** A run that reproduces the crash reopens the finding:
+the verdict is cleared, it is counted as seen once more, the build is added to
+its builds, and its history gets a line such as `regressed on build 1.4 (12)
+(job nightly-ui-…, R58M…): the app crashed again during the flow: …`. The
+device's row fails with `regression #N reproduced (finding reopened)`. Three
+devices reproducing it in one job reopen it once. The test stays active, so
+the nightly keeps failing until the finding is marked Fixed again.
+
+**Not verified:** no nightly on the lab has run a regression flow yet; the
+logic is covered by the collector's suite against fake crash readings and a
+fake Maestro, not by a phone. GitHub issues are only ever created, never read
+back, so an issue being closed does not mark a finding fixed; the verdict is
+the only trigger.
 
 ## The morning digest
 
@@ -152,8 +211,8 @@ finding.
 
 | Method & path | |
 |---|---|
-| `GET /api/findings?app=&check=&status=open\|triaged\|all&since=&limit=` | Newest last-seen first; up to 500 |
-| `GET /api/findings/:id` | One finding, with its duplicates |
+| `GET /api/findings?app=&check=&status=open\|triaged\|all&verdict=&since=&limit=&offset=` | Newest last-seen first; up to 500. `since` takes ISO 8601 or a span such as `24h` |
+| `GET /api/findings/:id` | One finding, with its duplicates, evidence links, replay flow, regression test and verdict history |
 | `GET /api/findings/precision?app=&min=10` | `{floor, min, classes[], disabled[]}`; the workload reads `disabled` at the start of a night |
 | `GET /api/findings/digest?hours=12` | The digest, as text and as data |
 | `GET /api/findings/issues` | Every issue composed, dry run or filed |
@@ -162,7 +221,21 @@ finding.
 
 | Method & path | |
 |---|---|
-| `POST /api/findings/:id/verdict` | `{verdict: "real"\|"duplicate"\|"not_a_bug"\|"agent_mistake"\|null, note?, duplicate_of?}`. Needs `X-Fleet-Token` when `FLEET_DASH_TOKEN` is set |
+| `POST /api/findings/:id/verdict` | `{verdict: "real"\|"duplicate"\|"not_a_bug"\|"agent_mistake"\|"fixed"\|null, note?, duplicate_of?}`. Needs `X-Fleet-Token` when `FLEET_DASH_TOKEN` is set. `fixed` before `real` is a 409. Answers with the finding, its regression test and `change`, one sentence on what the verdict did to the test |
+
+The same reads and the verdict are in the control API as `GET
+/api/v1/findings`, `GET /api/v1/findings/{id}` and `POST
+/api/v1/findings/{id}/verdict` (scope `run`, audited); both call the same
+functions. See [Control API](../api.md#findings).
+
+### Regression runs (executors)
+
+Protocol routes, like `POST /findings`:
+
+| Method & path | |
+|---|---|
+| `GET /findings/regressions?app=&state=active&platform=` | `{regressions: [...]}`, each with its flow text. `state` is `candidate`, `active` (default), `retired` or `all` |
+| `POST /findings/:id/regression` | `{job_id, device_id, build, outcome: "passed"\|"reproduced"\|"failed"\|"skipped", detail}`. `reproduced` on an active test reopens the finding |
 
 ## Retention
 

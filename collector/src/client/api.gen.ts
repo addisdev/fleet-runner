@@ -33,6 +33,8 @@ export type Artifact = {
   created_at?: string | null;
   published_at?: string | null;
   pinned?: boolean;
+  /** pr: uploaded from a pull request (x-artifact-channel: pr); `"sha256": "latest"` never resolves to it. main: everything else. */
+  channel: "main" | "pr";
   in_store: boolean;
   url: string;
 };
@@ -165,6 +167,150 @@ export type Error = {
     hint?: string;
     required_scope?: string;
   };
+};
+
+export type Finding = {
+  id: number;
+  fingerprint: string;
+  /** The explore app key the finding was filed under. */
+  app: string;
+  /** The build it was first seen on. */
+  build: string;
+  platform: string;
+  device_id: string;
+  /** The job that first found it. */
+  job_id: string;
+  last_job_id?: string | null;
+  mission_id: string;
+  /** crash, anr, frozen, blank, left_app, a11y, visual, goal, dead_control. */
+  check: string;
+  severity: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  screen?: string;
+  screen_name: string;
+  /** What to do to see it, in words, one step per entry. */
+  steps: string[];
+  /** The replay on a clean install: how many of `attempts` reproduced it. null only for a crash, whose crash log is the evidence. */
+  replay: (null | {
+    kind: "maestro" | "tvloop" | "none";
+    sha256: string | null;
+    attempts: number;
+    reproduced: number;
+  });
+  /** reproduced 2/2, flaky 1/2, crash log. */
+  replay_label: string;
+  /** Artifact sha256s by role: shot, sheet, trajectory, log, replay. */
+  artifacts: Record<string, unknown>;
+  first_seen: string | null;
+  last_seen: string | null;
+  seen_count: number;
+  builds_seen: string[];
+  /** null: nobody has judged it, or a regression test reopened it. agent_mistake is NOT a bug in the app. */
+  verdict: "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed" | null;
+  verdict_note?: string | null;
+  verdict_at?: string | null;
+  duplicate_of?: number | null;
+  /** The GitHub issue it would file, or did; dry_run true means nothing was sent. */
+  issue?: Record<string, unknown> | null;
+  status: "open" | "triaged";
+  /** The regression test it became: candidate once real, active (in the nightly) once fixed. */
+  regression: (null | {
+    state: "candidate" | "active" | "retired";
+    kind: "maestro" | "tvloop";
+    last_outcome: string | null;
+  });
+};
+
+export type FindingDetail = Finding & {
+  duplicates?: {
+    id: number;
+    title: string;
+    seen_count: number;
+  }[];
+  duplicate_of_title?: string | null;
+  counts: {
+    seen: number;
+    builds: number;
+    replay_attempts: number | null;
+    replay_reproduced: number | null;
+    regression_runs: number;
+  };
+  evidence: {
+    role: "shot" | "sheet" | "trajectory" | "log" | "replay";
+    label: string;
+    sha256: string;
+    /** The bytes, relative to the collector. */
+    url: string;
+    in_store: boolean;
+  }[];
+  /** The Maestro (or tvloop) flow that replays the finding's steps. */
+  replay_flow: (null | {
+    kind: string;
+    sha256: string;
+    url: string;
+    in_store: boolean;
+    /** The flow itself when it is at most 16 KiB; otherwise fetch url. */
+    text: string | null;
+    /** True when the flow was too big to inline. */
+    truncated: boolean;
+  });
+  regression: (null | {
+    finding_id: number;
+    app?: string;
+    platform?: string;
+    check?: string;
+    kind: "maestro" | "tvloop";
+    state: "candidate" | "active" | "retired";
+    /** no_crash for crash and anr findings; replays (without error) for every other check. */
+    asserts: "no_crash" | "replays";
+    /** The flow text the nightly runs, copied when the finding was marked real. */
+    flow: string;
+    flow_sha256?: string | null;
+    created_at?: string | null;
+    activated_at?: string | null;
+    retired_at?: string | null;
+    runs: number;
+    last_run_at?: string | null;
+    last_job_id?: string | null;
+    last_outcome?: "passed" | "reproduced" | "failed" | "skipped" | null;
+    last_detail?: string | null;
+  });
+  history: {
+    at: string | null;
+    event: "verdict" | "regressed";
+    verdict: "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed" | null;
+    note: string | null;
+    actor?: string | null;
+    source?: string | null;
+  }[];
+  links: {
+    self: string;
+    verdict: string;
+    dashboard: string;
+  };
+};
+
+export type FindingList = {
+  items: Finding[];
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
+};
+
+export type FindingVerdictInput = {
+  /** fixed only after real, once the fix has merged. null reopens. */
+  verdict: "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed" | null;
+  note?: string | null;
+  /** Required with duplicate: the finding this one duplicates. */
+  duplicate_of?: number | null;
+};
+
+export type FindingVerdictResult = {
+  finding: FindingDetail;
+  /** What the verdict did to the finding's regression test, in one sentence, or null. */
+  change: string | null;
 };
 
 export type FlakyCell = {
@@ -323,7 +469,7 @@ export type JobSpecInput = {
     kind?: "maestro" | "xcuitest" | "playwright";
     flows?: string;
   };
-  /** Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; any host job network and network_to; a preempted job resume_from. */
+  /** Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; ui-test regressions (true, or the app its findings are filed under: run its fixed findings' replay flows too); any host job network and network_to; a preempted job resume_from. */
   params?: Record<string, unknown>;
   /** Job ids this one waits for. The job is enqueued as 'waiting' and becomes 'queued' when the last of them finishes; if any of them fails or is cancelled, this one fails with last_error naming it. While waiting, a spec may reference a dependency's output: "${jobs.<id>.artifact}" resolves to the first sha256 in that job's final row, and "${jobs.<id>.metrics.<key>}" to one of its metrics. A whole-string reference keeps the value's type, so a metric stays a number. Referencing a job not listed here is refused at enqueue. */
   depends_on?: string[];
@@ -745,6 +891,42 @@ export class FleetClient extends Transport {
    */
   getArtifactContent(sha256: string, query?: { download?: boolean }, opts?: CallOptions): Promise<Response> {
     return this.request<Response>("GET", `/api/v1/artifacts/${enc(sha256)}/content`, { ...opts, query, raw: true });
+  }
+
+  /**
+   * What night QA (the explore workload) found, newest sighting first.
+   *
+   * Each finding was replayed on a clean install before it was filed; `replay_label` says how often it
+   * reproduced. verdict agent_mistake means the model misread the app, not a bug in it. since=24h is the
+   * morning brief.
+   *
+   * `GET /api/v1/findings` · scope: read
+   */
+  listFindings(query?: { app?: string; state?: "open" | "triaged" | "all"; verdict?: string; check?: string; since?: string; page?: number; per_page?: number }, opts?: CallOptions): Promise<FindingList> {
+    return this.request<FindingList>("GET", `/api/v1/findings`, { ...opts, query });
+  }
+
+  /**
+   * One finding: the steps in words, its evidence as links, the replay flow (inline when small), its regression test and verdict history.
+   *
+   * `GET /api/v1/findings/{id}` · scope: read
+   */
+  getFinding(id: string, opts?: CallOptions): Promise<FindingDetail> {
+    return this.request<FindingDetail>("GET", `/api/v1/findings/${enc(id)}`, { ...opts });
+  }
+
+  /**
+   * Judge a finding: real, duplicate, not_a_bug, agent_mistake, or fixed (only after real). null reopens.
+   *
+   * real keeps the finding's replay flow as a candidate regression test; fixed makes it active, so the
+   * app's nightly ui-test (with params.regressions) runs it. duplicate, not_a_bug and agent_mistake
+   * retire it. Mark fixed only once a fix has merged. Each verdict counts towards the check's precision,
+   * which decides what night QA runs tomorrow.
+   *
+   * `POST /api/v1/findings/{id}/verdict` · scope: run
+   */
+  setFindingVerdict(id: string, body: FindingVerdictInput, opts?: CallOptions): Promise<FindingVerdictResult> {
+    return this.request<FindingVerdictResult>("POST", `/api/v1/findings/${enc(id)}/verdict`, { ...opts, body });
   }
 
   /**

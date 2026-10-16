@@ -279,6 +279,50 @@ all, the error is its exit code and the last line it printed to stderr, never
 its command line, which carries the test account's password. Until 0.9 the
 reason was in the uploaded report and nowhere else.
 
+### Regression tests from fixed findings
+
+`params.regressions` adds the app's fixed night-QA findings to the run. Set it
+to the app key the findings are filed under (what `fleetr findings` shows in
+the APP column), or `true` to use `app.name`:
+
+```json
+{ "workload": "ui-test", "executor": "host",
+  "app": { "name": "greenfolio-android", "build": "nightly", "sha256": "latest" },
+  "suite": { "kind": "maestro", "flows": "greenfolio/smoke.yaml", "app_id": "com.taylab.greenfolio.smoke" },
+  "params": { "regressions": "greenfolio" },
+  "targets": { "match": "os ~ 'android'", "exclusive": true } }
+```
+
+At run time the executor asks the collector for the app's **active**
+regression flows (`GET /findings/regressions`), and after the suite's own flow
+runs each one whose finding was on the same platform as the device. A finding
+joins by being marked Real and then Fixed; nobody edits the schedule. `flows`
+may be left out to run only the regression flows; a device with none to run is
+then skipped, not passed.
+
+Each stored flow is adapted before it runs: its `appId` becomes the job's
+`suite.app_id` when the job sets one (night QA often explores `.debug`; the
+nightly may test `.smoke`), and a relative `runFlow` (the mission's sign-in
+flow) is resolved under the flows directory. The suite's sign-in variables
+reach the flow as they reach the suite's.
+
+What a run asserts depends on the finding's check:
+
+| Finding | On Android | Elsewhere |
+|---|---|---|
+| `crash`, `anr` | No new crash or ANR of the package in `logcat -b crash` / `am_anr` during the flow. A new one is `reproduced` and **reopens the finding** | Replays without error; the crash is not checked, and the detail says so |
+| Any other check | Replays without error | Replays without error |
+
+"Replays without error" is all a replay can claim for a check whose oracle was
+a model or a heuristic: the flow repeats the steps, not the judgement. A flow
+that fails is `failed` and fails the row, without reopening the finding,
+because a step that no longer replays may be a redesigned screen. tvloop flows
+are skipped (ui-test drives Maestro). Each regression counts as one test in
+the row's `passed`/`failed`, is listed in `test.regressions` with its outcome,
+and a failing one is named in the row's `error`. The regressions run outside
+`params.network` shaping. Not yet run on the lab; see [Regression
+tests](../explore/findings.md#regression-tests).
+
 **iOS UI tests need a Mac with full Xcode.** `simctl` and `devicectl` ship with
 Xcode, not the Command Line Tools, so they run on a different executor from the
 Android work. [The iOS executor](../deploy/ios-executor.md) covers standing one

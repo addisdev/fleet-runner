@@ -160,3 +160,22 @@ export async function upload(base: string, bytes: Buffer | string, name: string,
 }
 
 export const tempDir = (prefix: string) => mkdtempSync(path.join(tmpdir(), prefix));
+
+/** A night-QA finding posted the way the explore workload posts one, with its replay flow uploaded. Returns the id and the flow. */
+export async function postFinding(base: string, app: string, over: Record<string, unknown> = {}): Promise<{ id: number; flow: string }> {
+  const flow = `appId: com.example.${app}\nname: "repro"\n---\n- launchApp:\n    clearState: true\n- tapOn:\n    point: "50%,90%"\n`;
+  const sha = await upload(base, flow, "replay.yaml");
+  const res = await fetch(`${base}/findings`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      fingerprint: `${app}-${Math.random().toString(36).slice(2)}`, app, build: "1.0 (1)", platform: "android", device_id: "test-phone",
+      job_id: "explore-test", mission_id: "save", check: "crash", severity: "high", title: "Crashes on Save", detail: "FATAL EXCEPTION",
+      screen: "s1", screen_name: "Add plant", steps: ["Open the app", "Tap Save"],
+      replay: { kind: "maestro", sha256: sha, attempts: 2, reproduced: 2 }, artifacts: { replay: sha },
+      ...over,
+    }),
+  });
+  if (!res.ok) throw new Error(`POST /findings ${res.status}: ${await res.text()}`);
+  return { id: ((await res.json()) as { id: number }).id, flow };
+}
