@@ -39,6 +39,7 @@ import { changedFiles, changedWords, loadMissions, orderMissions } from "./missi
 import type { ModelConfig } from "./model.js";
 import { replayThrough, toMaestro } from "./replay.js";
 import { tvloopFlow, tvloopFlowFile } from "./replay-tvloop.js";
+import { shortNightNote } from "./night.js";
 import { stepsInWords, trajectorySheet } from "./report.js";
 import { ScreenMap } from "./screenmap.js";
 import type { Actuator, CheckName, ExploreFinding, Mission } from "./types.js";
@@ -71,6 +72,12 @@ type Params = {
   surface?: "touch" | "dpad";
   credentials?: { account: string; email_var?: string; password_var?: string };
   mirror?: boolean;
+  /**
+   * Set by `scripts/explore-night.ts` when the night had less time left than
+   * the spec asked for and `minutes` was cut to fit: `asked` is the spec's own
+   * `minutes`. The result then says how many cards ran in the time there was.
+   */
+  short_night?: { asked: number };
 };
 
 type ModelWire = {
@@ -285,20 +292,23 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
   }
 
   let allOk = targets.length > 0;
+  const notes: string[] = [];
   try {
     for (const t of targets) {
       if (Date.now() > deadline) break;
       const r = await exploreDevice(t);
       if (!r.ok) allOk = false;
+      else if (typeof r.error === "string") notes.push(r.error);
       await ctx.postResult({ job_id: job.job_id, device_id: t.id, iter: 0, ...r });
     }
   } finally {
     if (job.targets?.exclusive) await ctx.locks.release(job.job_id);
   }
   // The night failed if any device explored nothing. A device that found bugs
-  // is a device that worked: findings are the output, not the failure.
+  // is a device that worked: findings are the output, not the failure. A short
+  // night that ran is ok, and its note rides on the final row too.
   await ctx.postResult({ job_id: job.job_id, device_id: `host:${ctx.host}`, iter: 0, final: true, ok: allOk,
-    ...(allOk ? {} : { error: "one or more devices completed no mission; see their rows" }) });
+    ...(allOk ? (notes.length ? { error: [...new Set(notes)].join("; ") } : {}) : { error: "one or more devices completed no mission; see their rows" }) });
 
   async function exploreDevice(t: Target): Promise<Record<string, unknown>> {
     let actuator: Actuator;
@@ -440,11 +450,18 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
     const logFile = path.join(work, `${t.id.replace(/[^\w.-]/g, "_")}-missions.json`);
     writeFileSync(logFile, JSON.stringify(missionLog, null, 1));
     const missionsSha = await ctx.uploadArtifact(logFile, `explore-run-${job.job_id}-${t.id}-missions.json`).catch(() => undefined);
+    // A short night says what it managed in the time it had: "ran 3 of 7
+    // cards: 40 minutes left of the 60 asked". On an ok row; it is not an error,
+    // but `error` is the field a summary, the digest and `fleetr` show.
+    const note = p.short_night ? shortNightNote(totals.missions, missions.length, p.minutes ?? 150, p.short_night.asked) : null;
     return {
       ok: totals.missions > 0,
-      ...(totals.missions === 0 ? { error: `no mission completed: ${missionLog.map((x) => `${x.id}: ${x.error ?? x.skipped ?? "?"}`).join("; ").slice(0, 400)}` } : {}),
+      ...(totals.missions === 0
+        ? { error: `${note ? `${note}; ` : ""}no mission completed: ${missionLog.map((x) => `${x.id}: ${x.error ?? x.skipped ?? "?"}`).join("; ").slice(0, 400)}` }
+        : note ? { error: note } : {}),
       metrics: {
-        explore_missions: totals.missions, explore_steps: totals.steps, explore_actions: totals.actions,
+        explore_missions: totals.missions, explore_cards_planned: missions.length, explore_minutes: p.minutes ?? 150,
+        explore_steps: totals.steps, explore_actions: totals.actions,
         explore_screens: map.seenThisRun.length, explore_new_screens: missionLog.reduce((a, x) => a + (Number(x.new_screens) || 0), 0),
         explore_candidates: totals.candidates, explore_findings: totals.findings, explore_findings_new: totals.findingsNew,
         explore_not_reproduced: totals.notReproduced, explore_misses: totals.misses, explore_refused: totals.refused,

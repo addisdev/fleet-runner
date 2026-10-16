@@ -19,7 +19,7 @@ import { runArchive } from "./web/archive/index.js";
 import { runDigest } from "./web/digest.js";
 import { countXcodebuildTests, xcodebuildDiagnostics } from "./xcparse.js";
 import {
-  fleetOwned, physicalApple, simulatorName, isAndroidEmulatorSerial, appleNotReadyReason,
+  fleetOwned, physicalApple, simulatorName, simulatorPlatform, isAndroidEmulatorSerial, appleNotReadyReason,
   SIM_PREFIX,
   type IosDeviceInfo,
 } from "./targets.js";
@@ -2413,11 +2413,16 @@ export async function describeTarget(
     for (const [runtime, list] of Object.entries(sims ?? {})) {
       const hit = list.find((d) => d.udid === t.id);
       if (!hit) continue;
-      // "com.apple.CoreSimulator.SimRuntime.iOS-18-4" -> "ios-18.4"
-      const v = /iOS-([\d-]+)$/.exec(runtime)?.[1]?.replace(/-/g, ".");
+      // "com.apple.CoreSimulator.SimRuntime.iOS-18-4" -> "ios-18.4", and
+      // "…SimRuntime.tvOS-26-5" -> "tvos-26.5". This read `iOS-` only, so an
+      // Apple TV simulator registered as plain "ios" and every `os ~ 'tvos'`
+      // job skipped with "no device matches" (the fleet-explore-tv nights of
+      // 10-12 to 10-14, each "done" in twenty seconds).
+      const family = simulatorPlatform(runtime) ?? "ios";
+      const v = /SimRuntime\.[A-Za-z]+-([\d-]+)$/.exec(runtime)?.[1]?.replace(/-/g, ".");
       return {
         model: hit.name,
-        os: v ? `ios-${v}` : "ios",
+        os: v ? `${family}-${v}` : family,
         serial: t.id,
         attached_to: NAME,
         attached_host: HOST,
