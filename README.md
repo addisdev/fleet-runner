@@ -29,7 +29,7 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 | **Problem** | Mobile tests and ML benchmarks are only useful when they run on the hardware, under conditions, and with the exact artifacts a product will ship. |
 | **System** | One collector owns the registry, queue, leases, artifacts, results and dashboard; independently implemented agents claim work through one tested JSON protocol. |
 | **Reach** | Five runner implementations across TypeScript, Swift, Kotlin, JavaScript and BrightScript, plus host-driven iOS and Android workloads. |
-| **Workloads** | 34 workload types spanning UI tests, visual regression, exploratory QA by a vision model, llama.cpp, Core ML, LiteRT, battery experiments, builds and deployment. |
+| **Workloads** | <!-- count:workloads -->34 workload types spanning UI tests, visual regression, exploratory QA by a vision model, llama.cpp, Core ML, LiteRT, battery experiments, builds and deployment. |
 | **Proof** | The first production question found an int8 CPU model faster to load and run than its fp32 GPU alternative while preserving useful accuracy. |
 
 **What this demonstrates:** distributed systems, mobile platforms, protocol
@@ -140,7 +140,7 @@ something a runner can do without the collector shipping a release.
 
 ![Twenty-eight workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
 
-Thirty-four workloads (the figure predates six of them, `explore` and `tvloop`
+<!-- count:workloads -->Thirty-four workloads (the figure predates six of them, `explore` and `tvloop`
 among them), and the column a workload sits in is the answer to "who can
 physically do this". A benchmark runs inside the app on the phone. An
 install needs a cable and a Mac. A build needs a checkout and a toolchain.

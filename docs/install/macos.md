@@ -75,7 +75,7 @@ and the host executor inside it, beside the browser runner and the dashboard in
 the same relative layout a checkout has. It runs with no `node_modules`
 anywhere near it, which is the property a release is for and the one that would
 have broken silently. Only Playwright stays outside -- 400 MB of browser needed
-by four of thirty workloads, made a dynamic import so an executor without it
+by four of the <!-- count:workloads -->34 workloads, made a dynamic import so an executor without it
 starts fine and says so.
 
 ## `fleet up`

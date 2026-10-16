@@ -183,6 +183,12 @@ if (!(await run(process.execPath, [TSX, "scripts/check-metrics.ts"]))) failed = 
 step("workload table matches the directories");
 if (!(await run(process.execPath, [TSX, "scripts/check-workloads.ts"]))) failed = true;
 
+// The README and the docs state the workload count by hand, marked with
+// <!-- count:workloads -->. ci.yml checks the marks on every pull request by
+// reading catalog.ts as text; this is what keeps that reading honest.
+step("documented counts read the catalog right");
+if (!(await run(process.execPath, [TSX, "scripts/check-counts.ts"]))) failed = true;
+
 // The shelf picks each device's drawing from its model string; the real
 // fleet's strings are the fixtures, so a regex change cannot quietly redraw
 // a device that is actually on the shelf.

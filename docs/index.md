@@ -49,7 +49,7 @@ fleet on. The answer is macOS; the suites run on all three.
 
     ---
 
-    All 34 of them, what each measures, and what each refuses to guess.
+    All <!-- count:workloads -->34 of them, what each measures, and what each refuses to guess.
 
 -   __[Exploratory QA](explore/index.md)__
 

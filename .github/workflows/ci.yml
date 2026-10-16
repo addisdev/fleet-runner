@@ -105,6 +105,42 @@ jobs:
       - uses: actions/checkout@v4
       - run: node scripts/version.mjs check
 
+  # Also unconditional, and for the same reason as `version`: the numbers it
+  # checks are written in README.md and docs/, so a docs-only pull request is
+  # exactly where a stale one arrives, and no component suite runs for that.
+  repo-scripts:
+    name: repo scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests for scripts/
+        run: node --test scripts/*.test.mjs
+      - name: Documented counts match the code
+        run: node scripts/check-counts.mjs
+
+  # A release pull request -- a `release/*` branch, or `develop` into `main` --
+  # must mention every pull request merged into develop since the last tag.
+  # Every other pull request skips this, and skipped counts as green below.
+  changelog:
+    name: changelog coverage
+    if: >-
+      github.event_name == 'pull_request' && (
+        startsWith(github.head_ref, 'release/') ||
+        (github.head_ref == 'develop' && github.base_ref == 'main'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The tags and the whole of develop's history since the last one.
+          fetch-depth: 0
+      - name: Every merged pull request is in the changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/changelog-coverage.mjs --head "${{ github.event.pull_request.head.sha }}"
+
   collector:
     needs: changes
     if: needs.changes.outputs.collector == 'true'
@@ -142,7 +178,7 @@ jobs:
 
   ci-ok:
     name: ci-ok
-    needs: [changes, version, collector, runner-android, runner-ios, runner-machine, fleet, runner-roku, desktop]
+    needs: [changes, version, repo-scripts, changelog, collector, runner-android, runner-ios, runner-machine, fleet, runner-roku, desktop]
     # Without this the gate inherits the default "only if every dependency
     # succeeded", which makes a skipped suite skip the gate -- and a skipped
     # required check never reports, which is the exact bug being fixed.
