@@ -239,6 +239,9 @@ const PROTOCOL_ROUTES: [string, RegExp][] = [
   ["GET", /^\/events\/[^/]+\/poll$/],
   ["POST", /^\/api\/jobs\/[^/]+\/mirror$/],
   ["POST", /^\/findings$/],
+  // A nightly ui-test pulling the app's regression flows, and reporting each run.
+  ["GET", /^\/findings\/regressions$/],
+  ["POST", /^\/findings\/\d+\/regression$/],
 ];
 
 const RUN_ROUTES: [string, RegExp][] = [
@@ -249,6 +252,9 @@ const RUN_ROUTES: [string, RegExp][] = [
   ["POST", /^\/api\/v1\/jobs$/],
   ["POST", /^\/api\/v1\/jobs\/validate$/],
   ["POST", /^\/api\/v1\/jobs\/[^/]+\/(cancel|retry)$/],
+  // A verdict decides what tomorrow's nightly runs, which is the run scope's
+  // business; the dashboard's older route stays where it was.
+  ["POST", /^\/api\/v1\/findings\/[^/]+\/verdict$/],
 ];
 
 /** What a request needs. Exported so the rule table can be tested and documented. */
@@ -356,7 +362,7 @@ function deny(req: FastifyRequest, reply: FastifyReply, status: 401 | 403, code:
 }
 
 /** Routes whose traffic is the fleet breathing, not a person deciding. Never audited. */
-const QUIET = /^\/(results|devices\/register|devices\/[^/]+\/next-job|executor\/next-job|locks\/|events\/|artifacts$|findings$|api\/jobs\/[^/]+\/mirror$|api\/session$)/;
+const QUIET = /^\/(results|devices\/register|devices\/[^/]+\/next-job|executor\/next-job|locks\/|events\/|artifacts$|findings$|findings\/\d+\/regression$|api\/jobs\/[^/]+\/mirror$|api\/session$)/;
 
 export function registerAuth(app: FastifyInstance): void {
   app.addHook("onRequest", async (req, reply) => {

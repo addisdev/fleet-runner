@@ -9,7 +9,11 @@
  *
  *   store        upsert on the fingerprint, so the fifth night that finds the
  *                same crash raises a count instead of a fifth report (T2)
- *   verdict      a person's real / duplicate / not a bug / agent's mistake (T4)
+ *   verdict      a person's real / duplicate / not a bug / agent's mistake (T4),
+ *                and fixed, which only follows real; every one kept in a history
+ *   regressions  a real finding's replay flow kept as a candidate test, made
+ *                active when it is marked fixed, and run by the app's nightly
+ *                ui-test; one that reproduces reopens the finding (LOOP Phase 4)
  *   precision    per app and check, how often a person called it real -- and
  *                which check classes are wasting the morning (O4)
  *   digest       the morning summary, sent once a day to the phone (T5)
@@ -36,11 +40,14 @@
  * other. Even armed, this code only ever creates issues. It never edits,
  * comments on or closes one; that is a person's job.
  */
+import { existsSync, readFileSync, statSync } from "node:fs";
+import path from "node:path";
 import { db } from "./db.js";
 import { iso, parse } from "./api/shared.js";
 import { sendWebhook } from "./alerts.js";
 import { skipReasonText } from "./skip.js";
 import {
+  ARTIFACT_DIR,
   DASH_URL,
   FINDINGS_DIGEST_AT,
   FINDINGS_DIGEST_HOURS,
@@ -55,7 +62,7 @@ import { CHECK_NAMES, type CheckName, type ExploreFinding, type Verdict } from "
 // The rules, as numbers
 // ---------------------------------------------------------------------------
 
-export const VERDICTS: readonly Verdict[] = ["real", "duplicate", "not_a_bug", "agent_mistake"];
+export const VERDICTS: readonly Verdict[] = ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed"];
 const SEVERITIES = ["high", "medium", "low"] as const;
 const REPLAY_KINDS = ["maestro", "tvloop", "none"] as const;
 const ARTIFACT_KEYS = ["shot", "sheet", "trajectory", "log", "replay"] as const;
@@ -314,6 +321,8 @@ export type FindingView = {
   duplicate_of: number | null;
   issue: IssueRecord | null;
   status: "open" | "triaged";
+  /** The regression test this finding became, if it did: just enough for a list. */
+  regression: { state: RegressionState; kind: RegressionKind; last_outcome: RegressionOutcome | null } | null;
 };
 
 export function replayLabel(replay: Replay, check: CheckName): string {
@@ -354,6 +363,7 @@ function view(r: Row): FindingView {
     duplicate_of: r.duplicate_of,
     issue: parse<IssueRecord | null>(r.issue, null),
     status: r.verdict === null ? "open" : "triaged",
+    regression: regressionBrief(r.id),
   };
 }
 
@@ -636,6 +646,40 @@ export function listIssues(limit = 100) {
 // Verdicts (T4)
 // ---------------------------------------------------------------------------
 
+/** Who gave a verdict, for the history. Null fields when the collector cannot say. */
+export type Who = { actor: string | null; source: string | null };
+
+export type VerdictOptions = {
+  who?: Who;
+  /** Reads a replay flow out of the artifact store. Tests pass their own. */
+  readArtifact?: ReadArtifact;
+};
+
+export type VerdictOutcome =
+  | { ok: true; finding: FindingView; regression: RegressionView | null; change: string | null }
+  | ({ ok: false } & { status: 400 | 404 | 409; error: string; hint?: string });
+
+/**
+ * A verdict body as either route receives it: `{verdict, note?, duplicate_of?}`.
+ * Parsed here so the legacy route and /api/v1 refuse the same things in the
+ * same words.
+ */
+export function parseVerdictBody(
+  body: unknown,
+): { ok: true; verdict: Verdict | null; note: string | null; duplicateOf: number | null } | { ok: false; error: string } {
+  const b = (body && typeof body === "object" && !Array.isArray(body) ? body : {}) as {
+    verdict?: unknown; note?: unknown; duplicate_of?: unknown;
+  };
+  if (!("verdict" in b)) return { ok: false, error: "verdict is required (or null to reopen)" };
+  if (b.verdict !== null && !VERDICTS.includes(b.verdict as Verdict))
+    return { ok: false, error: `verdict must be one of ${VERDICTS.join(", ")}, or null to reopen` };
+  if (b.note !== undefined && b.note !== null && typeof b.note !== "string") return { ok: false, error: "note must be a string" };
+  const dup = b.duplicate_of === undefined || b.duplicate_of === null ? null : Number(b.duplicate_of);
+  if (dup !== null && !(Number.isInteger(dup) && dup > 0)) return { ok: false, error: "duplicate_of must be a finding id" };
+  const note = typeof b.note === "string" && b.note.trim() ? b.note.trim() : null;
+  return { ok: true, verdict: (b.verdict ?? null) as Verdict | null, note, duplicateOf: dup };
+}
+
 /**
  * Record a person's verdict, or clear it with `verdict: null` (a mis-click
  * should not need SQL to undo).
@@ -644,19 +688,34 @@ export function listIssues(limit = 100) {
  * is a duplicate of A and C is marked a duplicate of B, C points at A, so the
  * "this is the same as" graph never grows chains a person has to walk. Marking
  * something a duplicate of itself, or of one of its own duplicates, is refused.
+ *
+ * `fixed` is refused unless the finding is already `real` (or was, and a
+ * regression test brought it back): "fixed" on something nobody confirmed is a
+ * claim about a bug that may not exist, and it would put a test in the nightly
+ * for it. Every verdict lands in the history and moves the regression test,
+ * see `moveRegression`.
  */
-export function setVerdict(
+export const setVerdict = db.transaction((
   id: number,
   verdict: Verdict | null,
   note: string | null,
   duplicateOf: number | null,
-): { ok: true; finding: FindingView } | ({ ok: false } & { status: 400 | 404; error: string }) {
+  opts: VerdictOptions = {},
+): VerdictOutcome => {
   const row = getRow(id);
   if (!row) return { ok: false, status: 404, error: `no finding ${id}` };
   if (verdict !== null && !VERDICTS.includes(verdict))
     return { ok: false, status: 400, error: `verdict must be one of ${VERDICTS.join(", ")}, or null to reopen` };
   if (note !== null && note.length > LIMITS.note)
     return { ok: false, status: 400, error: `note is longer than ${LIMITS.note} characters` };
+
+  const reg = getRegressionRow(id);
+  if (verdict === "fixed" && row.verdict !== "real" && row.verdict !== "fixed" && reg?.state !== "active")
+    return {
+      ok: false, status: 409,
+      error: `finding ${id} is ${row.verdict === null ? "open" : row.verdict}; fixed comes only after real`,
+      hint: "mark it real first, and fixed once the fix has merged",
+    };
 
   let target: number | null = null;
   if (verdict === "duplicate") {
@@ -677,17 +736,302 @@ export function setVerdict(
                          duplicate_of = ?
      WHERE id = ?`,
   ).run(verdict, verdict === null ? null : note, verdict, target, id);
-  return { ok: true, finding: view(getRow(id)!) };
+  db.prepare("INSERT INTO finding_verdicts (finding_id, event, verdict, note, actor, source) VALUES (?, 'verdict', ?, ?, ?, ?)")
+    .run(id, verdict, note, opts.who?.actor ?? null, opts.who?.source ?? null);
+  const change = moveRegression(view(getRow(id)!), verdict, opts.readArtifact ?? readStoredArtifact);
+  return { ok: true, finding: view(getRow(id)!), regression: regressionView(getRegressionRow(id)), change };
+});
+
+export type HistoryEntry = {
+  at: string | null;
+  /** `verdict`: a person's call (verdict null = reopened). `regressed`: a regression test reproduced it. */
+  event: "verdict" | "regressed";
+  verdict: Verdict | null;
+  note: string | null;
+  actor: string | null;
+  source: string | null;
+};
+
+export function verdictHistory(id: number): HistoryEntry[] {
+  const rows = db
+    .prepare("SELECT at, event, verdict, note, actor, source FROM finding_verdicts WHERE finding_id = ? ORDER BY id")
+    .all(id) as (Omit<HistoryEntry, "at"> & { at: string })[];
+  return rows.map((r) => ({ ...r, at: iso(r.at) }));
 }
+
+// ---------------------------------------------------------------------------
+// Regressions: a fixed finding becomes a test (LOOP Phase 4)
+// ---------------------------------------------------------------------------
+
+export type RegressionState = "candidate" | "active" | "retired";
+export type RegressionKind = "maestro" | "tvloop";
+/**
+ * One night's run of a regression flow on one device:
+ *   passed      the flow replayed without error (and, for a crash or ANR, the
+ *               package did not crash while it ran)
+ *   reproduced  the original failure came back: a crash or ANR of the package
+ *               during the flow. Reopens the finding.
+ *   failed      the flow itself failed. For any check but crash and anr this
+ *               is all a replay can say: the steps no longer replay, which may
+ *               be the bug or may be a changed screen. Does not reopen.
+ *   skipped     not run on this device (wrong platform, no Maestro there)
+ */
+export type RegressionOutcome = "passed" | "reproduced" | "failed" | "skipped";
+export const REGRESSION_OUTCOMES: readonly RegressionOutcome[] = ["passed", "reproduced", "failed", "skipped"];
+
+/** Checks a replay can assert the absence of. Everything else is "replays without error". */
+export const ABSENCE_CHECKS: readonly CheckName[] = ["crash", "anr"];
+
+/** A flow bigger than this is not a flow a person recorded; it is not kept. */
+export const FLOW_MAX_BYTES = 64 * 1024;
+
+type RegressionRow = {
+  finding_id: number;
+  app: string;
+  platform: string;
+  check_name: CheckName;
+  kind: RegressionKind;
+  flow: string;
+  flow_sha256: string | null;
+  state: RegressionState;
+  created_at: string;
+  activated_at: string | null;
+  retired_at: string | null;
+  runs: number;
+  last_run_at: string | null;
+  last_job_id: string | null;
+  last_outcome: RegressionOutcome | null;
+  last_detail: string | null;
+};
+
+export type RegressionView = {
+  finding_id: number;
+  app: string;
+  platform: string;
+  check: CheckName;
+  kind: RegressionKind;
+  state: RegressionState;
+  /** What a run proves: `no_crash` for crash and anr findings, `replays` (without error) for the rest. */
+  asserts: "no_crash" | "replays";
+  flow: string;
+  flow_sha256: string | null;
+  created_at: string | null;
+  activated_at: string | null;
+  retired_at: string | null;
+  runs: number;
+  last_run_at: string | null;
+  last_job_id: string | null;
+  last_outcome: RegressionOutcome | null;
+  last_detail: string | null;
+};
+
+/** The flow text for a sha, or null when the store does not have it (or it is too big to be a flow). */
+export type ReadArtifact = (sha256: string) => string | null;
+
+export const readStoredArtifact: ReadArtifact = (sha) => {
+  if (!SHA.test(sha)) return null;
+  const file = path.join(ARTIFACT_DIR, sha);
+  try {
+    if (statSync(file).size > FLOW_MAX_BYTES) return null;
+    return readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+};
+
+const getRegressionRow = (id: number) =>
+  db.prepare("SELECT * FROM regressions WHERE finding_id = ?").get(id) as RegressionRow | undefined;
+
+function regressionView(r: RegressionRow | undefined): RegressionView | null {
+  if (!r) return null;
+  return {
+    finding_id: r.finding_id, app: r.app, platform: r.platform, check: r.check_name, kind: r.kind, state: r.state,
+    asserts: ABSENCE_CHECKS.includes(r.check_name) ? "no_crash" : "replays",
+    flow: r.flow, flow_sha256: r.flow_sha256,
+    created_at: iso(r.created_at), activated_at: iso(r.activated_at), retired_at: iso(r.retired_at),
+    runs: r.runs, last_run_at: iso(r.last_run_at), last_job_id: r.last_job_id, last_outcome: r.last_outcome, last_detail: r.last_detail,
+  };
+}
+
+function regressionBrief(id: number): FindingView["regression"] {
+  const r = db.prepare("SELECT state, kind, last_outcome FROM regressions WHERE finding_id = ?").get(id) as
+    | { state: RegressionState; kind: RegressionKind; last_outcome: RegressionOutcome | null }
+    | undefined;
+  return r ? { state: r.state, kind: r.kind, last_outcome: r.last_outcome } : null;
+}
+
+export function getRegression(id: number): RegressionView | null {
+  return regressionView(getRegressionRow(id));
+}
+
+/** The replay flow's artifact: the replay's own hash, or the replay artifact a crash posts without counts. */
+const flowShaOf = (f: Pick<FindingView, "replay" | "artifacts">) => f.replay?.sha256 ?? f.artifacts.replay ?? null;
+
+/**
+ * Copy the finding's replay flow into the regressions table. Returns why not,
+ * when it cannot: no replay file was posted, or the store no longer has it.
+ */
+function keepFlow(f: FindingView, state: RegressionState, read: ReadArtifact): string {
+  const sha = flowShaOf(f);
+  if (!sha) return "no replay flow was posted with this finding, so there is nothing to keep as a test";
+  if (f.replay?.kind === "none") return "the replay was not a file (kind none), so there is nothing to keep as a test";
+  const text = read(sha);
+  if (text === null) return `the replay flow ${sha.slice(0, 12)} is not in the artifact store (collected, or over ${FLOW_MAX_BYTES} bytes)`;
+  const kind: RegressionKind =
+    f.replay?.kind === "tvloop" || f.replay?.kind === "maestro" ? f.replay.kind : text.trimStart().startsWith("{") ? "tvloop" : "maestro";
+  db.prepare(
+    `INSERT INTO regressions (finding_id, app, platform, check_name, kind, flow, flow_sha256, state, activated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'active' THEN datetime('now') END)`,
+  ).run(f.id, f.app, f.platform, f.check, kind, text, sha, state, state);
+  return state === "active"
+    ? `its replay flow is now an active regression test in ${f.app}'s nightly ui-test`
+    : `its replay flow is kept as a candidate regression test; it joins the nightly when the finding is marked fixed`;
+}
+
+/**
+ * What a verdict does to the finding's regression test.
+ *
+ *   real                    keep the replay flow as a candidate (a retired one
+ *                           comes back as a candidate; an active one stays
+ *                           active -- it is watching for this very bug)
+ *   fixed                   candidate -> active: the app's nightly runs it
+ *   duplicate, not_a_bug,
+ *   agent_mistake           retire it: it is not a test of anything real
+ *   null (reopen)           leave it as it is
+ *
+ * Returns one sentence saying what changed, or null when nothing did.
+ */
+function moveRegression(f: FindingView, verdict: Verdict | null, read: ReadArtifact): string | null {
+  const reg = getRegressionRow(f.id);
+  if (verdict === "real") {
+    if (!reg) return keepFlow(f, "candidate", read);
+    if (reg.state === "retired") {
+      db.prepare("UPDATE regressions SET state = 'candidate', retired_at = NULL WHERE finding_id = ?").run(f.id);
+      return "its retired regression test is a candidate again";
+    }
+    return null;
+  }
+  if (verdict === "fixed") {
+    if (!reg) return keepFlow(f, "active", read);
+    if (reg.state === "active") return null;
+    db.prepare("UPDATE regressions SET state = 'active', activated_at = datetime('now'), retired_at = NULL WHERE finding_id = ?").run(f.id);
+    return `its replay flow is now an active regression test in ${f.app}'s nightly ui-test`;
+  }
+  if (verdict !== null && reg && reg.state !== "retired") {
+    db.prepare("UPDATE regressions SET state = 'retired', retired_at = datetime('now') WHERE finding_id = ?").run(f.id);
+    return `its ${reg.state} regression test is retired`;
+  }
+  return null;
+}
+
+/** What a nightly ui-test pulls at run time: the app's regressions in one state (active by default). */
+export function listRegressions(q: { app?: string; state?: string; platform?: string } = {}): { ok: true; items: RegressionView[] } | { ok: false; error: string } {
+  const state = q.state ?? "active";
+  if (state !== "all" && !["candidate", "active", "retired"].includes(state))
+    return { ok: false, error: "state must be candidate, active, retired or all" };
+  const where: string[] = [];
+  const params: string[] = [];
+  if (q.app) { where.push("app = ?"); params.push(q.app); }
+  if (q.platform) { where.push("platform = ?"); params.push(q.platform); }
+  if (state !== "all") { where.push("state = ?"); params.push(state); }
+  const rows = db
+    .prepare(`SELECT * FROM regressions ${where.length ? `WHERE ${where.join(" AND ")}` : ""} ORDER BY finding_id`)
+    .all(...params) as RegressionRow[];
+  return { ok: true, items: rows.map((r) => regressionView(r)!) };
+}
+
+export type RegressionRun = { job_id: string; device_id: string; build: string; outcome: RegressionOutcome; detail: string };
+
+/** A run report as the executor posts it, checked. */
+export function parseRegressionRun(body: unknown): { ok: true; run: RegressionRun } | { ok: false; error: string } {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, error: "body must be a JSON object" };
+  const b = body as Record<string, unknown>;
+  for (const k of ["job_id", "device_id"]) {
+    if (typeof b[k] !== "string" || !(b[k] as string).trim() || (b[k] as string).length > LIMITS.id)
+      return { ok: false, error: `${k} is required (a non-empty string of at most ${LIMITS.id} characters)` };
+  }
+  if (b.build !== undefined && b.build !== null && (typeof b.build !== "string" || b.build.length > LIMITS.id))
+    return { ok: false, error: `build must be a string of at most ${LIMITS.id} characters` };
+  if (!REGRESSION_OUTCOMES.includes(b.outcome as RegressionOutcome))
+    return { ok: false, error: `outcome must be one of ${REGRESSION_OUTCOMES.join(", ")}` };
+  if (b.detail !== undefined && b.detail !== null && typeof b.detail !== "string") return { ok: false, error: "detail must be a string" };
+  return {
+    ok: true,
+    run: {
+      job_id: b.job_id as string, device_id: b.device_id as string,
+      build: (typeof b.build === "string" && b.build.trim()) || "installed",
+      outcome: b.outcome as RegressionOutcome,
+      detail: typeof b.detail === "string" ? b.detail.slice(0, LIMITS.note) : "",
+    },
+  };
+}
+
+/**
+ * Record one device's run of a regression flow.
+ *
+ * `reproduced` on an ACTIVE regression reopens the finding -- verdict cleared,
+ * seen once more, the build added, and a history line saying which build it
+ * came back on -- so the morning digest lists it again instead of the nightly
+ * passing over it. A fan-out reporting the same reproduction from three
+ * devices of one job reopens it once. The regression stays active: the bug is
+ * back, and the nightly should keep saying so until someone marks it fixed
+ * again (real, then fixed). A candidate or retired regression's run is
+ * recorded and changes nothing else, since nothing schedules those.
+ */
+export const recordRegressionRun = db.transaction((id: number, run: RegressionRun):
+  | { ok: true; reopened: boolean; regression: RegressionView; finding: FindingView }
+  | { ok: false; status: 404; error: string } => {
+  const reg = getRegressionRow(id);
+  const row = getRow(id);
+  if (!reg || !row) return { ok: false, status: 404, error: `finding ${id} has no regression test` };
+  const alreadyThisJob = reg.last_job_id === run.job_id && reg.last_outcome === "reproduced";
+  db.prepare(
+    `UPDATE regressions SET runs = runs + 1, last_run_at = datetime('now'), last_job_id = ?, last_outcome = ?, last_detail = ?
+     WHERE finding_id = ?`,
+  ).run(run.job_id, alreadyThisJob ? "reproduced" : run.outcome, run.detail || null, id);
+
+  let reopened = false;
+  if (run.outcome === "reproduced" && reg.state === "active" && !alreadyThisJob) {
+    const builds = parse<string[]>(row.builds_seen, []);
+    if (!builds.includes(run.build)) builds.push(run.build);
+    db.prepare(
+      `UPDATE findings SET verdict = NULL, verdict_note = NULL, verdict_at = NULL, duplicate_of = NULL,
+                           seen_count = seen_count + 1, last_seen = datetime('now'), last_job_id = ?, builds_seen = ?
+       WHERE id = ?`,
+    ).run(run.job_id, JSON.stringify(builds), id);
+    const note = `regressed on build ${run.build} (job ${run.job_id}, ${run.device_id})${run.detail ? `: ${run.detail}` : ""}`.slice(0, LIMITS.note);
+    db.prepare("INSERT INTO finding_verdicts (finding_id, event, verdict, note, source) VALUES (?, 'regressed', NULL, ?, 'regression')")
+      .run(id, note);
+    reopened = true;
+  }
+  return { ok: true, reopened, regression: regressionView(getRegressionRow(id))!, finding: view(getRow(id)!) };
+});
 
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
 
-export type ListQuery = { app?: string; check?: string; status?: string; since?: string; limit?: number };
+export type ListQuery = {
+  app?: string; check?: string; status?: string; verdict?: string; since?: string; limit?: number; offset?: number;
+};
+
+/**
+ * A `since` filter: an ISO-8601 time, or a span back from now -- `90m`, `24h`,
+ * `7d`, `2w` -- which is what an agent's morning brief asks for. Null when it
+ * is neither.
+ */
+export function parseSince(raw: string, now = new Date()): Date | null {
+  const span = /^(\d+)\s*(m|h|d|w)$/i.exec(raw.trim());
+  if (span) {
+    const unit = { m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[span[2].toLowerCase() as "m" | "h" | "d" | "w"];
+    return new Date(now.getTime() - Number(span[1]) * unit);
+  }
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? new Date(t) : null;
+}
 
 /** The filtered list, newest sighting first, with facets over every row so a filter never empties its own menu. */
-export function listFindings(q: ListQuery): { ok: true; body: unknown } | { ok: false; error: string } {
+export function listFindings(q: ListQuery): { ok: true; body: FindingList } | { ok: false; error: string } {
   const where: string[] = [];
   const params: string[] = [];
   if (q.app) { where.push("app = ?"); params.push(q.app); }
@@ -695,13 +1039,13 @@ export function listFindings(q: ListQuery): { ok: true; body: unknown } | { ok: 
   const status = q.status ?? "all";
   if (!["open", "triaged", "all"].includes(status)) return { ok: false, error: "status must be open, triaged or all" };
   if (q.since) {
-    const t = Date.parse(q.since);
-    if (!Number.isFinite(t)) return { ok: false, error: "since must be an ISO-8601 date or time" };
+    const t = parseSince(q.since);
+    if (!t) return { ok: false, error: "since must be an ISO-8601 date or time, or a span like 24h or 7d" };
     where.push("last_seen >= ?");
-    params.push(sqliteTime(new Date(t)));
+    params.push(sqliteTime(t));
   }
-  // Counted before the status filter, so the page can say "3 open, 12 triaged"
-  // for whatever app and check are selected.
+  // Counted before the status and verdict filters, so the page can say
+  // "3 open, 12 triaged" for whatever app and check are selected.
   const scoped = where.length ? `WHERE ${where.join(" AND ")}` : "";
   const counts = db
     .prepare(
@@ -711,13 +1055,20 @@ export function listFindings(q: ListQuery): { ok: true; body: unknown } | { ok: 
     .get(...params) as { open: number | null; triaged: number | null; total: number };
   if (status === "open") where.push("verdict IS NULL");
   if (status === "triaged") where.push("verdict IS NOT NULL");
+  if (q.verdict) {
+    const wanted = q.verdict.split(",").map((v) => v.trim()).filter(Boolean);
+    const bad = wanted.find((v) => !VERDICTS.includes(v as Verdict));
+    if (bad) return { ok: false, error: `verdict must be one of ${VERDICTS.join(", ")} (comma-separated), not ${JSON.stringify(bad)}` };
+    where.push(`verdict IN (${wanted.map(() => "?").join(",")})`);
+    params.push(...wanted);
+  }
+  const filtered = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const total = (db.prepare(`SELECT COUNT(*) AS n FROM findings ${filtered}`).get(...params) as { n: number }).n;
   const limit = Math.min(500, Math.max(1, Number(q.limit ?? 100) || 100));
+  const offset = Math.max(0, Math.floor(Number(q.offset ?? 0) || 0));
   const rows = db
-    .prepare(
-      `SELECT * FROM findings ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-       ORDER BY last_seen DESC, id DESC LIMIT ?`,
-    )
-    .all(...params, limit) as Row[];
+    .prepare(`SELECT * FROM findings ${filtered} ORDER BY last_seen DESC, id DESC LIMIT ? OFFSET ?`)
+    .all(...params, limit, offset) as Row[];
   return {
     ok: true,
     body: {
@@ -727,22 +1078,80 @@ export function listFindings(q: ListQuery): { ok: true; body: unknown } | { ok: 
       checks: (db.prepare("SELECT DISTINCT check_name FROM findings ORDER BY check_name").all() as { check_name: string }[])
         .map((r) => r.check_name),
       limit,
+      offset,
+      total,
     },
   };
 }
 
-/** One finding, with the findings a person has marked as duplicates of it. */
-export function findingDetail(id: number) {
+export type FindingList = {
+  findings: FindingView[];
+  counts: { open: number; triaged: number; total: number };
+  apps: string[];
+  checks: string[];
+  limit: number;
+  offset: number;
+  /** Rows matching every filter, status and verdict included. */
+  total: number;
+};
+
+const EVIDENCE_LABEL = ARTIFACT_LABEL;
+
+/** A replay flow small enough to inline is inlined; past this, follow `url`. */
+export const FLOW_INLINE_BYTES = 16 * 1024;
+
+/**
+ * One finding, with the findings a person has marked as duplicates of it, its
+ * verdict history, its regression test, its evidence as links, and its replay
+ * flow -- inline when it is small, which a Maestro flow nearly always is.
+ */
+export function findingDetail(id: number, read: ReadArtifact = readStoredArtifact) {
   const f = getFinding(id);
   if (!f) return null;
   const duplicates = db
     .prepare("SELECT id, title, seen_count FROM findings WHERE duplicate_of = ? ORDER BY id")
     .all(id) as { id: number; title: string; seen_count: number }[];
   const original = f.duplicate_of ? getFinding(f.duplicate_of) : null;
+  const inStore = (sha: string) => existsSync(path.join(ARTIFACT_DIR, sha));
+  const evidence = ARTIFACT_KEYS.filter((k) => f.artifacts[k]).map((k) => {
+    const sha = f.artifacts[k]!;
+    return { role: k, label: EVIDENCE_LABEL[k], sha256: sha, url: `/api/v1/artifacts/${sha}/content`, in_store: inStore(sha) };
+  });
+  const regression = getRegression(id);
+  const flowSha = flowShaOf(f);
+  let replayFlow: {
+    kind: string; sha256: string; url: string; in_store: boolean; text: string | null; truncated: boolean;
+  } | null = null;
+  if (flowSha) {
+    const stored = inStore(flowSha);
+    const text = (stored ? read(flowSha) : null) ?? (regression?.flow_sha256 === flowSha ? regression.flow : null);
+    const kind = f.replay?.kind && f.replay.kind !== "none" ? f.replay.kind : regression?.kind ?? "maestro";
+    replayFlow = {
+      kind, sha256: flowSha, url: `/api/v1/artifacts/${flowSha}/content`, in_store: stored,
+      text: text !== null && Buffer.byteLength(text) <= FLOW_INLINE_BYTES ? text : null,
+      truncated: text !== null && Buffer.byteLength(text) > FLOW_INLINE_BYTES,
+    };
+  }
   return {
     ...f,
     duplicates,
     duplicate_of_title: original?.title ?? null,
+    counts: {
+      seen: f.seen_count,
+      builds: f.builds_seen.length,
+      replay_attempts: f.replay?.attempts ?? null,
+      replay_reproduced: f.replay?.reproduced ?? null,
+      regression_runs: regression?.runs ?? 0,
+    },
+    evidence,
+    replay_flow: replayFlow,
+    regression,
+    history: verdictHistory(id),
+    links: {
+      self: `/api/v1/findings/${id}`,
+      verdict: `/api/v1/findings/${id}/verdict`,
+      dashboard: `/dash/findings/${id}`,
+    },
   };
 }
 
@@ -760,7 +1169,7 @@ export type PrecisionClass = {
   duplicate: number;
   not_a_bug: number;
   agent_mistake: number;
-  /** real + not_a_bug + agent_mistake. Duplicates say nothing about whether the check was right. */
+  /** real (fixed included) + not_a_bug + agent_mistake. Duplicates say nothing about whether the check was right. */
   judged: number;
   /** real / judged, or null before anything has been judged. */
   precision: number | null;
@@ -793,7 +1202,8 @@ export function precision(opts: { app?: string; min?: number } = {}) {
       c = { app: r.app, check: r.check_name, subclass: r.subclass || null, open: 0, real: 0, duplicate: 0, not_a_bug: 0, agent_mistake: 0, judged: 0, precision: null, disabled: false };
       byKey.set(key, c);
     }
-    c[r.verdict ?? "open"] += r.n;
+    // A fixed finding was a real one: the check was right about it.
+    c[r.verdict === "fixed" ? "real" : r.verdict ?? "open"] += r.n;
   }
   const classes = [...byKey.values()].map((c) => {
     const judged = c.real + c.not_a_bug + c.agent_mistake;

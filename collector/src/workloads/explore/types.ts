@@ -305,5 +305,9 @@ export type ExploreFinding = {
   artifacts: { shot?: string; sheet?: string; trajectory?: string; log?: string; replay?: string };
 };
 
-/** A person's verdict on a finding (T4). Also the training label if E8 ever happens. */
-export type Verdict = "real" | "duplicate" | "not_a_bug" | "agent_mistake";
+/**
+ * A person's verdict on a finding (T4). Also the training label if E8 ever happens.
+ * `fixed` comes only after `real`: the bug was real and a fix has merged, which
+ * is what makes its replay flow a regression test in the nightly.
+ */
+export type Verdict = "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed";
