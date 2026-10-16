@@ -102,8 +102,10 @@ explore job itself, which is why it exits 0.
 The shelf refused to load the model for memory, and kept refusing for
 `--warm-wait` minutes (default 10). The night queue admits a job on free
 memory as `vm_stat` counts it (`needs_gb` in the manifest); the shelf decides
-on `memory_pressure`'s free percentage (65% for an on-demand model). They can
-disagree by a point, which is how 10-14's Apple night died. Check what else
+on `memory_pressure`'s free percentage (65% for an on-demand model by
+default; explore's warm-up asks for 45% with `WARM_MIN_FREE_PCT`). They can
+disagree by a point, which is how 10-14's Apple night died, and on 10-15 the
+resident models alone held ultra at 56% free, under the old 65%. Check what else
 was loaded with `~/.lmstudio/bin/lms ps`. Any other warm-up failure is a
 failure, not a skip, and its last line is the job's error.
 

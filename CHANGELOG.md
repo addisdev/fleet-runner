@@ -98,25 +98,12 @@ a CI job fails when they disagree.
 
 ### Changed
 
-- **The dashboard reads devices, jobs, templates and schedules through
-  `/api/v1`.** It called the deprecated `GET /api/devices`, `/api/jobs` and
-  their detail routes, and enqueued with `POST /api/jobs`, with response types
-  written by hand, so the server could change a field and the dashboard would
-  show a blank column with nothing failing. It now uses the generated client
-  for every read and change `/api/v1` offers, and its types are the client's.
-  The `/api/v1` schemas state every field the dashboard reads, so
-  `check-api-v1` fails when a handler stops sending one, and a new suite step
-  fails if `dash/src` calls a route the deprecation headers mark. To carry the
-  Devices and Jobs filter menus, `GET /api/v1/devices` and `/api/v1/jobs` now
-  return `facets`, and `/api/v1/jobs` takes `has_error=true`. Two things a
-  person can see: the composer's spec is checked strictly, so an unknown
-  top-level field or params outside the workload's manifest is refused with
-  the path named instead of failing later, and its jobs record `source: dash`.
-  Enqueueing is no longer behind `FLEET_DASH_TOKEN`, as `POST /jobs` never
-  was. Findings, the Overview, results, system, events, the live stream and the
-  other changes stay on `/api/*` until `/api/v1` has them.
-  ([#97](https://github.com/addisdev/fleet-runner/pull/97))
-
+- **Explore loads its model at 45% free memory, not 65%.** ultra's resident
+  models alone hold it near 56% free, so the shelf's default bar meant no
+  explore night could load Holo4 (~25 GB); 10-15's garden night skipped for
+  it. The night manifests pass `WARM_MIN_FREE_PCT=45` to the warm-up; the
+  shelf's default for everything else is unchanged, and it still refuses
+  under memory pressure. ([#95](https://github.com/addisdev/fleet-runner/pull/95))
 - **`ci-enqueue` speaks `/api/v1` and exits like `fleetr run`.** It polled the
   deprecated `GET /jobs/:id` and exited 0 on `done`, which includes a job that
   skipped and tested nothing, and it sent no token, so it failed against a
@@ -187,15 +174,26 @@ a CI job fails when they disagree.
   `npm run shoot:live`, filtered to what was online and to the `bug-garden`
   fixture app; docs/brand.md says why a throwaway collector cannot make them.
   ([#90](https://github.com/addisdev/fleet-runner/pull/90))
+- **The dashboard reads devices, jobs, templates and schedules through
+  `/api/v1`.** It called the deprecated `GET /api/devices`, `/api/jobs` and
+  their detail routes, and enqueued with `POST /api/jobs`, with response types
+  written by hand, so the server could change a field and the dashboard would
+  show a blank column with nothing failing. It now uses the generated client
+  for every read and change `/api/v1` offers, and its types are the client's.
+  The `/api/v1` schemas state every field the dashboard reads, so
+  `check-api-v1` fails when a handler stops sending one, and a new suite step
+  fails if `dash/src` calls a route the deprecation headers mark. To carry the
+  Devices and Jobs filter menus, `GET /api/v1/devices` and `/api/v1/jobs` now
+  return `facets`, and `/api/v1/jobs` takes `has_error=true`. Two things a
+  person can see: the composer's spec is checked strictly, so an unknown
+  top-level field or params outside the workload's manifest is refused with
+  the path named instead of failing later, and its jobs record `source: dash`.
+  Enqueueing is no longer behind `FLEET_DASH_TOKEN`, as `POST /jobs` never
+  was. Findings, the Overview, results, system, events, the live stream and the
+  other changes stay on `/api/*` until `/api/v1` has them.
+  ([#97](https://github.com/addisdev/fleet-runner/pull/97))
 
 ### Fixed
-
-- **`/api/v1` cancel and retry were always refused with `FLEET_DASH_TOKEN`
-  set.** They hand the request to the guarded `/api/jobs/:id/cancel` and
-  `/retry`, and dropped `X-Fleet-Token` on the way, so with the guard on every
-  one answered 401 whatever the caller sent. The header is now carried, and
-  the refusal says `unauthorized` rather than `internal`.
-  ([#97](https://github.com/addisdev/fleet-runner/pull/97))
 
 - **The older job routes skipped two auth checks.** With `FLEET_AUTH=tokens`,
   `POST /api/jobs/:id/cancel` and `/retry` let any `run` token stop or re-run
@@ -308,6 +306,12 @@ a CI job fails when they disagree.
   case-sensitively where the harness does not. It now reads `absent_text` and
   matches case-insensitively, as the bug garden's README says.
   ([#88](https://github.com/addisdev/fleet-runner/pull/88))
+- **`/api/v1` cancel and retry were always refused with `FLEET_DASH_TOKEN`
+  set.** They hand the request to the guarded `/api/jobs/:id/cancel` and
+  `/retry`, and dropped `X-Fleet-Token` on the way, so with the guard on every
+  one answered 401 whatever the caller sent. The header is now carried, and
+  the refusal says `unauthorized` rather than `internal`.
+  ([#97](https://github.com/addisdev/fleet-runner/pull/97))
 
 ### Now verified
 
