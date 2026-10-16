@@ -1,6 +1,7 @@
 # Alerts
 
-Evaluated every 60 seconds (`FLEET_ALERT_TICK_MS`). **Alerts are state, not events**: one row per (rule,
+Evaluated every 60 seconds (`FLEET_ALERT_TICK_MS`, whole milliseconds and at
+least 1000; anything else is ignored with a startup warning). **Alerts are state, not events**: one row per (rule,
 subject) for as long as the condition holds, resolved when it stops. A device
 offline for six hours is one row with a rising `seen_count`, not 360
 notifications — and nothing is notified twice, ever.

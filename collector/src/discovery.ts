@@ -21,10 +21,12 @@
  *
  * ## Why it is off by default
  *
- * `FLEET_DISCOVERY=1`, and `fleet up` turns it on. A collector should not start
- * announcing itself on somebody's office network because they upgraded, and the
- * project's whole security posture is that the network is the access control --
- * which means what it announces itself to is a decision, not a default.
+ * `FLEET_DISCOVERY=1`, or `fleet config set collector.discovery true` for a
+ * brain started with `fleet up`, which otherwise leaves it off. A collector
+ * should not start announcing itself on somebody's office network because they
+ * upgraded, and the project's whole security posture is that the network is the
+ * access control -- which means what it announces itself to is a decision, not a
+ * default.
  *
  * ## What it does not change
  *

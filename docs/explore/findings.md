@@ -127,8 +127,11 @@ scope ([Authentication](../deploy/auth.md)). The body is an
 | `413` | A body over 128 KB |
 | `422` | A replay that reproduced 0 times, or `replay: null` on anything but a crash |
 
-`check` is one of `crash anr frozen blank left_app a11y visual goal regression
-agent_stuck dead_control leash`. `subclass` is the visual judge's class.
+`check` is one of `crash anr frozen blank left_app a11y visual goal
+dead_control`. `subclass` is the visual judge's class. Earlier releases also
+listed `regression`, `agent_stuck` and `leash`, which nothing raised; they are
+refused now. A refused action is on the mission's steps (`refused`), not a
+finding.
 
 ### Reading
 
