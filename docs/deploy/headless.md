@@ -133,7 +133,8 @@ in [networking](networking.md#macos-gates-local-network-access-and-launchd-canno
 
     Either way it is irrelevant to this page. A headless host has nobody to click
     the dialog, so **the tunnel stays** for exactly the machines this page is
-    about. None of the Rust has ever been compiled, either.
+    about. CI compiles it on macOS and launches it on Linux; it has never run
+    on a Mac.
 
 ## Rebuilding one over SSH
 

@@ -137,8 +137,8 @@ And two front doors:
 [`fleet/`](https://github.com/addisdev/fleet-runner/tree/main/fleet), the CLI
 behind `fleet up`, and
 [`desktop/`](https://github.com/addisdev/fleet-runner/tree/main/desktop), a
-menu-bar app around it whose Rust compiles in CI and which has never been
-launched.
+menu-bar app around it that CI compiles on macOS and launches on Linux, and
+that has never run on a Mac.
 
 [The history section](history/index.md) keeps the original architecture plan and
 the design journals as they were written. They are not maintained, and they are

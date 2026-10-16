@@ -217,14 +217,41 @@ the first `codesign` invocation.
 
 ## Status
 
-Be suspicious of this whole directory. **The Rust compiles, and that is all
-that is known about it.** There is no Rust toolchain on the machine it was
-written on, so CI does the compiling: `desktop / cargo check` stages the
-sidecar and runs `cargo check --all-targets` on macOS for every pull request
-that touches `desktop/`.
+Be suspicious of this directory, a little less than before. There is no Rust
+toolchain on the machine it was written on, so CI does the compiling and, since
+the launch smoke, the running. Two jobs in `.github/workflows/desktop.yml` run
+for every pull request that touches `desktop/`:
+
+- **`desktop / cargo check`** stages the sidecar and runs
+  `cargo check --all-targets` on macOS.
+- **`desktop / launch smoke`** builds the app on Ubuntu
+  (`cargo build --features custom-protocol`, the frontend embedded as in a
+  release) and runs [`ci/launch-smoke.sh`](ci/launch-smoke.sh) under Xvfb. That
+  was the first time the app ever ran.
 
 What **has** actually been checked:
 
+- **It launches, on Linux.** Started with no config file, the binary spawns
+  `fleet up` as its sidecar through the staged shim; the collector it starts
+  answers `/api/v1/health` and the machine agent registers with it, inside a
+  few seconds. The app is still running, and the sidecar still answering, 20
+  seconds later.
+- **The settings window loads and talks to the app.** The smoke starts the app
+  again under `tauri-driver` (Tauri's WebDriver server, wrapping
+  `WebKitWebDriver`) and drives it over plain W3C WebDriver: the window title
+  is `Fleet`, `window.__TAURI__` is on the page, `get_status` answers over IPC
+  with `running: true` and the sidecar's own output, the page renders
+  `Running: brain, agent · :8788`, and a screenshot of the window is uploaded
+  as the `desktop-launch-smoke` artifact. So the gold-standard check, not just
+  a process-level one.
+- **SIGTERM stops the sidecar and exits.** The smoke sends the app SIGTERM and
+  checks that the app exits, `fleet up` is gone and nothing answers on the
+  port. Its first run found the opposite, and two bugs behind it, both fixed:
+  the app had no signal handler, so SIGTERM killed it outright and orphaned
+  `fleet up` on the port; and `RunEvent::ExitRequested` refused *every* exit,
+  including the `app.exit(0)` the Quit item calls, so Quit would have stopped
+  the fleet and then not quit. SIGTERM, SIGINT and SIGHUP now take the Quit
+  path (stop, then exit), and only the implicit last-window exit is refused.
 - **`cargo check` passes.** Its first run failed in the build script, before
   any Rust was compiled, because the bundled resource and the sidecar were
   both named `fleet` in `target/debug`. With the resource renamed `fleet-tree`
@@ -237,19 +264,35 @@ What **has** actually been checked:
   arranged into a fake `Contents/MacOS` + `Contents/Resources` layout, and
   `fleet version` and `fleet config` were run through the shim under
   `env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin` — the Finder environment, with no
-  Homebrew on `PATH`. Both worked. That is the piece most likely to be wrong and
-  it is the piece that is tested.
+  Homebrew on `PATH`. Both worked. On Linux it also finds the tree beside a
+  dev build's binary (`target/debug/fleet-tree`), which is what the launch
+  smoke runs.
 - The Rust config struct's serialisation order was compared against real
   `fleet config` output. It matches.
 
+One thing the launch smoke had to work around, and that a Linux user would hit:
+the shim checks `/usr/local/bin/node` before `PATH`, and GitHub's Ubuntu image
+keeps an older Node there, below the 22.13 `node:sqlite` needs. The smoke sets
+`FLEET_NODE`. The order is right for the Mac it was written for (Finder gives an
+app no Homebrew on `PATH`); on Linux it can pick a stale system Node over the
+one you meant.
+
 What has **not**:
 
-- **It has never run.** Not the tray, not the settings window, not the sidecar
-  under Tauri, not a notification, not the dashboard window. Compiling says
-  the Tauri 2 calls exist with those signatures, not that they do what the
-  code assumes. The Cargo package is `fleet-desktop`
-  and `productName` is `Fleet`; if the bundler cannot find its binary, that
-  mismatch is why, and `mainBinaryName` in `tauri.conf.json` is the knob.
+- **It has never run on macOS**, which is the platform it is for. Linux is
+  where Tauri's WebDriver exists, so that is where it was launched. Nothing
+  macOS-specific has been seen: not the menu-bar tray, not the
+  `Accessory` activation policy, not a notification.
+- **The tray and the dashboard window, anywhere.** Under Xvfb there is no
+  status-notifier host for the tray to appear in, so the tray menu -- Open
+  Dashboard, Start, Stop, Quit -- has never been clicked, and the dashboard
+  window it opens has never been opened. The Quit item's code
+  path (stop, then `app.exit(0)`) is the one SIGTERM now takes, and that is
+  checked; the menu item itself is not.
+- **A bundle.** The smoke runs a `cargo build`, not `cargo tauri build`. The
+  Cargo package is `fleet-desktop` and `productName` is `Fleet`; if the bundler
+  cannot find its binary, that mismatch is why, and `mainBinaryName` in
+  `tauri.conf.json` is the knob.
 - **The Local Network hypothesis.** See The bet, above. Everything this app is
   *for* rests on it and none of it is tested.
 - **Info.plist merging.** That Tauri's bundler merges `src-tauri/Info.plist` into
@@ -266,11 +309,11 @@ What has **not**:
   otherwise, `disable-library-validation` because `fleet up` re-execs itself as
   its own children — but nothing has been signed, and the switch-to-Electron
   threshold above is measured from here.
-- **Windows and Linux.** Untouched. `terminate()` on Windows is a no-op with a
-  comment saying so, because `TerminateProcess` does not run `fleet up`'s
+- **Windows.** Untouched. `terminate()` on Windows is a no-op with a comment
+  saying so, because `TerminateProcess` does not run `fleet up`'s
   `process.on("SIGTERM")` handler and faking a graceful stop would be worse than
-  admitting there is not one. The CLI has never been run on either platform
-  either.
+  admitting there is not one. Linux has been launched in CI (above) and used by
+  nobody.
 - **Notification permission.** On macOS this needs a signed, bundled app; an
   unsigned `cargo tauri dev` build may get nothing. The tray headline says the
   same thing without needing permission from anybody, which is the deliberate

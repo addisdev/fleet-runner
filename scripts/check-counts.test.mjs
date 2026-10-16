@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { check, countCatalog, findMarkers, parseCount } from "./check-counts.mjs";
+import { check, countCatalog, findMarkers, maskCode, parseCount } from "./check-counts.mjs";
 
 const CATALOG = `
 const e = () => ({});
@@ -66,4 +66,17 @@ test("a disagreeing, unreadable or unknown marker is a problem", () => {
 test("no markers at all fails, so a deleted marker cannot pass silently", () => {
   const { problems } = check([{ path: "README.md", text: "34 workloads" }], { workloads: 34 });
   assert.match(problems[0], /no <!-- count/);
+});
+
+test("a marker inside code is an example, not a count", () => {
+  const text = [
+    "Mark it as `<!-- count:workloads -->34` next to the number.",
+    "```markdown",
+    "<!-- count:workloads -->12 workloads",
+    "```",
+    "Real: <!-- count:workloads -->34 workloads.",
+  ].join("\n");
+  const marks = findMarkers(text);
+  assert.deepEqual(marks.map((m) => [m.value, m.line]), [[34, 5]]);
+  assert.equal(maskCode(text).length, text.length);
 });

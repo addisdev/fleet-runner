@@ -13,7 +13,7 @@ from an agent, see [`skills/fleet-runner/SKILL.md`](skills/fleet-runner/SKILL.md
 | `collector/src/api/v1/` | The control API. `routes.ts` is the single route table: it registers the routes, generates `openapi.json` and the typed client |
 | `collector/src/client/` | The generated client (`api.gen.ts`) and its transport. The CLI and the MCP server use nothing else |
 | `fleet/` | The `fleet` / `fleetr` command: runs a brain or a runner, plus the work commands, `fleet mcp` and the remote gateway |
-| `desktop/` | A Tauri menu-bar app around `fleet`. A front door, not a runner; compiled in CI and never launched |
+| `desktop/` | A Tauri menu-bar app around `fleet`. A front door, not a runner; compiled in CI on macOS and launched in CI on Linux (`desktop/ci/launch-smoke.sh`), never run on a Mac |
 | `runner-machine/`, `runner-android/`, `runner-ios/`, `runner-roku/`, `collector/runner-web/` | Runners. They speak the runner protocol (`/devices/register`, `/devices/:id/next-job`, `/results`), not `/api/v1` |
 | `skills/fleet-runner/` | The agent skill. Its tables are generated |
 | `bug-garden/` | An Android fixture app with twenty planted defects, for scoring exploratory QA |

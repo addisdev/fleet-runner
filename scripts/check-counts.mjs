@@ -133,9 +133,24 @@ export function parseCount(text) {
 
 const MARKER = /<!--\s*count:([a-z-]+)\s*-->\s*([0-9]+|[A-Za-z]+(?:[-\s][A-Za-z]+)?)/g;
 
-/** Every marked number in a file: `{ key, text, value, line }`. */
+/**
+ * The text with code blanked out, same length, newlines kept.
+ *
+ * A marker written inside backticks is an example of the syntax -- in
+ * CONTRIBUTING.md, in a changelog entry -- not a number standing in prose, and
+ * it must not start failing the day the count moves.
+ */
+export function maskCode(text) {
+  const blank = (s) => s.replace(/[^\n]/g, " ");
+  return text
+    .replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, blank)
+    .replace(/(`+)(?!`)[\s\S]*?[^`]\1(?!`)/g, blank);
+}
+
+/** Every marked number in a file, outside code: `{ key, text, value, line }`. */
 export function findMarkers(text) {
   const out = [];
+  text = maskCode(text);
   for (const m of text.matchAll(MARKER)) {
     let token = m[2];
     // "thirty-four workloads": keep the second word only if it is a units word.

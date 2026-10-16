@@ -16,7 +16,42 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- **A changelog coverage check for releases.** On a `release/*` pull request,
+  and on `develop` into `main`, `changelog coverage` in `ci.yml` lists every
+  pull request merged into `develop` since the last tag and fails, naming
+  each, if the section being released does not mention it as `#N` or a
+  `/pull/N` link. 0.8.0's notes left out work that had shipped in it and had
+  to be amended the day after; this is the check that would have caught it.
+  Label a pull request `no-changelog` to exempt it; Dependabot's are exempt.
+  The logic is `scripts/changelog-coverage.mjs`, with unit tests.
+  ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **The documented workload count is checked.** The README and the docs said
+  28 while the catalog grew to 34. Each hand-written count is now marked
+  `<!-- count:workloads -->34`, and `repo scripts` in `ci.yml` fails on any
+  pull request, docs-only ones included, when a marked number disagrees with
+  the shipped entries in `collector/src/workloads/catalog.ts`. The collector's
+  suite checks that reading against the real `CATALOG`. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+
 ### Fixed
+
+- **`fleet service install` on Windows had never started anything.** The
+  scheduled task's command kept the backslashes of a `\"` escaping meant for a
+  `cmd` prompt -- execFile quotes the argument itself -- so the task ran
+  `\"C:\...\node.exe\"` and failed with "file not found" every time. Found by
+  the new Windows smoke on its first run. `fleet service uninstall` and `stop`
+  also now kill `fleet up`'s process tree before ending the task: deleting a
+  task does not stop it, and Windows does not take a parent's children down
+  with it. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **The desktop app left `fleet up` running when it was killed, and its Quit
+  item could not quit.** SIGTERM (a `kill`, a `killall`, the end of a session)
+  killed the app outright and orphaned its sidecar on the collector's port. And
+  `RunEvent::ExitRequested` refused every exit, including the `app.exit(0)` the
+  Quit item calls, so Quit stopped the fleet and left the app running. SIGTERM,
+  SIGINT and SIGHUP now take the Quit path -- stop `fleet up`, then exit -- and
+  only the implicit last-window exit is refused. Found by the first launch of
+  the app, in CI. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
 
 - **`fleet skill` failed on an installed 0.8.0.** The 0.8.0 archives carry
   `skills/`, but `install.sh` and `install.ps1` copy a release's directories
@@ -32,6 +67,38 @@ a CI job fails when they disagree.
   case-sensitively where the harness does not. It now reads `absent_text` and
   matches case-insensitively, as the bug garden's README says.
   ([#88](https://github.com/addisdev/fleet-runner/pull/88))
+
+### Now verified
+
+Four items from earlier "Not verified" lists, each now checked by
+GitHub-hosted CI on every pull request that touches them. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+
+- **`fleet service install` on launchd.** `fleet / launchd smoke` installs the
+  LaunchAgent on `macos-latest` (the runner has a `gui/<uid>` domain), waits
+  for its collector to answer and its agent to register, checks
+  `fleet service status`, reinstalls once so the bootstrap race is hit and
+  retried (it was), then uninstalls and checks nothing answers, the plist is
+  gone and launchd no longer has the job.
+- **The Windows scheduled task.** `fleet / windows task smoke` runs the same
+  lifecycle on `windows-latest`. It found the bug above; with it fixed, a
+  Windows machine agent registered against a real collector for the first
+  time.
+- **The arm64 container image.** `fleet / container smoke (arm64)` builds
+  `fleet/Dockerfile` natively on `ubuntu-24.04-arm`, checks the container
+  reports `aarch64`, and waits for its agent to register and answer
+  `fleet devices`, `fleet workloads` and `fleet whoami`.
+- **The desktop app launches.** `desktop / launch smoke` builds it on Ubuntu
+  and runs it under Xvfb: its `fleet` sidecar starts a collector whose agent
+  registers, the app is still up 20 seconds later, and SIGTERM stops both.
+  Then, under `tauri-driver`, the settings window is driven over WebDriver:
+  it is titled `Fleet`, `get_status` answers over IPC with the sidecar
+  running, and a screenshot is uploaded. This was the first time the app ever
+  ran. It has still never run on a Mac, and the tray menu has never been
+  clicked.
+
+Still not verified: any of the three services coming back after a reboot, a
+graceful stop on Windows, and the MCP gateway against a real identity provider
+(it needs a tenant).
 
 ## [0.8.0] — 2026-10-15
 

@@ -181,10 +181,14 @@ writes **one** launchd unit running `fleet up`, into
 rather than the five plists the old deployment had, so switching the brain off
 is a config edit rather than a `launchctl` invocation somebody has to look up.
 
-**This is the one platform `fleet service install` has been run on.** Since
-2026-09-19 it runs the brain of the fleet this project was built for: one
+**This is the one platform `fleet service install` runs a real fleet on.**
+Since 2026-09-19 it runs the brain of the fleet this project was built for: one
 launchd unit, three components, on an Intel Mac under macOS 12, surviving a
-reboot of the supervisor and a `kill -9` of the collector under it.
+reboot of the supervisor and a `kill -9` of the collector under it. CI also
+runs it on every pull request that touches it: `launchd smoke` installs the
+LaunchAgent on GitHub's `macos-latest` runner, waits for the collector to
+answer and the agent to register, reinstalls once to hit the bootstrap race
+below, and uninstalls.
 
 Two things that cost an outage each, both fixed and both worth knowing:
 `launchctl bootstrap` loses a race with the `bootout` immediately before it and
