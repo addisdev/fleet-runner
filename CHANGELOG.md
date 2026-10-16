@@ -66,7 +66,7 @@ a CI job fails when they disagree.
   the harness enforces and the standalone checker ignored; it also matched
   case-sensitively where the harness does not. It now reads `absent_text` and
   matches case-insensitively, as the bug garden's README says.
-  ([#88](https://github.com/addisdev/fleet-runner/pull/88))
+
 
 ### Now verified
 
