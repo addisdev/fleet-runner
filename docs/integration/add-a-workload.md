@@ -5,10 +5,17 @@ collector.
 
 ## Why this works at all
 
-`POST /jobs` accepts the workload names the collector and host executor ship
-with, **plus any workload some registered agent declares in its capabilities**.
-Anything else is a 422 naming the missing capability, at enqueue time, rather
-than a job that sits queued forever with nothing to explain why.
+`POST /api/v1/jobs` (and the older `POST /jobs`) accepts the workload names
+the collector and host executor ship with, **plus any workload some registered
+agent declares in its capabilities**. Anything else is a 422,
+`no_capable_agent`, naming the missing capability, at enqueue time, rather than
+a job that sits queued forever with nothing to explain why.
+
+`fleetr workloads` (`GET /api/v1/workloads`) lists an agent-declared workload
+alongside the shipped ones, with the summary "Declared by N live agents; the
+collector publishes no description or params for it." Its `params` are
+therefore not validated by the collector: the agent is the only thing that
+checks them, so it should refuse bad ones with a result that says why.
 
 So the entire path is: implement it in an agent, add it to that agent's route
 table, restart the agent. The job becomes enqueueable the moment it registers.

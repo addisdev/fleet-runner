@@ -66,6 +66,12 @@ registered agent declares.** Anything else is a 422 naming the missing
 capability, at enqueue time, rather than a job that sits queued forever with
 nothing to explain why.
 
+Through [`/api/v1/jobs`](api.md#control-api-apiv1) (and so `fleetr run`) the
+spec is also validated strictly: an unknown top-level field is refused as
+`invalid_spec` rather than ignored, so a typo is an error instead of a setting
+that silently did nothing. The older `POST /jobs` does not check for unknown
+fields.
+
 That is what lets a new runner add a workload the collector has never heard of
 without a release in the collector. [Writing a runner](writing-a-runner.md) is
 the other half of it.
@@ -336,6 +342,7 @@ a function in the middle of the executor.
 | `adb` | Android phones, tablets, TV sticks, headsets and watches — one driver, every Android shape |
 | `simctl` | booted Apple simulators: iOS, tvOS, watchOS, visionOS |
 | `devicectl` | cabled or paired Apple hardware: iPhone, iPad, Apple TV, Watch, Vision Pro |
+| `roku` | Roku players and Roku TVs on the LAN, found over SSDP and spoken to over ECP. It discovers and launches; it does not install |
 
 Every target carries both `platform` (what it is) and `driver` (what reaches
 it), because the two do not line up: one adb drives four shapes that all call

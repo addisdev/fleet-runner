@@ -50,7 +50,7 @@ written into both files:
    `SHASUMS256.txt` cannot be fetched at all.** There is no `--force` past this.
 4. Unpack into `~/.fleet` (`FLEET_INSTALL_DIR` moves it), replacing only the
    entries a release owns -- `bin`, `runner-web`, `dash`, `examples`,
-   `schemas`. It never removes the directory itself, because
+   `schemas`, `skills`. It never removes the directory itself, because
    `~/.fleet` is also where `config.json`, `data/`, `artifacts/` and `logs/`
    live, and an upgrade that deletes your results is worse than one that fails.
 5. Run `fleet version` from the thing it just installed. If the bundle is
@@ -69,7 +69,7 @@ something is wrong; stop and read it.
 ```
 ~/.fleet/
   config.json      what fleet up reads; `fleet config set` writes it
-  bin/             fleet.mjs, and a `fleet` symlink (a fleet.cmd shim on Windows)
+  bin/             fleet.mjs, with `fleet` and `fleetr` symlinks (fleet.cmd and fleetr.cmd on Windows)
   data/            fleet.db, and collector.json -- this brain's name and id
   artifacts/       build products, screenshots, everything a job published
   logs/            one per supervised component
@@ -107,3 +107,5 @@ to.
   browser to a fleet that is already running.
 - **[Deploy](../deploy/index.md)** -- keeping it up, and the network gotcha
   that costs an evening.
+- **[AI agents and automation](../agents.md)** -- `fleet skill install` and
+  `fleet mcp`, so a coding agent can run jobs on the fleet.

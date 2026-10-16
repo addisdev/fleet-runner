@@ -25,6 +25,11 @@ a CI job fails when they disagree.
   the bundle gains a directory the installers do not copy. The installers are
   fetched from `main`, so re-running the install command fixes an existing
   0.8.0 install; no new release is needed.
+- **`bug-garden/tools/check-bench.mjs` passed `bench-delete-plant` without
+  checking the plant was gone.** The card's `check` gained `absent_text`, which
+  the harness enforces and the standalone checker ignored; it also matched
+  case-sensitively where the harness does not. It now reads `absent_text` and
+  matches case-insensitively, as the bug garden's README says.
 
 ## [0.8.0] — 2026-10-15
 
@@ -125,6 +130,63 @@ pull request that touches them:
 - **The dashboard does not use the generated client yet.** It still calls the
   unversioned routes with hand-written types
   ([#83](https://github.com/addisdev/fleet-runner/issues/83)).
+
+### Also in this release
+
+These merged into `develop` before 0.8.0 was cut and shipped in it, but were
+left out of the notes above on release day.
+
+- **Exploratory QA, the `explore` workload.** A vision model works through
+  mission cards on tonight's build, driving a device the way a person would,
+  while the harness checks every step for crashes, ANRs, frozen and blank
+  screens, dead controls, accessibility and visual defects. Each candidate is
+  replayed twice on a clean install and only what reproduces is filed; a crash
+  stands on its log. See [Exploratory QA](docs/explore/index.md).
+  ([#70](https://github.com/addisdev/fleet-runner/pull/70))
+- **Findings, verdicts and a morning digest.** `POST /findings` merges repeats
+  by fingerprint; the dashboard's Findings page has Real, Duplicate, Not a bug
+  and Agent's mistake. A check under 30% precision after ten verdicts is
+  switched off for that app (crashes and ANRs never are). GitHub issues stay a
+  dry run unless `FLEET_GITHUB_ISSUES=1` and a token are set, and the collector
+  only ever creates them. ([#70](https://github.com/addisdev/fleet-runner/pull/70))
+- **What it drives:** Android phones, tablets, Android TV and Fire TV over adb;
+  iOS and tvOS through FleetDriver, a new XCUITest command server in
+  `runner-ios`; a Roku through tvloop. The leash refuses delete, purchase,
+  invite and sign-out controls unless a card allows them and never types into
+  a password field. ([#70](https://github.com/addisdev/fleet-runner/pull/70))
+- **The bug garden**, an Android fixture app with twenty planted defects, a
+  scoring rule and scorer, and twenty bench cards for scoring a model without
+  a judge. Its screenshot walks capture each screen in the base, dark, Spanish
+  and large-text settings. ([#70](https://github.com/addisdev/fleet-runner/pull/70),
+  [#74](https://github.com/addisdev/fleet-runner/pull/74))
+- **Nights on ultra.** `scripts/explore-night.ts` is the night-queue command:
+  it boots the devices, opens its own tunnel to the brain, runs one job and
+  exits with its result. `nightly-builds.sh` builds GreenFolio iOS and
+  Dozehound tvOS from `origin/develop`; the tvOS and iOS nights run after the
+  products' own night jobs. Holo4 35B-A3B measured 100 of 100 on pointing and
+  a median step of 6.8 s. Fire TV is parked and the TV question is answered on
+  tvOS. ([#73](https://github.com/addisdev/fleet-runner/pull/73),
+  [#77](https://github.com/addisdev/fleet-runner/pull/77),
+  [#78](https://github.com/addisdev/fleet-runner/pull/78))
+- **The dashboard draws each device as the object it is**: 22 drawings
+  (phones, tablets, TV boxes and sticks, computers, watches, a headset, a
+  board, a browser) instead of seven silhouettes, chosen from the model string
+  first because older agents report a Roku as `android` and an Apple TV or a
+  watch as `ios`. ([#69](https://github.com/addisdev/fleet-runner/pull/69))
+- **The Android runner starts on Android 7.0 and 7.1.** `RunnerService` called
+  `startForegroundService`, which exists from API 26, so API 24 and 25 threw
+  `NoSuchMethodError`; it uses `startService` there now.
+  ([#75](https://github.com/addisdev/fleet-runner/pull/75))
+- **The Android runner is linted in CI.** The `android.hardware.type.watch`
+  feature line that failed `lintDebug` is gone; the runner still detects a
+  watch at run time. ([#76](https://github.com/addisdev/fleet-runner/pull/76))
+
+Not verified, from those pull requests: a physical iPhone or Apple TV through
+FleetDriver; a real Roku (its developer password is not on the host yet); any
+model-driven night on an Apple surface (the iOS and tvOS simulators were driven
+without a model); the GreenFolio Android cards; the Android 7 fix on a real
+API 24 or 25 device (Robolectric only); and any Wear device, before or after
+the lint change.
 
 ## [0.7.2] — 2026-09-30
 

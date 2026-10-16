@@ -106,8 +106,10 @@ Serve it two ways and keep the faster one behind the gateway name `pilot`:
   ```
 
 Merge `deploy/explore/litellm-pilot.yaml` into the gateway's `model_list`.
-`pilot` has no cloud fallback on purpose. Then put the gateway key in the
-Keychain, where the workload reads it:
+`pilot` has no cloud fallback on purpose. On ultra the gateway key is the file
+`~/.config/harness/keys/fleet.key` (see the table at the top: nothing started
+over SSH or by launchd can write the login Keychain there). On a laptop, the
+Keychain works:
 
 ```bash
 security add-generic-password -s fleet-explore-gateway -a gateway -w
@@ -180,10 +182,12 @@ replayed real-build findings marked real. Under 30% real: switch the judge off
 ## Phase 3: the TV question
 
 The fake Roku first (`npx @tvloop/fakeroku --agent`), then the real Roku once
-its developer password is in fleet-host's Keychain, then Fire TV through adb
-D-pad keys. The TV cards are in `examples/missions/fakeroku/` and
-`examples/missions/dozehound-tv/`; each bench card's end state is a focused
-element the harness can read.
+its developer password is in fleet-host's Keychain (WB-101). Fire TV was the
+next step and is parked (WB-297, above), so the question is answered on a tvOS
+simulator with the Dozehound stub catalog: the `fleet-explore-tv` night. The TV
+cards are in `examples/missions/fakeroku/`, `examples/missions/dozehound-tv/`
+and `examples/missions/dozehound-tvos/`; each bench card's end state is a
+focused element the harness can read.
 
 **Exit:** the better of Holo4 and plain Qwen completes at least half of 20
 navigation missions. If neither does, TVs keep scripted tvloop replays with the
@@ -213,7 +217,8 @@ FLEET_URL=http://127.0.0.1:18788 npm run seed:schedules
 ultra is on the Mini's side of the home network and cannot route to
 fleet-host's 192.168.50.x address, so the tunnel goes over the tailnet
 (`fleet-ts`). Turn `nightly-explore-greenfolio` on from the Schedules page after
-phase 2 passes; leave `nightly-explore-dozehound-tv` off until phase 3 does.
+phase 2 passes. Leave `nightly-explore-dozehound-tv` off: it is the Fire TV
+schedule, parked with Fire TV itself.
 
 On the brain, set `FLEET_FINDINGS_DIGEST_AT=07:30` for the morning digest
 through the alert webhook. GitHub issues stay dry-run until both
@@ -222,7 +227,8 @@ through the alert webhook. GitHub issues stay dry-run until both
 `/api/findings/issues` shows what would have been filed.
 
 **Exit:** seven nights in a row without help, morning triage under ten minutes,
-and no night over five new findings per app.
+and no night over five new findings per app (the bug garden's night allows 25
+on purpose and does not count).
 
 ## Guards
 

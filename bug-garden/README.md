@@ -21,8 +21,10 @@ mission and before a replay) puts it back exactly where it started.
 | `android/` | The app. Kotlin, Jetpack Compose, minSdk 26, AndroidX only. |
 | `defects.json` | The twenty defects: class, which check should catch it, screen, how to reach it, what it looks like, and a match pattern. |
 | `tools/check-bench.mjs` | Checks a bench mission's `check` block against a `uiautomator dump`, with no model. |
+| `tools/verify-on-device.sh` | Walks to every defect on a device and checks each one still fires; see [Proving it on a device](#proving-it-on-a-device). |
 | `../collector/examples/missions/bug-garden/` | Seven exploration missions and twenty bench missions (`bench-*`). |
-| `../collector/examples/flows/bug-garden/` | `sign-in.yaml` (the missions' setup flow), `smoke.yaml`, and `bench/`, a scripted answer to each bench mission. |
+| `../collector/examples/flows/bug-garden/` | `sign-in.yaml` (the missions' setup flow), `smoke.yaml`, `bench/` (a scripted answer to each bench mission), `probes/` (a walk to each defect), and the `t1-*.yaml` walks that take one screenshot of each screen in the base, dark, Spanish and large-text settings. |
+| `../collector/scripts/explore-bench/garden-score.ts` | Scores a night's findings against `defects.json` by the rule under [Scoring](#scoring). |
 
 ## Build and install
 
@@ -89,7 +91,7 @@ in any of the three languages.
 
 ## The defects
 
-Twenty, in eight classes. `defects.json` has the steps for each; in brief:
+Twenty, in nine classes. `defects.json` has the steps for each; in brief:
 
 | Id | Class | Check | Screen | Defect |
 |---|---|---|---|---|
@@ -202,9 +204,15 @@ with quantity 3", "Change the language to Spanish"), defects off
 (`launch_args: ["garden_defects=false"]`), and a `check` block a harness
 evaluates against the final `uiautomator dump`:
 
-- `text`: every string is a case-sensitive substring of some node's `text` or
-  `content-desc`. (Content-desc counts: the Settings icon on Home is labelled
-  "Ajustes" in Spanish, so the Spanish check passes on Home or on Settings.)
+- `text`: every string is a case-insensitive substring of some node's `text`
+  or `content-desc`. (Content-desc counts: the Settings icon on Home is
+  labelled "Ajustes" in Spanish, so the Spanish check passes on Home or on
+  Settings.)
+- `absent_text`: no node's `text` or `content-desc` contains any of these
+  strings. `bench-delete-plant` uses it to check that Aloe Vera is gone, not
+  just that the list is one plant shorter.
+- `focused_label`: the focused node's label contains the string. The TV cards
+  use it, since a D-pad screen's state is where focus sits.
 - `screen`: some node has `resource-id="screen_<screen>"`.
 
 The checks only use text that the seed data cannot produce by itself. No seeded
@@ -213,11 +221,10 @@ the Office, so "Qty 3" can only come from the plant the mission added. Where a
 check names no screen, it holds on both the plant list and the plant's detail
 page, which is where a model doing the task naturally ends.
 
-One limit: the check block has no way to say text must be absent, so
-`bench-delete-plant` checks for "8 plants" (one fewer than the seed) rather
-than for Aloe Vera's absence.
-
-`tools/check-bench.mjs` implements exactly these rules:
+`tools/check-bench.mjs` implements these rules. The one difference from the
+harness is `screen`: the harness matches the screen map's name for the final
+screen, while the tool, which has only a dump, looks for the bug garden's
+`screen_<screen>` tag. To check a dump by hand:
 
 ```sh
 adb exec-out uiautomator dump /dev/tty > /tmp/dump.xml

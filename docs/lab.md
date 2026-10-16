@@ -18,6 +18,7 @@ and nothing said which of them held the iPhone.
 | **runner-host** | MacBook Pro (Mac14,10), macOS 26.7, Xcode 27 | **Nothing of Fleet Runner's, since 2026-09-22.** It runs the GitHub Actions runner farm, which is its own project | `ssh runner-host` |
 | **the dev MacBook** | M1 Pro, 16 GB, macOS 27, Xcode 27 | A machine agent and the `mac-dev` executor in pool `personal`, plus the SSH tunnel and the alert receiver. Its executor refuses heavy work above load 50 or under 2 GB of free swap (`FLEET_MAX_LOAD`, `FLEET_MIN_FREE_SWAP_MB`) | it is the machine you are on |
 | **the mini** | Mac mini M4, macOS 15.6.1, up 224 days | Nothing fleet-related | `ssh mini`, over the tailnet |
+| **ultra** | Mac Studio, M5 Ultra, 96 GB, macOS 27 | The exploratory QA nights: the `ultra` executor, its Android emulator and Apple simulators, and the model gateway they call. Its night queue runs them, not the brain's schedules; [Running it on ultra](deploy/explore-on-ultra.md) is its runbook | `ssh ultra`; it reaches the brain through its own tunnel |
 
 **Why the brain is the oldest machine.** It is on the shelf's subnet, and it is
 macOS 12, which has no local-network gate. Every other Mac here is macOS 26 or
@@ -149,6 +150,12 @@ Three things have to be true for a status to appear:
 MacBook it reaches the brain through the tunnel, the same as the agent does.
 A result whose error starts with `skipped:` means nothing ran.
 
+From 0.8.0 there is also `fleetr`, whose exit code is the verdict, and a skill
+(`fleet skill install`) that tells an agent which commands to run in what
+order. [AI agents and automation](agents.md) has both. The brain here is still
+on 0.7.2, so neither `/api/v1` nor the new commands work against it until it is
+upgraded.
+
 ## The suites are not in git
 
 `~/fleet-collector/flows/` and `~/fleet-collector/web-specs/` on fleet-host hold
@@ -185,7 +192,7 @@ Five enabled. All times local to fleet-host.
 |---|---|---|---|
 | `nightly-synthetic-shelf` | 02:00 | fanout, pool `machines` | A machine's throughput moved, or an agent is not claiming. This is the comparison table |
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
-| `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** Since 09-16 it is `no targets attached` — the Galaxy S8+ is unplugged |
+| `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The Galaxy S8+ is plugged in again and the suite now runs on it, and fails, every night; why is not diagnosed yet |
 | `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | Green. The baseline was re-accepted on 2026-09-22 from fleet-host's own captures, after Aliquant's sign-in page gained a "Forgot password?" link; the old one had diverged 2.7% on desktop and 6.1% on mobile since 09-10. The `webkit` and `mobile-safari` baselines are still the August ones, because nothing runs those projects now |
 | `nightly-tvloop-hardware` | 05:00 | `fleet-host`, the Roku, exclusive | tvloop's doctor, install, contract tests and flow replay. `skipped:` until the Roku password is in fleet-host's Keychain. Red from doctor means the Roku is asleep, off the network, or out of developer mode |
 
@@ -216,15 +223,14 @@ that pool here.
 
 ```bash
 ssh fleet-host
-fleet service status          # says "running" even when the brain has given up — see below
+fleet service status          # names a component that gave up, and exits non-zero
 tail -40 ~/.fleet/logs/fleet.log
 curl -s localhost:8788/api/health
 ```
 
-`fleet service status` reports on the launchd job, not on what the supervisor is
-doing, so it says `running` while the supervisor has permanently given up on the
-brain. Read `fleet.log` for `GAVE UP`. Tracked in
-[#45](https://github.com/addisdev/fleet-runner/issues/45).
+Since 0.6.1 `fleet service status` reads the supervisor's own state, so a
+component it has given up on shows as `GAVE UP at … after N restarts` rather
+than `running`. `fleet.log` has the restarts that led there.
 
 ### Restarting it
 
@@ -269,8 +275,9 @@ from, so a restore does not have to guess.
 
 ## What is not done, and who it needs
 
-- **The shelf is unplugged.** No phone, tablet, TV or stick has been on the
-  fleet since 2026-08-18. That needs a powered USB hub and cables.
+- **Most of the shelf is unplugged.** The Galaxy S8+ is back on fleet-host;
+  no other phone, tablet, TV or stick has been on the fleet since 2026-08-18.
+  That needs a powered USB hub and cables.
 - **The Roku's developer password is not in fleet-host's Keychain**, so the
   tvloop nightly skips. Developer mode is on.
 - **An Apple TV 4K** is paired to the dev MacBook and has never run the tvOS

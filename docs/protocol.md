@@ -294,6 +294,30 @@ Uploading with `x-artifact-app`, `x-artifact-build` and `x-artifact-platform`
 stamps the upload as a published build, which is what makes
 `"sha256": "latest"` resolvable. There is no separate publish call.
 
+## Authentication (optional)
+
+Off by default, and off for the runner protocol even when the control API has
+tokens on (`FLEET_AUTH=tokens`): phones, TVs, Rokus and the browser runner send
+no token. With `FLEET_AUTH_PROTOCOL=token` as well, every call on this page
+needs
+
+```
+Authorization: Bearer fr_...
+```
+
+from a token with the `agent` scope (or `admin`, which implies it). No token
+is a 401; a token without the scope is a 403. `GET /artifacts/{sha256}` also
+accepts a `read` token, so a person can open a screenshot. runner-machine and
+the host executor send `FLEET_TOKEN` from their environment when it is set;
+the Android, iOS, Roku and browser runners do not, so do not turn this on while
+any of them is on the shelf. See [Authentication](deploy/auth.md).
+
+The same rule covers the protocol's smaller routes, which a minimal agent never
+calls: `POST /jobs/{id}/release`, `POST /locks/acquire` · `/release`,
+`POST /events/{topic}` and `GET /events/{topic}/poll`, `POST /findings` (an
+`explore` finding from an executor) and `POST /api/jobs/{id}/mirror` (a live
+JPEG frame).
+
 ## Writing your own agent
 
 The contract above is the whole thing. [Writing a runner](writing-a-runner.md)
@@ -313,6 +337,9 @@ Worth stating, because each of these is a design decision rather than a gap:
   which makes the next beacon return `lease_renewed: false`. Work in flight
   finishes; nothing new starts.
 - **It carries no secrets in job specs.** A job names a credential; the agent
-  reads it from its own environment or Keychain. This is enforced by the design
-  rather than by validation — `POST /jobs` is unauthenticated, so a spec is not
-  a place a secret could safely live.
+  reads it from its own environment or Keychain. Enqueue refuses, with 400
+  `secret_in_spec`, any spec containing a key (or string value) named
+  `password`, `passwd`, `secret`, `token`, `api_key` or `apikey`, in any case.
+  The check is a backstop, not the reason: a spec is stored, served by the API
+  and shown on the dashboard, and `POST /jobs` is unauthenticated by default,
+  so a spec is not a place a secret could safely live.

@@ -8,11 +8,15 @@ the code.
 
 | | Directory | Override |
 |---|---|---|
-| Maestro flows | `collector/flows/<app>/` | `FLEET_FLOWS_DIR` |
-| Playwright specs | `collector/web-specs/<site>/` | `FLEET_WEB_SPECS_DIR` |
-| Visual capture manifests | `collector/web-specs/<site>/shots.json` | |
-| Audit config | `collector/web-specs/<site>/audit.json` | |
+| Maestro flows | `collector/examples/flows/<app>/` | `FLEET_FLOWS_DIR` |
+| Playwright specs | `collector/examples/web-specs/<site>/` | `FLEET_WEB_SPECS_DIR` |
+| Visual capture manifests | `collector/examples/web-specs/<site>/shots.json` | |
+| Audit config | `collector/examples/web-specs/<site>/audit.json` | |
 
+The defaults are `examples/flows` and `examples/web-specs`, resolved from the
+directory the collector and executor run in, which is `collector/` for
+`npm start`. Set the overrides to keep your own flows and specs outside the
+checkout.
 [`examples/`](https://github.com/addisdev/fleet-runner/tree/main/collector/examples)
 has working versions of each, including a neutral `fleetrunner/smoke.yaml` you
 can copy as a starting point.
@@ -36,7 +40,7 @@ Then:
 
 ```json
 { "workload": "ui-test", "executor": "host",
-  "app": { "name": "your-app-android", "sha256": "latest" },
+  "app": { "name": "your-app-android", "build": "latest", "sha256": "latest" },
   "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" },
   "targets": { "exclusive": true } }
 ```
@@ -60,7 +64,7 @@ not a test.
 
 ```json
 { "workload": "ui-test", "executor": "host",
-  "app": { "name": "your-app-ios", "sha256": "latest" },
+  "app": { "name": "your-app-ios", "build": "latest", "sha256": "latest" },
   "suite": { "kind": "xcuitest", "bundle": "YourAppUITests-Runner.app" },
   "targets": { "executor": "mac-xcode" } }
 ```
@@ -116,7 +120,18 @@ accurate and a match is a statement about what the job needs:
 { "targets": { "match": "os ~ 'android' && ram_mb >= 3000" } }
 ```
 
-Check what a match would select before you schedule it:
+Check what a match would select before you schedule it. `--validate` runs
+every check an enqueue makes and lists the devices the job would land on,
+without queueing it:
+
+```bash
+fleetr run --spec job.json --validate
+fleetr run benchmark --match "os ~ 'android' && ram_mb >= 3000" --validate
+```
+
+That is `POST /api/v1/jobs/validate` underneath, which takes a whole spec. The
+older `POST /api/jobs/preview-targets` still answers for a bare `targets`
+object:
 
 ```bash
 curl -s -X POST http://fleet-host.local:8788/api/jobs/preview-targets \
@@ -131,6 +146,13 @@ Copy
 into your app repository. It builds, then calls `ci-enqueue`, which exits
 non-zero on a red suite — so the check fails whether or not [commit
 statuses](index.md#commit-statuses) are armed.
+
+`ci-enqueue` also exits 0 on a job that was skipped because nothing ran, and
+sends no token, so it fails against a collector with `FLEET_AUTH=tokens`
+([details](first-job.md#or-in-one-step-with-ci-enqueue)). For a check that
+should block a merge, replace that step with `ci-upload` followed by
+`fleetr run --spec job.json`, which exits 1 on a red suite and 4 on a skip,
+and fails the step on either.
 
 Give the job a unique `job_id` built from the pull request number, the run
 attempt and the sha. A duplicate is a 409, which is the correct answer but not

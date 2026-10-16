@@ -138,9 +138,15 @@ a second report. Your verdicts decide which checks keep running.
 
 ## Honest status
 
-Built and tested on 2 October 2026, before the Mac Studio it is meant to run on
-had arrived. Every real-device run so far used **Qwen3.5-2B** as a stand-in
-model on a laptop, so those runs say the harness works and say nothing about how
-good the intended model is. The intended driver is **Holo4 35B-A3B** (Apache
-2.0); every Holo4 number in these pages is the vendor's own until
-[the measurements](measuring.md) are taken on ultra.
+Built and tested on 2 October 2026 on a laptop, with **Qwen3.5-2B** standing in
+for the real model. Those runs say the harness works and nothing about how good
+the intended model is.
+
+On 8 October the intended driver, **Holo4 35B-A3B** (Apache 2.0), was
+[measured on ultra](../deploy/explore-on-ultra.md#measured-on-8-october-2026):
+100 of 100 pointing targets, a median whole step of 6.8 s, and a tool call on
+all 40 steps of a mission once `tool_choice` was `required`. Its first
+bug-garden mission filed BG-01 and BG-03, and a night through the brain filed
+BG-16, each reproduced 2/2. That is one model on one fixture app. No
+model-driven night has run on an Apple surface yet, and the phase exits in the
+[ultra runbook](../deploy/explore-on-ultra.md) are still the bar.

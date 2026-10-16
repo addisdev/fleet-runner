@@ -9,11 +9,14 @@ from an agent, see [`skills/fleet-runner/SKILL.md`](skills/fleet-runner/SKILL.md
 | Path | What |
 |---|---|
 | `collector/` | The brain: Fastify + `node:sqlite`, the queue, the dashboard (`dash/`), the host executor |
+| `collector/src/workloads/explore/` | Exploratory QA: a vision model drives an app from mission cards (`collector/examples/missions/`); see `docs/explore/internals.md` |
 | `collector/src/api/v1/` | The control API. `routes.ts` is the single route table: it registers the routes, generates `openapi.json` and the typed client |
 | `collector/src/client/` | The generated client (`api.gen.ts`) and its transport. The CLI and the MCP server use nothing else |
 | `fleet/` | The `fleet` / `fleetr` command: runs a brain or a runner, plus the work commands, `fleet mcp` and the remote gateway |
-| `runner-machine/`, `runner-android/`, `runner-ios/`, `runner-roku/`, `desktop/` | Runners. They speak the runner protocol (`/devices/register`, `/devices/:id/next-job`, `/results`), not `/api/v1` |
+| `desktop/` | A Tauri menu-bar app around `fleet`. A front door, not a runner; compiled in CI and never launched |
+| `runner-machine/`, `runner-android/`, `runner-ios/`, `runner-roku/`, `collector/runner-web/` | Runners. They speak the runner protocol (`/devices/register`, `/devices/:id/next-job`, `/results`), not `/api/v1` |
 | `skills/fleet-runner/` | The agent skill. Its tables are generated |
+| `bug-garden/` | An Android fixture app with twenty planted defects, for scoring exploratory QA |
 | `docs/` | The mkdocs site. Built with `--strict`, so a broken link fails CI |
 
 ## Suites

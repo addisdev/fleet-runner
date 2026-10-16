@@ -14,7 +14,7 @@ that says which ones somebody has watched register is worth something.
 | Android phone, tablet | `runner-android` | `adb install`, or sideload | **yes** — the original shelf |
 | iPhone, iPad | `runner-ios` | Xcode, TestFlight internal | **yes** |
 | iOS simulator | `runner-ios` | `simctl install` | **yes** |
-| macOS, Linux, Windows | `runner-machine` | `fleet up`, or `npm start`, or a LaunchAgent / systemd unit | **macOS yes, on both architectures** — an Apple M1 Pro and a 2016 Intel i7 both registered, passed `npm run conformance`, and produce comparable synthetic numbers with matching digests; both run under `fleet service`. Linux and Windows run their suite in CI on x64 and arm64. On Linux x64 the agent also registers, inside the Docker image in CI, against the collector beside it; Windows has never registered against a real collector — see [what each one reports](#what-a-cloud-runner-actually-reports) |
+| macOS, Linux, Windows | `runner-machine` | `fleet up`, or `npm start`, or a LaunchAgent / systemd unit | **macOS yes, on both architectures** — an Apple M1 Pro and a 2016 Intel i7 both registered, passed `npm run conformance`, and produce comparable synthetic numbers with matching digests; both run under `fleet service`. Linux and Windows run their suite in CI on x64 and arm64, and CI installs `fleet service` as a systemd user unit on Linux, waits for the collector it starts, and uninstalls it; the launchd unit is only proven by this lab's own Macs and the Windows scheduled task has never been installed. On Linux x64 the agent also registers, inside the Docker image in CI, against the collector beside it; Windows has never registered against a real collector — see [what each one reports](#what-a-cloud-runner-actually-reports) |
 | Android emulator | `runner-android` | `adb install` to the emulator | **yes** |
 
 ## What Wave 5 added
@@ -22,10 +22,10 @@ that says which ones somebody has watched register is worth something.
 | Platform | Runner | How it joins | Verified |
 |---|---|---|---|
 | **Any browser** | `collector/runner-web/` | open `http://<collector>/runner` | **yes** — driven end to end by a real Chromium against a real collector, both backends, digest checked |
-| **Android TV, Google TV, Fire TV** | `runner-android` | `adb connect`, then `adb install` | **partly** — the built APK declares a leanback launcher and a banner, checked with `aapt2 dump badging`. No TV has run it |
+| **Android TV, Google TV, Fire TV** | `runner-android` | `adb connect`, then `adb install` | **partly** — the built APK declares a leanback launcher and a banner, checked with `aapt2 dump badging`. No TV has run it. (Exploratory QA has driven an Android TV emulator from outside, over adb; that is the executor, not this runner — see [what it can drive](explore/index.md#what-it-can-drive)) |
 | **Meta Quest** | `runner-android` | sideload via `adb` | **no** — Quest is Android 12 and reports `UI_MODE_TYPE_NORMAL`, so the runner identifies it by the VR feature flag. Never run on one |
 | **Wear OS** | `runner-android` | `adb install` over Wi-Fi debugging | **no** — the watch feature flag is read at run time; the manifest deliberately does not declare it (that would make the APK a Wear-only app in a store). Never run on one |
-| **Apple TV (tvOS)** | `runner-ios`, `FleetRunnerTV` target | `devicectl` or `simctl` | **builds** — `xcodebuild -scheme FleetRunnerTV` succeeds. No Apple TV has run it |
+| **Apple TV (tvOS)** | `runner-ios`, `FleetRunnerTV` target | `devicectl` or `simctl` | **builds** — `xcodebuild -scheme FleetRunnerTV` succeeds. No Apple TV has run it. (Exploratory QA drives tvOS 26.5 simulators through FleetDriver, a separate UI-test bundle) |
 | **Vision Pro (visionOS)** | `runner-ios`, `FleetRunnerVision` target | `devicectl` or `simctl` | **no** — the target is written and has never been compiled; the visionOS platform is not installed on the machine it was written on |
 | **Raspberry Pi, Jetson, Steam Deck** | `runner-machine` | `install-agent.sh`, or the Docker image | **no** — but arm64 Linux in CI reports a nearly complete descriptor, so a board should register cleanly. No board has |
 | **Anything with Docker** | `fleet/Dockerfile` | `docker run ghcr.io/addisdev/fleet` | **in CI** — every release publishes linux/amd64 and linux/arm64. CI starts the amd64 image on every pull request that touches it and waits for its own machine agent to register; the arm64 image has not been started |
@@ -36,6 +36,10 @@ that says which ones somebody has watched register is worth something.
 |---|---|---|---|
 | **Roku player, Roku TV** | `runner-roku` | `build.sh --install <ip>`, then an ECP launch | **no** -- and less verified than anything above it. No Roku was available and no Roku emulator exists, so the channel has never run. CI compiles it with brighterscript's `bsc` on every pull request that touches it; the firmware's own compiler has never seen it. See [Roku: the one that has never run](#roku-the-one-that-has-never-run) |
 | **Roku, from the executor** | `collector/src/drivers/roku.ts` | SSDP discovery on the LAN | **partly** -- the SSDP and device-info parsers are checked against recorded response shapes in `drivers.test.ts`; the UDP socket path is exercised by nothing, and no Roku has answered it |
+
+The desktop app is not a runner, but it is the other thing here that has never
+been run: `desktop / cargo check` compiles its Rust on macOS on every pull
+request that touches it, and nobody has launched it.
 
 ## Android: one APK, every shape
 
@@ -224,7 +228,7 @@ It deliberately does **not** install. That needs HTTP digest auth, which Node's
 something that looks finished and fails the first time somebody has a Roku.
 `runner-roku/build.sh` installs with `curl --digest` instead, reading the
 developer password from the executor host's Keychain -- never from a job spec,
-which is unauthenticated and rendered on the dashboard.
+which anyone who can enqueue can read, and which the dashboard renders.
 
 ## What a cloud runner actually reports
 

@@ -6,17 +6,19 @@
  *   adb exec-out uiautomator dump /dev/tty | node check-bench.mjs <mission.json> -
  *
  * Exit 0 and "PASS" when every part of the mission's `check` holds, exit 1 and
- * "FAIL" with what was missing otherwise.
+ * "FAIL" with what was wrong otherwise.
  *
  * The rules, which are the ones README.md states for the harness:
- *   text          every string must be a substring (case-sensitive) of some
+ *   text          every string must be a substring (case-insensitive) of some
  *                 node's text OR content-desc. Content-desc counts because an
  *                 icon button's label is its content-desc (the Settings icon on
  *                 Home is "Ajustes" in Spanish).
+ *   absent_text   no node's text or content-desc may contain any of these
+ *                 strings (case-insensitive): "the plant is gone".
  *   screen        some node has resource-id "screen_<screen>". The bug garden
  *                 tags every screen's root that way.
  *   focused_label some node with focused="true" has the string in its text or
- *                 content-desc.
+ *                 content-desc (case-insensitive).
  *
  * Standalone on purpose: no imports from the collector, so it can be pointed
  * at a dump from any device without building anything.
@@ -40,7 +42,7 @@ const nodes = [];
 for (const m of xml.matchAll(/<node\b([^>]*?)\/?>/g)) {
   const a = {};
   for (const kv of m[1].matchAll(/([\w:-]+)="([^"]*)"/g)) a[kv[1]] = unescape(kv[2]);
-  nodes.push({ text: a.text ?? "", desc: a["content-desc"] ?? "", id: a["resource-id"] ?? "", focused: a.focused === "true" });
+  nodes.push({ text: (a.text ?? "").toLowerCase(), desc: (a["content-desc"] ?? "").toLowerCase(), id: a["resource-id"] ?? "", focused: a.focused === "true" });
 }
 if (nodes.length === 0) {
   console.log(`FAIL ${mission.id}: the dump has no nodes`);
@@ -48,20 +50,24 @@ if (nodes.length === 0) {
 }
 
 const check = mission.check ?? {};
+const shows = (n, t) => n.text.includes(t.toLowerCase()) || n.desc.includes(t.toLowerCase());
 const missing = [];
 for (const t of check.text ?? []) {
-  if (!nodes.some((n) => n.text.includes(t) || n.desc.includes(t))) missing.push(`text ${JSON.stringify(t)}`);
+  if (!nodes.some((n) => shows(n, t))) missing.push(`missing text ${JSON.stringify(t)}`);
+}
+for (const t of check.absent_text ?? []) {
+  if (nodes.some((n) => shows(n, t))) missing.push(`still shows ${JSON.stringify(t)}`);
 }
 if (check.screen && !nodes.some((n) => n.id === `screen_${check.screen}`)) {
   const on = nodes.find((n) => n.id.startsWith("screen_"))?.id ?? "no tagged screen";
-  missing.push(`screen ${check.screen} (on ${on})`);
+  missing.push(`missing screen ${check.screen} (on ${on})`);
 }
-if (check.focused_label && !nodes.some((n) => n.focused && (n.text.includes(check.focused_label) || n.desc.includes(check.focused_label)))) {
-  missing.push(`focused ${JSON.stringify(check.focused_label)}`);
+if (check.focused_label && !nodes.some((n) => n.focused && shows(n, check.focused_label))) {
+  missing.push(`missing focus on ${JSON.stringify(check.focused_label)}`);
 }
 
 if (missing.length) {
-  console.log(`FAIL ${mission.id}: missing ${missing.join(", ")}`);
+  console.log(`FAIL ${mission.id}: ${missing.join(", ")}`);
   process.exit(1);
 }
 console.log(`PASS ${mission.id}`);

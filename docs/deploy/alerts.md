@@ -1,6 +1,6 @@
 # Alerts
 
-Evaluated every 60 seconds. **Alerts are state, not events**: one row per (rule,
+Evaluated every 60 seconds (`FLEET_ALERT_TICK_MS`). **Alerts are state, not events**: one row per (rule,
 subject) for as long as the condition holds, resolved when it stops. A device
 offline for six hours is one row with a rising `seen_count`, not 360
 notifications — and nothing is notified twice, ever.
@@ -16,12 +16,16 @@ notifications — and nothing is notified twice, ever.
 | `thermal-critical` | A device still reporting is thermally critical |
 | `low-battery` | Below `FLEET_ALERT_LOW_BATTERY_PCT` (default 15) and not charging |
 | `job-failed` | A job failed in the last 24 h |
-| `job-stuck` | Claimed, lease still being renewed, but no result rows after 2× the lease TTL |
-| `benchmark-regressed` | Decode throughput fell more than `FLEET_ALERT_REGRESSION_PCT` (10%) against its own 7-day median |
+| `job-stuck` | Claimed, lease still being renewed, but no result rows after `FLEET_ALERT_STUCK_LEASE_MULTIPLE` (default 2) × the lease TTL |
+| `benchmark-regressed` | Decode throughput fell more than `FLEET_ALERT_REGRESSION_PCT` (10%) against its own `FLEET_ALERT_REGRESSION_DAYS` (7) day median |
 | `cold-start-regressed` | Launch time rose past the same threshold against its own median |
 | `batch-regressed` | Top-1 accuracy fell past the same threshold |
-| `schedule-missed` | An enabled schedule that has run before missed its firing by 5 min |
-| `db-size` / `log-size` | Past `FLEET_ALERT_DB_BYTES` / `FLEET_ALERT_LOG_BYTES` |
+| `schedule-missed` | An enabled schedule that has run before missed its firing by `FLEET_ALERT_SCHEDULE_LATE_S` (default 5 min) |
+| `db-size` / `log-size` | Past `FLEET_ALERT_DB_BYTES` (default 2 GiB) / `FLEET_ALERT_LOG_BYTES` (200 MiB) |
+
+Every threshold is read once, at collector start; a value that is not a
+positive number falls back to the default. `job-failed`'s 24-hour window is
+fixed.
 
 `job-stuck` is the case the lease sweep cannot see: beacons keep renewing the
 claim, so the job never lapses, and without this rule a runner that is alive but
@@ -37,8 +41,9 @@ The comparison key matters more than the threshold. Two runs are only comparable
 on the same device with the same model, quant and backend, and **comparing
 across any of those is how a "regression" turns out to be a different model**.
 
-The baseline is the median of the trailing seven days, needs at least four prior
-runs, and the alert's subject is keyed on the same tuple the comparison was — so
+The baseline is the median of the trailing seven days
+(`FLEET_ALERT_REGRESSION_DAYS`), needs at least four prior runs
+(`FLEET_ALERT_REGRESSION_MIN_SAMPLES`), and the alert's subject is keyed on the same tuple the comparison was — so
 a device that has genuinely got slower is one alert with a rising `seen_count`,
 not a new one every night.
 
@@ -61,6 +66,12 @@ It runs on the machine somebody is actually looking at, not on the headless
 host. Point `FLEET_ALERT_WEBHOOK` at the collector's own loopback port and let
 [the tunnel's](networking.md) reverse forward deliver it — loopback at both ends,
 so the alert never crosses the LAN and never leaves the house.
+
+## Reading them
+
+The Alerts screen, `GET /api/v1/alerts` (`?state=open,acked,snoozed,resolved`;
+all but resolved by default, `read` scope when tokens are on), and the
+`fleet_alerts_open` gauge on [`GET /metrics`](../api.md#control-api-apiv1).
 
 ## Quieting one
 

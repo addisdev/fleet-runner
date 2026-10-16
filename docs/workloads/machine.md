@@ -78,7 +78,9 @@ to the one anybody asked for.
 ## `shell`
 
 Runs a pinned script. This is the one workload that cannot take the collector's
-word for anything, because `POST /jobs` is unauthenticated by design.
+word for anything, because by default `POST /jobs` is unauthenticated, and even
+with [tokens](../deploy/auth.md) on, only `/api/v1` asks for `admin` before it
+queues a `shell` job.
 
 The gating, in order:
 
