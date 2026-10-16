@@ -7,8 +7,10 @@
 # ~/explore/builds, reset to origin/develop, built for the emulator or the
 # simulator, uploaded with the app name and `develop-<short sha>` as the build.
 #
-# A build that fails is reported and skipped; the night then tests the last
-# build that did upload. An unchanged sha is not rebuilt.
+# A build that fails is reported and skipped, and the night that needs it
+# skips too (explore-night.ts --fresh-build) rather than testing an old build
+# again. An unchanged sha is not rebuilt; its last build is uploaded again so
+# the brain shows it as tonight's.
 #
 #   nightly-builds.sh [--tunnel jump:host:port] [app ...]
 #
@@ -107,20 +109,29 @@ for name in "${apps[@]}"; do
   [ $fetched = 1 ] && git -C "$dir" reset -q --hard origin/develop || { log "$name: fetch failed: $(tail -1 "$dir.fetch.log")"; failed=1; continue; }
   sha=$(git -C "$dir" rev-parse --short=10 HEAD)
   build="develop-$sha"
-  if [ "$(cat "$STATE/$name" 2>/dev/null)" = "$build" ]; then log "$name: $build already uploaded"; continue; fi
+  case "$name" in
+    dozehound-firetv) file="$dir/app/build/outputs/apk/debug/app-debug.apk"; platform=android ;;
+    greenfolio-ios) file="$BUILDS/$name-$sha.zip"; platform=ios ;;
+    dozehound-tvos) file="$BUILDS/$name-$sha.zip"; platform=tvos ;;
+    *) log "$name: no recipe"; failed=1; continue ;;
+  esac
+  # Unchanged: upload the same bytes again rather than nothing. The brain
+  # ignores the duplicate but stamps it as published now, and that stamp is
+  # how the explore nights (`explore-night.ts --fresh-build`) tell "develop did
+  # not move" from "this job did not run tonight".
+  if [ "$(cat "$STATE/$name" 2>/dev/null)" = "$build" ] && [ -f "$file" ]; then
+    upload "$name" "$platform" "$file" "$build" && log "$name: $build unchanged; republished for tonight" || failed=1
+    continue
+  fi
   log "$name: building $build"
   started=$(date +%s)
   case "$name" in
     dozehound-firetv)
-      ( cd "$dir" && ./gradlew -q --no-daemon :app:assembleDebug >"$dir.build.log" 2>&1 ) || { tail -30 "$dir.build.log"; log "$name: build failed"; failed=1; continue; }
-      file="$dir/app/build/outputs/apk/debug/app-debug.apk"; platform=android ;;
+      ( cd "$dir" && ./gradlew -q --no-daemon :app:assembleDebug >"$dir.build.log" 2>&1 ) || { tail -30 "$dir.build.log"; log "$name: build failed"; failed=1; continue; } ;;
     greenfolio-ios)
-      file="$BUILDS/$name-$sha.zip"; platform=ios
       xcode_build "$dir" GreenFolio iphonesimulator "generic/platform=iOS Simulator" "$file" || { log "$name: build failed"; failed=1; continue; } ;;
     dozehound-tvos)
-      file="$BUILDS/$name-$sha.zip"; platform=tvos
       xcode_build "$dir" Dozehound appletvsimulator "generic/platform=tvOS Simulator" "$file" || { log "$name: build failed"; failed=1; continue; } ;;
-    *) log "$name: no recipe"; failed=1; continue ;;
   esac
   log "$name: built in $(( $(date +%s) - started )) s"
   upload "$name" "$platform" "$file" "$build" && echo "$build" >"$STATE/$name" || failed=1

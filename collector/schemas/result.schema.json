@@ -174,6 +174,8 @@
         "avg_rating": { "type": "number", "description": "archive(asc/play) and digest: mean star rating over those reviews" },
         "clusters": { "type": "integer", "description": "digest: topic clusters in the assembled digest" },
         "explore_missions": { "type": "integer", "description": "explore: missions run on this device tonight" },
+        "explore_cards_planned": { "type": "integer", "description": "explore: mission cards lined up for this device tonight, in priority order; explore_missions of them ran before the budget ran out" },
+        "explore_minutes": { "type": "number", "description": "explore: the minutes this device was given (params.minutes, cut to fit on a short night)" },
         "explore_steps": { "type": "integer", "description": "explore: model steps taken (one model call each, however many actions it chained)" },
         "explore_actions": { "type": "integer", "description": "explore: actions performed on the device after the leash" },
         "explore_screens": { "type": "integer", "description": "explore: distinct screens reached tonight" },

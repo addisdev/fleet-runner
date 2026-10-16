@@ -100,6 +100,10 @@
       "mirror": {
         "type": "boolean",
         "description": "Stream each step's screenshot to the job's live view. Default true."
+      },
+      "short_night": {
+        "type": "object",
+        "description": "Set by scripts/explore-night.ts when minutes was cut to fit the night: {asked}, the spec's own minutes. The result then says how many cards ran (\"short night: ran 3 of 7 cards: 40 minutes left of the 60 asked\")."
       }
     }
   },

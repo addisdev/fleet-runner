@@ -32,6 +32,21 @@ a CI job fails when they disagree.
   The peers proxy sent no token, so a peer running `FLEET_AUTH=tokens`
   answered 401 through it. Each peer's URL now maps to a `read` token that
   peer issued, sent only to that peer.
+- **An explore night admitted late runs short instead of not at all.**
+  `scripts/explore-night.ts` now knows when the night ends: `--until`
+  (default 07:30, ultra's night-queue stop) or the job's own `max_minutes`,
+  read from the night queue's manifest for `$NIGHT_JOB`, whichever is first.
+  When the specs ask for more than is left, each gets a proportional share,
+  the workload runs its highest-priority cards in it, and the result says so
+  on an `ok` row: `short night: ran 3 of 7 cards: 40 minutes left of the 60
+  asked`. Under 15 minutes (`--min-minutes`) the night is posted as a skip
+  rather than started. New metrics `explore_cards_planned` and
+  `explore_minutes` record what the device was given. The night queue's own
+  admission wait (120 minutes behind a CI job on 10-14) is outside this
+  repository and unchanged. Not yet seen on a real night.
+- **`explore-night.ts --dry-run`** opens the tunnel, runs the build and time
+  checks against the live brain and prints the plan, without enqueueing,
+  posting, warming or booting anything.
 - **A job that ran nothing now has a status of its own: `skipped`.** A runner
   that could not run a job says `ok: true` with an error beginning `skipped:`,
   and the queue closed that as `done`, so the job list, the status counts and
@@ -104,6 +119,27 @@ a CI job fails when they disagree.
   Both are captured read-only from a running brain by the new
   `npm run shoot:live`, filtered to what was online and to the `bug-garden`
   fixture app; docs/brand.md says why a throwaway collector cannot make them.
+- **Explore nights that need tonight's build skip, not fail, when there is
+  none.** With `--fresh-build` (now on `fleet-explore-apple` and
+  `fleet-explore-tv`), the night checks through the tunnel that the brain has
+  a build of each app published tonight before it warms the model or boots a
+  simulator. If not, the job is posted to the brain as `ok: true`, `skipped:
+  no greenfolio-ios build for tonight (fleet-explore-builds did not run, ...)`,
+  and the command exits 0: ultra's night queue has no skip exit code, and a
+  missing upstream build is not this job's failure. `nightly-builds.sh` now
+  uploads an unchanged build again (the brain ignores the duplicate bytes and
+  stamps it published), so a quiet day on `develop` does not look like a
+  missed build.
+- **The model warm-up moved inside the night command.** The four night-queue
+  manifests ran `shelf.sh warm pilot &&` before `explore-night.ts`, so a
+  warm-up the shelf refused ended the job with `exit 1` before any check ran.
+  `explore-night.ts --warm "<cmd>"` runs it after the build and time checks,
+  retries a refusal for memory every minute for up to `--warm-wait` minutes
+  (default 10), and then posts the night as `skipped: the model would not
+  load, no room on this host: ...`. Any other warm-up failure is posted as a
+  failure with its last line. The manifests in
+  `collector/deploy/explore/night/` need copying to `~/night/recurring/` on
+  ultra.
 
 ### Fixed
 
@@ -145,6 +181,18 @@ a CI job fails when they disagree.
   the harness enforces and the standalone checker ignored; it also matched
   case-sensitively where the harness does not. It now reads `absent_text` and
   matches case-insensitively, as the bug garden's README says.
+- **`fleet-explore-apple` exited 1 in 0.0 minutes on 10-14.** Not a missing
+  build: the shelf refused to load Holo4 at 64% free memory against its 65%
+  threshold, after the night queue had admitted the job on its own measure.
+  See the warm-up change above; with `--fresh-build` that night would also
+  have skipped earlier, at "no greenfolio-ios build for tonight".
+- **tvOS simulators registered as `os: ios`, so the TV explore night tested
+  nothing.** The executor read simctl's runtime key for `iOS-` only, so an
+  Apple TV simulator was described as plain `ios`, every `os ~ 'tvos'` job
+  skipped with "no device matches this job on ultra", and each
+  `fleet-explore-tv` night "passed" in about a minute. A tvOS simulator is
+  now `tvos-26.5` (watchOS and visionOS likewise). No TV night has run with
+  the fix yet.
 - **A failing `ui-test` now says which step failed.** `nightly-fleet-ui-smoke`
   failed on the Galaxy S8+ every night from 10-10 with `failed: 1` and no
   error, while `Assertion is false: "Fleet Runner" is visible` sat in the JUnit
