@@ -1,0 +1,90 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>explore-night</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  One exploratory-QA night. The top row is the walk: the model looks at a
+  screenshot and acts, and checks look for trouble after every step (the
+  judge, a second model, only on a screen new to the run). Everything they
+  raise is only a candidate until it replays on a clean install; the bottom loop is the owner's verdicts switching off checks
+  that cry wolf. The numbers are the code's: replay_attempts 2, PRECISION_FLOOR
+  0.3 with ten judged (collector/src/findings.ts).
+
+  Rendered by `npm run assets` in collector/ to docs/img/explore-night.png.
+-->
+<div class="figure" style="width:1280px;height:700px">
+<svg viewBox="0 0 1280 700" width="1280" height="700" role="img"
+     aria-label="Tonight's build and the app's mission cards go to the model, which looks at each screenshot and picks an action, while checks look for trouble after every step, and a second model, the judge, looks at every screen new to the run. A check raises a candidate, which is replayed twice from a clean install. If it reproduces at least once, or it was a crash with a log, it becomes a finding on the Findings page, in the digest and optionally as an issue; otherwise it is dropped and counted. Your verdicts give each check a precision, and a check under 30% once ten are judged is switched off for that app from the next night.">
+
+  <text class="t-mono" x="48" y="58">One night, per device. Nothing the model or a check sees is believed until it happens again on a clean install.</text>
+
+  <!-- ─── the walk ──────────────────────────────────────────────────── -->
+  <rect class="l-panel" x="48" y="112" width="220" height="88" rx="10"/>
+  <text class="t-title" x="66" y="148">tonight's build</text>
+  <text class="t-mono" x="66" y="174">installed, data cleared</text>
+
+  <rect class="l-panel" x="308" y="112" width="220" height="88" rx="10"/>
+  <text class="t-title" x="326" y="148">mission cards</text>
+  <text class="t-mono" x="326" y="174">today's changes first</text>
+
+  <rect x="568" y="112" width="250" height="88" rx="10" fill="var(--panel)" stroke="var(--amber)" stroke-width="1.5"/>
+  <text class="t-title" x="586" y="148">look · decide · act</text>
+  <text class="t-mono-amber" x="586" y="174">the model reads the screen</text>
+
+  <rect class="l-panel" x="900" y="112" width="332" height="88" rx="10"/>
+  <text class="t-title" x="918" y="148">checks after every step</text>
+  <text class="t-mono" x="918" y="174">crash · dead control · the judge</text>
+
+  <path class="l-protocol" d="M268 156H300" marker-end="url(#arrow-amber)"/>
+  <path class="l-protocol" d="M528 156H560" marker-end="url(#arrow-amber)"/>
+
+  <!-- the step loop between the model and the checks -->
+  <path class="l-protocol" d="M818 140H892" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="859" y="98" text-anchor="middle">leashed action</text>
+  <path class="l-structure" d="M900 176H826" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="859" y="224" text-anchor="middle">next screenshot</text>
+
+  <!-- ─── confirm ───────────────────────────────────────────────────── -->
+  <path class="l-protocol" d="M1066 200V300" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-amber" x="1082" y="256">candidate</text>
+
+  <rect class="l-panel" x="900" y="308" width="332" height="88" rx="10"/>
+  <text class="t-title" x="918" y="344">replay twice</text>
+  <text class="t-mono" x="918" y="370">clean install, the same steps</text>
+
+  <path class="l-protocol" d="M900 352H826" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="859" y="420" text-anchor="middle">at least 1 of 2,</text>
+  <text class="t-mono" x="859" y="442" text-anchor="middle">or a crash log</text>
+
+  <rect x="568" y="308" width="250" height="88" rx="10" fill="var(--panel)" stroke="var(--amber)" stroke-width="1.5"/>
+  <text class="t-title" x="586" y="344">finding</text>
+  <text class="t-mono" x="586" y="370">screenshot, steps, a flow</text>
+
+  <path class="l-protocol" d="M568 352H508" marker-end="url(#arrow-amber)"/>
+
+  <rect class="l-panel" x="48" y="308" width="452" height="88" rx="10"/>
+  <text class="t-title" x="66" y="344">Findings page · digest · issue</text>
+  <text class="t-mono" x="66" y="370">a repeat raises a count, not a second report</text>
+
+  <!-- not reproduced -->
+  <path class="l-structure" d="M1066 396V478" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="1082" y="442">not reproduced</text>
+  <rect class="l-structure" x="900" y="486" width="332" height="68" rx="10"/>
+  <text class="t-title" x="918" y="516" style="fill:var(--muted)">dropped</text>
+  <text class="t-mono" x="918" y="540">counted in explore_not_reproduced</text>
+
+  <!-- ─── your verdicts ─────────────────────────────────────────────── -->
+  <path class="l-structure" d="M274 396V478" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="290" y="442">your verdict</text>
+
+  <rect class="l-panel" x="48" y="486" width="452" height="68" rx="10"/>
+  <text class="t-title" x="66" y="516">precision per check</text>
+  <text class="t-mono" x="66" y="540">Real · Duplicate · Not a bug · Agent's mistake</text>
+
+  <!-- back to the checks: the loop that switches one off -->
+  <path class="l-host" d="M500 520H530V616H1256V132H1240" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-amber" x="550" y="644">under 30% once ten are judged: switched off for that app from the next night</text>
+  <text class="t-mono" x="550" y="668">crashes and ANRs are never switched off; their evidence is the platform's own log</text>
+</svg>
+</div>
+<script src="symbols.js"></script>

@@ -58,6 +58,20 @@ a CI job fails when they disagree.
   `collector/deploy/explore/night/` need copying to `~/night/recurring/` on
   ultra.
 
+### Changed
+
+- **The explore docs' three diagrams are drawn, not generated.** The night,
+  one mission's sequence and the code map were mermaid blocks; they are now
+  figures in `docs/figures/` rendered to PNG like the rest
+  (`explore-night`, `explore-step`, `explore-code`). The docs workflow fails on
+  a mermaid fence under `docs/`, and `mkdocs.yml` no longer configures one.
+- **The workloads figure shows all 34 shipped workloads.** It had 28; `enrol`,
+  `explore`, `upgrade-test`, `size-report`, `tvloop` and `llm-eval` are added.
+- **`devices.png` is the new device drawings, and there is a `findings.png`.**
+  Both are captured read-only from a running brain by the new
+  `npm run shoot:live`, filtered to what was online and to the `bug-garden`
+  fixture app; docs/brand.md says why a throwaway collector cannot make them.
+
 ### Fixed
 
 - **`fleet-explore-apple` exited 1 in 0.0 minutes on 10-14.** Not a missing
@@ -347,7 +361,6 @@ the web path had never needed.
   channel, so such a host runs two of the five projects; Firefox, WebKit and
   mobile Safari need a Mac on a newer macOS.
 
-
 ## [0.6.1] — 2026-09-19
 
 What running the thing found. v0.6.0 was written from a survey; this is from
@@ -422,7 +435,6 @@ two days of the fleet actually being up.
 - The macOS row of [platforms](https://addisdev.github.io/fleet-runner/platforms/)
   records both architectures registering, passing conformance, and reporting
   comparable synthetic numbers with matching digests.
-
 
 ## [0.6.0] — 2026-09-18
 
