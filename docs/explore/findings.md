@@ -65,6 +65,19 @@ through the same sender as alerts. Nothing is sent on a day with nothing new,
 and a restart does not send twice. Findings judged not a bug, agent's mistake
 or duplicate are left out. `FLEET_DASH_URL` sets the address used in its links.
 
+Below the findings, one line says how the jobs that finished in the same window
+ended — done, failed, and skipped on a count of its own — and names up to three
+schedules that skipped, with the reason each gave:
+
+```text
+Jobs, last 24h: 14 done, 1 failed, 4 skipped (nothing ran).
+- skipped: explore-tv x3 (no device matches this job on ultra)
+- skipped: nightly-tvloop-hardware (no Roku developer password on this host)
+```
+
+The send rule is unchanged: a day with no findings sends nothing, whatever the
+jobs did. A schedule that keeps skipping has [its own alert](../deploy/alerts.md#a-schedule-that-keeps-skipping).
+
 ## GitHub issues (off by default)
 
 Fleet Runner stays disconnected from the app repositories until that is decided

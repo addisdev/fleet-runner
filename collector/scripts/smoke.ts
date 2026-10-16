@@ -20,6 +20,9 @@ import { runTailnetChecks } from "../src/tailnet.test.js";
 import { runConfigChecks } from "../src/config.test.js";
 import { runDbChecks } from "../src/db.test.js";
 import { runAlertChecks } from "../src/alerts.test.js";
+import { runSkipChecks } from "../src/skip.test.js";
+import { runReasonChecks } from "../src/result-reason.test.js";
+import { runRegistryHygieneChecks } from "../src/registry-hygiene.test.js";
 import { runBrowserChecks } from "../src/browser.test.js";
 import { runDescribeChecks } from "../src/describe.test.js";
 import { runPressureChecks } from "../src/pressure.test.js";
@@ -2423,6 +2426,134 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
   await json("POST", `/api/jobs/${LATE}/cancel`);
 }
 
+// --- honest green: a skip is its own status --------------------------------
+
+// A runner that could not run a job says `ok: true, error: "skipped: ..."`.
+// That used to close the job as `done`, and the job list, the status counts
+// and the digest counted it as a pass: two nightlies "passed" in two seconds a
+// night for two weeks while testing nothing.
+{
+  const WL = `smoke-skip-wl-${run}`;
+  const DEV = `smoke-skip-dev-${run}`;
+  const EXEC = `smoke-skip-exec-${run}`;
+  const devJob = (job_id: string, extra: Record<string, unknown> = {}) => ({
+    schema: 1, job_id, workload: WL, executor: "device", targets: { device_id: DEV }, ...extra,
+  });
+  const hostJob = (job_id: string) => ({
+    schema: 1, job_id, workload: "install", executor: "host",
+    app: { name: "x", build: "1", sha256: "0".repeat(64) },
+    targets: { executor: EXEC }, lease: { ttl_s: 60, max_attempts: 1 },
+  });
+  await json("POST", "/devices/register", {
+    device_id: DEV, descriptor: { model: "Skipper", os: "android-14" }, pools: [], capabilities: [WL],
+  });
+
+  // The plain case: the runner's final row says why nothing ran.
+  const SKIP = `smoke-skip-plain-${run}`;
+  await json("POST", "/jobs", devJob(SKIP));
+  const closed = await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: SKIP, device_id: DEV, iter: 0, final: true, ok: true,
+    error: "skipped: no Roku developer password on this host",
+  });
+  check("skip: a skipped result closes the job as skipped, not done", closed.body?.status === "skipped", JSON.stringify(closed.body));
+  const row = await json("GET", `/api/jobs/${SKIP}`);
+  check("skip: the job row says skipped", row.body?.status === "skipped", row.body?.status);
+  check("skip: and its last_error carries the reason",
+    row.body?.last_error === "skipped: no Roku developer password on this host", JSON.stringify(row.body?.last_error));
+  const listed = await json("GET", `/api/jobs?status=skipped&q=${encodeURIComponent(SKIP)}`);
+  check("skip: /api/jobs filters on it",
+    (listed.body?.jobs ?? []).some((j: { job_id: string }) => j.job_id === SKIP), JSON.stringify(listed.body?.jobs?.length));
+  check("skip: and the status facet counts it", (listed.body?.status_counts?.skipped ?? 0) >= 1, JSON.stringify(listed.body?.status_counts));
+  const v1 = await json("GET", `/api/v1/jobs?status=skipped&q=${encodeURIComponent(SKIP)}`);
+  check("skip: /api/v1/jobs filters on it",
+    (v1.body?.items ?? []).some((j: { job_id: string; status: string }) => j.job_id === SKIP && j.status === "skipped"),
+    JSON.stringify(v1.body).slice(0, 300));
+  const sum = await json("GET", `/api/v1/jobs/${SKIP}/summary`);
+  check("skip: the summary agrees (status skipped, verdict skipped, finished)",
+    sum.body?.status === "skipped" && sum.body?.verdict === "skipped" && sum.body?.finished === true, JSON.stringify(sum.body).slice(0, 300));
+  const ov = await json("GET", "/api/overview");
+  check("skip: the overview counts skips on their own", (ov.body?.queue?.skipped_24h ?? 0) >= 1, JSON.stringify(ov.body?.queue));
+
+  // A host job whose every device skipped, under a plain ok:true host row --
+  // the shape a ui-test takes when no phone has the app installed.
+  const ALL = `smoke-skip-allhost-${run}`;
+  await json("POST", "/jobs", hostJob(ALL));
+  await json("POST", "/results", { schema: 1, kind: "result", job_id: ALL, device_id: DEV, iter: 0, ok: true, error: "skipped: com.example not installed" });
+  const allClosed = await json("POST", "/results", { schema: 1, kind: "result", job_id: ALL, device_id: `host:${EXEC}`, iter: 0, final: true, ok: true });
+  check("skip: every device skipping under an ok host row is a skip", allClosed.body?.status === "skipped", JSON.stringify(allClosed.body));
+
+  // One device ran: the job ran.
+  const MIXED = `smoke-skip-mixed-${run}`;
+  await json("POST", "/jobs", hostJob(MIXED));
+  await json("POST", "/results", { schema: 1, kind: "result", job_id: MIXED, device_id: DEV, iter: 0, ok: true, error: "skipped: device locked by another job" });
+  await json("POST", "/results", { schema: 1, kind: "result", job_id: MIXED, device_id: `${DEV}-b`, iter: 0, ok: true, test: { passed: 1, failed: 0 } });
+  const mixedClosed = await json("POST", "/results", { schema: 1, kind: "result", job_id: MIXED, device_id: `host:${EXEC}`, iter: 0, final: true, ok: true });
+  check("skip: one device that ran makes the job done", mixedClosed.body?.status === "done", JSON.stringify(mixedClosed.body));
+
+  // A failure says why on the job row, from the failing device when the host
+  // row has nothing of its own.
+  const FAIL = `smoke-skip-fail-${run}`;
+  await json("POST", "/jobs", hostJob(FAIL));
+  await json("POST", "/results", { schema: 1, kind: "result", job_id: FAIL, device_id: DEV, iter: 0, ok: false, error: 'smoke: Assertion is false: "Fleet Runner" is visible' });
+  await json("POST", "/results", { schema: 1, kind: "result", job_id: FAIL, device_id: `host:${EXEC}`, iter: 0, final: true, ok: false });
+  const failRow = await json("GET", `/api/jobs/${FAIL}`);
+  check("fail: a failed job's last_error names the failing device and step",
+    failRow.body?.status === "failed" && failRow.body?.last_error === `${DEV}: smoke: Assertion is false: "Fleet Runner" is visible`,
+    JSON.stringify(failRow.body?.last_error));
+
+  // Dependencies: a skipped dependency produced nothing, so its waiters skip
+  // -- the whole way down -- rather than run against nothing or fail.
+  const DA = `smoke-skip-da-${run}`, DB = `smoke-skip-db-${run}`, DC = `smoke-skip-dc-${run}`;
+  await json("POST", "/jobs", devJob(DA));
+  await json("POST", "/jobs", devJob(DB, { depends_on: [DA] }));
+  await json("POST", "/jobs", devJob(DC, { depends_on: [DB] }));
+  const depClosed = await json("POST", "/results", {
+    schema: 1, kind: "result", job_id: DA, device_id: DEV, iter: 0, final: true, ok: true, error: "skipped: no build for this device",
+  });
+  check("chain: a skipped dependency skips its waiter and the link beyond",
+    ((depClosed.body?.skipped ?? []) as string[]).includes(DB) && ((depClosed.body?.skipped ?? []) as string[]).includes(DC),
+    JSON.stringify(depClosed.body));
+  const dbRow = await json("GET", `/api/jobs/${DB}`);
+  check("chain: the waiter says which dependency skipped",
+    dbRow.body?.status === "skipped" && dbRow.body?.last_error === `dependency ${DA} skipped`, JSON.stringify(dbRow.body?.last_error));
+  const dbSum = await json("GET", `/api/v1/jobs/${DB}/summary`);
+  check("chain: and its summary is a skip, not a pass or a failure", dbSum.body?.verdict === "skipped", JSON.stringify(dbSum.body?.verdict));
+  const lateDep = await json("POST", "/jobs", devJob(`smoke-skip-late-${run}`, { depends_on: [DA] }));
+  check("chain: a job enqueued behind an already-skipped job is skipped on arrival",
+    lateDep.status === 201 && lateDep.body?.status === "skipped", JSON.stringify(lateDep.body));
+  check("chain: and a dry run says so first",
+    ((await json("POST", "/api/v1/jobs/validate", devJob(`smoke-skip-dry-${run}`, { depends_on: [DA] }))).body?.warnings ?? [])
+      .some((w: string) => w.includes("already skipped")));
+
+  // The artifact a person reaches for at /api/artifacts/<sha> -- where DELETE
+  // and /pin already live -- used to answer "no such endpoint".
+  const blob = Buffer.from(`junit-${run}`.repeat(20));
+  const blobSha = createHash("sha256").update(blob).digest("hex");
+  await fetch(`${BASE}/artifacts`, { method: "POST", headers: { "content-type": "application/octet-stream", "x-artifact-name": "junit.xml" }, body: blob });
+  const redir = await fetch(`${BASE}/api/artifacts/${blobSha}`, { redirect: "manual" });
+  check("artifact: GET /api/artifacts/<sha> points at the bytes",
+    redir.status === 308 && redir.headers.get("location") === `/api/v1/artifacts/${blobSha}/content`, `${redir.status} ${redir.headers.get("location")}`);
+  const followed = await fetch(`${BASE}/api/artifacts/${blobSha}`);
+  check("artifact: and following it gets them", followed.ok && Buffer.from(await followed.arrayBuffer()).equals(blob), String(followed.status));
+  const unknown = await json("GET", `/api/artifacts/${"e".repeat(64)}`);
+  check("artifact: an unknown one is a plain 404 that says so", unknown.status === 404 && /no artifact/.test(String(unknown.body?.error)), JSON.stringify(unknown));
+
+  // Registry hygiene: a Roku first seen by address, then by serial, is one row.
+  const ip = `10.${run % 200}.${Math.floor(run / 200) % 200}.7`;
+  const ipId = `roku-ip-${ip.replace(/\./g, "-")}`;
+  await json("POST", "/devices/register", { device_id: ipId, descriptor: { model: "roku", os: "roku", ip, kind: "device" }, pools: [] });
+  check("roku: the IP-named row exists first", (await json("GET", `/api/devices/${ipId}`)).status === 200);
+  await json("POST", "/devices/register", {
+    device_id: `roku-SMOKE${run}`, pools: [],
+    descriptor: { platform: "roku", model: "Roku Express 4K+", os: "roku-15.3.4", serial: `SMOKE${run}`, ip, kind: "device" },
+  });
+  check("roku: the serial-named registration retires the IP-named duplicate", (await json("GET", `/api/devices/${ipId}`)).status === 404);
+  const roku = await json("GET", `/api/devices/roku-SMOKE${run}`);
+  check("roku: and the Roku reads as platform roku", roku.body?.platform === "roku", JSON.stringify(roku.body?.platform));
+  const swept = await json("POST", "/jobs/sweep");
+  check("sweep: reports the simulators it forgot", Array.isArray(swept.body?.forgotten), JSON.stringify(swept.body));
+}
+
 // --- preemption: a long job stands aside for higher-priority work ---
 
 // The collector never kills anything. It answers a beacon with preempt:true and
@@ -2723,6 +2854,12 @@ runDbChecks(check);
 // Which devices are worth waking somebody for. Both cases are rows that filled
 // the live brain's alert list with noise nobody could act on.
 runAlertChecks(check);
+
+// Honest green: how a job closes (done, failed, skipped), every failure saying
+// why, and the registry keeping to real things.
+runSkipChecks(check);
+await runReasonChecks(check);
+runRegistryHygieneChecks(check);
 
 // Where a host's Playwright lives and which Chromium it drives: the two
 // things a released executor on macOS 12 needed to run web work at all.

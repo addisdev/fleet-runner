@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
+import { withFailureReasons } from "./result-reason.js";
 
 export const exec = promisify(execFile);
 
@@ -66,9 +67,14 @@ export async function post(url: string, body: unknown) {
   if (!res.ok) throw new Error(`POST ${url} -> ${res.status}`);
 }
 
-export async function postResult(row: Record<string, unknown>) {
+/**
+ * Post one result row. Every host workload's rows go through here, so this is
+ * where a row that says `ok: false` and nothing else is given a reason -- see
+ * result-reason.ts.
+ */
+export const postResult = withFailureReasons(async (row: Record<string, unknown>) => {
   await post("/results", { schema: 1, kind: "result", ...row });
-}
+});
 
 export async function postBeacon(jobId: string, deviceId: string, extra: Record<string, unknown>) {
   await post("/results", {

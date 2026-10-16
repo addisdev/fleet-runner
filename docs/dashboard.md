@@ -45,8 +45,13 @@ artifacts.
 drawings, from phones and tablets through Roku boxes and sticks, an Apple TV,
 laptops, watches and a headset to a board and a browser. The drawing is chosen
 from the model string first, because agents that predate the `platform` field
-are reported as `ios` or `android`, so a Roku arrives as `android` and an
-Apple TV or Apple Watch as `ios`.
+are reported as `ios` or `android`: an Apple TV or Apple Watch arrives as
+`ios`, and a Roku registered by an executor older than 0.9 as `android`.
+
+**A skipped job has a grey chip**, neither green nor red: it was claimed and
+nothing ran. The Jobs status filter has a `skipped` option with its count, and
+the Overview's queue panel shows **skipped 24h** beside done and failed rather
+than inside done. See [Skipped is not done](concepts.md#skipped-is-not-done).
 
 **Filters live in the URL**, so a filtered view is a link you can send. Jobs can
 be composed, enqueued, cancelled, retried and reprioritised; devices can be

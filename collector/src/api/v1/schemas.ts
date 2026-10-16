@@ -133,7 +133,7 @@ export const SCHEMAS: Record<string, Schema> = {
   Job: object(
     {
       job_id: str, workload: str, executor: { enum: ["device", "host"] },
-      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled"] },
+      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled", "skipped"] },
       claimed_by: nstr, attempts: int, max_attempts: int, priority: int, template_id: nstr,
       depends_on: strs, lease_ttl_s: int, lease_deadline: nstr, lease_remaining_s: nint, duration_s: nint,
       last_error: nstr, created_at: nstr, claimed_at: nstr, finished_at: nstr,
@@ -171,7 +171,7 @@ export const SCHEMAS: Record<string, Schema> = {
   DeviceOutcome: object(
     {
       device_id: str, job_id: str,
-      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled"] },
+      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled", "skipped"] },
       ok: { type: ["boolean", "null"] },
       skipped: { ...bool, description: "Nothing ran (no matching device, or a host refusing work). Not a pass." },
       error: nstr, metrics: nobj,
@@ -221,7 +221,7 @@ export const SCHEMAS: Record<string, Schema> = {
     {
       valid: bool,
       job_id: str,
-      status: { type: "string", description: "What the job would be on enqueue: queued, waiting or failed." },
+      status: { type: "string", description: "What the job would be on enqueue: queued, waiting, failed (a dependency failed) or skipped (a dependency skipped)." },
       fanout: strs,
       spec: { ...obj, description: "The spec as it would be stored: `latest` resolved, lease filled in." },
       candidates: arr(ref("CandidateDevice")),

@@ -39,6 +39,7 @@
 import { db } from "./db.js";
 import { iso, parse } from "./api/shared.js";
 import { sendWebhook } from "./alerts.js";
+import { skipReasonText } from "./skip.js";
 import {
   DASH_URL,
   FINDINGS_DIGEST_AT,
@@ -825,11 +826,55 @@ export type Digest = {
     again: number;
     top: { id: number; severity: string; check: string; title: string; screen_name: string; replay: string; new: boolean; seen_count: number }[];
   }[];
+  /** Jobs that finished in the same window, by how they finished. A skip is
+   *  its own count: it is a job that ran nothing, and folding it into done is
+   *  how two nightlies read as passes for two weeks. */
+  jobs: { done: number; failed: number; skipped: number; skipped_by: { name: string; count: number; reason: string }[] };
   link: string;
   text: string;
 };
 
 const TOP_PER_APP = 5;
+const SKIPS_NAMED = 3;
+
+/**
+ * How the jobs in the window finished, and which schedules skipped and why.
+ * A scheduled job's id is `<schedule>-<YYYYMMDDHHMM>`, so stripping the minute
+ * (and a fan-out child's `--device`) names the nightly a person recognises.
+ */
+export function jobsInWindow(sinceKey: string): Digest["jobs"] {
+  const counts = db
+    .prepare(
+      `SELECT COUNT(*) FILTER (WHERE status = 'done') AS done,
+              COUNT(*) FILTER (WHERE status = 'failed') AS failed,
+              COUNT(*) FILTER (WHERE status = 'skipped') AS skipped
+         FROM jobs WHERE finished_at >= ?`,
+    )
+    .get(sinceKey) as { done: number; failed: number; skipped: number };
+  const skips = db
+    .prepare("SELECT job_id, last_error FROM jobs WHERE status = 'skipped' AND finished_at >= ? ORDER BY finished_at DESC")
+    .all(sinceKey) as { job_id: string; last_error: string | null }[];
+  const by = new Map<string, { name: string; count: number; reason: string }>();
+  for (const j of skips) {
+    const name = j.job_id.split("--")[0].replace(/-\d{12}$/, "");
+    const hit = by.get(name) ?? { name, count: 0, reason: skipReasonText(j.last_error) };
+    hit.count += 1;
+    by.set(name, hit);
+  }
+  return {
+    done: counts.done ?? 0, failed: counts.failed ?? 0, skipped: counts.skipped ?? 0,
+    skipped_by: [...by.values()].sort((a, b) => b.count - a.count),
+  };
+}
+
+function jobsLines(j: Digest["jobs"], hours: number): string[] {
+  if (j.done + j.failed + j.skipped === 0) return [];
+  const lines = [`Jobs, last ${hours}h: ${j.done} done, ${j.failed} failed, ${j.skipped} skipped (nothing ran).`];
+  for (const s of j.skipped_by.slice(0, SKIPS_NAMED))
+    lines.push(`- skipped: ${s.name}${s.count > 1 ? ` x${s.count}` : ""} (${s.reason})`);
+  if (j.skipped_by.length > SKIPS_NAMED) lines.push(`- and ${j.skipped_by.length - SKIPS_NAMED} more skipping`);
+  return lines;
+}
 /** ntfy turns a body past 4 KB into an attachment; a digest should read as a notification. */
 const DIGEST_MAX_CHARS = 3_500;
 
@@ -874,11 +919,14 @@ export function buildDigest(hours: number, dashUrl: string = DASH_URL, now = new
   const total = rows.length;
   const fresh = apps.reduce((n, a) => n + a.new, 0);
   const link = `${dashUrl}/dash/findings?status=open`;
+  const jobs = jobsInWindow(sinceKey);
 
   const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
   const lines: string[] = [];
   if (total === 0) {
     lines.push(`Night QA, last ${hours}h: nothing new.`);
+    const jl = jobsLines(jobs, hours);
+    if (jl.length) lines.push("", ...jl);
   } else {
     lines.push(
       `Night QA, last ${hours}h: ${plural(total, "finding")} (${fresh} new, ${total - fresh} seen again) in ${plural(apps.length, "app")}.`,
@@ -892,11 +940,13 @@ export function buildDigest(hours: number, dashUrl: string = DASH_URL, now = new
       }
       if (a.count > a.top.length) lines.push(`- and ${a.count - a.top.length} more`);
     }
+    const jl = jobsLines(jobs, hours);
+    if (jl.length) lines.push("", ...jl);
     lines.push("", `Triage: ${link}`);
   }
   let text = lines.join("\n");
   if (text.length > DIGEST_MAX_CHARS) text = `${text.slice(0, DIGEST_MAX_CHARS - 40).trimEnd()}\n...\nTriage: ${link}`;
-  return { hours, since: since.toISOString(), total, new: fresh, again: total - fresh, apps, link, text };
+  return { hours, since: since.toISOString(), total, new: fresh, again: total - fresh, apps, jobs, link, text };
 }
 
 /** Local calendar day, YYYY-MM-DD: "once a day" is the owner's day, not UTC's. */

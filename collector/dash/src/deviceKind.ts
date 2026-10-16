@@ -7,7 +7,8 @@
  * The model string comes first, because it is the one field that is right
  * about every device on the shelf today. `platform` is not: agents that
  * predate the field are reported as ios/android by the collector's fallback,
- * so a Roku arrives as `android` and an Apple TV or Apple Watch as `ios`.
+ * so an Apple TV or Apple Watch arrives as `ios`, and a Roku registered by an
+ * executor older than 0.9 as `android` (newer ones say `roku`).
  * `kind` is the agent naming its own shape and is believed — but only to pick
  * the family; the model still chooses which member of it (a `tv` that says
  * "Roku Streaming Stick" is drawn as the stick, not a bare panel).

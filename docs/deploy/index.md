@@ -136,6 +136,7 @@ port, bind list, tailnet allowlist, data and artifact directories and
 | `FLEET_PEER_TOKENS` | none | JSON object of peer URL to a `read` token that peer issued, for a peer with tokens on. See [more than one brain](#more-than-one-brain) |
 | `FLEET_POWER_CONFIG` | `power.json` | The pool-to-smart-plug map, see [Energy](#energy) |
 | `FLEET_SWEEP_MS` | 15000 | How often expired leases are swept |
+| `FLEET_SIMULATOR_TTL_DAYS` | 7 | The same sweep forgets a simulator row (descriptor `kind` or `soc` is `simulator`) offline longer than this. Simulators are recreated under new UUIDs and never come back. Real devices and Android emulators are never forgotten; results and beacons stay either way |
 | `FLEET_SCHEDULER_TICK_MS` | 20000 | How often schedules are evaluated |
 | `FLEET_DASH_DIST` | `dash/dist` | The built dashboard. Missing, the collector serves a placeholder rather than failing |
 | `FLEET_LOG` | `info` | Log level |

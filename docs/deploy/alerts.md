@@ -22,6 +22,7 @@ notifications — and nothing is notified twice, ever.
 | `cold-start-regressed` | Launch time rose past the same threshold against its own median |
 | `batch-regressed` | Top-1 accuracy fell past the same threshold |
 | `schedule-missed` | An enabled schedule that has run before missed its firing by `FLEET_ALERT_SCHEDULE_LATE_S` (default 5 min) |
+| `schedule-skipping` | An enabled schedule's last `FLEET_ALERT_SKIP_STREAK` (default 3) runs all [skipped](../concepts.md#skipped-is-not-done) |
 | `db-size` / `log-size` | Past `FLEET_ALERT_DB_BYTES` (default 2 GiB) / `FLEET_ALERT_LOG_BYTES` (200 MiB) |
 
 Every threshold is read once, at collector start; a value that is not a
@@ -35,6 +36,33 @@ producing nothing looks identical to one that is working.
 Battery and thermal are only judged on devices **still checking in** — a reading
 from a silent device describes whenever it went silent, not now. And a device
 reporting `-1` has no battery telemetry rather than a flat battery.
+
+## A schedule that keeps skipping
+
+A skipped job is no longer counted as a pass, but a grey chip every morning is
+still easy to stop seeing. `nightly-tvloop-hardware` skipped every night for two
+weeks on a missing Roku password and nothing said so. `schedule-skipping` is
+one alert per schedule, worded from the reason the runs keep giving:
+
+```text
+nightly-tvloop-hardware has skipped 3 runs in a row: no Roku developer password on this host
+```
+
+What counts as a run, and as a skip:
+
+- **A run is what the scheduler enqueued**: the job `<schedule>-<YYYYMMDDHHMM>`,
+  or for a fan-out every child of it. The id is what identifies it, so jobs
+  from before provenance was recorded still count.
+- **A run skipped when nothing in it ran**: every job in it is `skipped` (or
+  skipped and cancelled). One device that ran makes the run count as run.
+- **A run still in flight is left out**: it neither breaks the streak nor
+  extends it.
+- If the runs gave different reasons, the alert names the latest and says how
+  many different reasons there were.
+
+It resolves on the first run that is not a skip, pass or fail. Disabled
+schedules are not watched. The streak length is `FLEET_ALERT_SKIP_STREAK`,
+read at start like the others.
 
 ## The regression rules compare against history, not a threshold
 

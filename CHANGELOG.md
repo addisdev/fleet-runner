@@ -47,6 +47,39 @@ a CI job fails when they disagree.
 - **`explore-night.ts --dry-run`** opens the tunnel, runs the build and time
   checks against the live brain and prints the plan, without enqueueing,
   posting, warming or booting anything.
+- **A job that ran nothing now has a status of its own: `skipped`.** A runner
+  that could not run a job says `ok: true` with an error beginning `skipped:`,
+  and the queue closed that as `done`, so the job list, the status counts and
+  the digest counted it as a pass: `nightly-tvloop-hardware` and three explore
+  jobs a night "passed" in two seconds for two weeks while testing nothing.
+  The queue now closes it as `skipped`, with the reason in `last_error`; a host
+  row of plain `ok: true` over device rows that all skipped counts the same,
+  and a fan-out family where no child ran is `skipped`. `skipped` is accepted
+  by the `status` filter of `GET /api/jobs` and `GET /api/v1/jobs`, counted in
+  the status facets, `GET /metrics` and the Overview (`skipped 24h`, beside
+  done rather than in it), drawn as a grey chip on the dashboard, and given its
+  own line in the morning digest. The v1 summary's verdict, `fleetr`'s exit 4
+  and the MCP verdict were already `skipped` and are unchanged. A database
+  opened by this release is migrated once: every `done` job with a `skipped:`
+  result is re-labelled by the same rule. Result rows are not touched.
+- **A job waiting on a skipped job skips too.** A skipped build produced no
+  artifact, so the install behind it had nothing to install; it used to be
+  promoted and run against whatever was already on the phone. It now skips
+  with `last_error` `dependency <id> skipped`, the whole way down the chain,
+  and a job enqueued behind an already-skipped one is skipped on arrival. A
+  failed dependency still fails its waiters, and wins over a skipped one.
+- **A `schedule-skipping` alert.** A schedule whose last three runs
+  (`FLEET_ALERT_SKIP_STREAK`) all skipped raises one alert naming the reason it
+  keeps giving, for example "nightly-tvloop-hardware has skipped 3 runs in a
+  row: no Roku developer password on this host", and resolves on the first run
+  that is not a skip. The tvloop nightly needed it for two weeks.
+- **Simulator rows are forgotten after a week offline.** The lease sweep deletes
+  a row whose descriptor says `kind` or `soc` is `simulator` once it has been
+  offline for `FLEET_SIMULATOR_TTL_DAYS` (default 7), because simulators are
+  recreated under new UUIDs and never come back; the live brain listed thirteen
+  of them. Real devices and Android emulators are never forgotten, a row that
+  holds a lock is left alone, and results and beacons are kept. `POST
+  /jobs/sweep` reports what it forgot.
 
 ### Changed
 
@@ -160,6 +193,37 @@ a CI job fails when they disagree.
   `fleet-explore-tv` night "passed" in about a minute. A tvOS simulator is
   now `tvos-26.5` (watchOS and visionOS likewise). No TV night has run with
   the fix yet.
+- **A failing `ui-test` now says which step failed.** `nightly-fleet-ui-smoke`
+  failed on the Galaxy S8+ every night from 10-10 with `failed: 1` and no
+  error, while `Assertion is false: "Fleet Runner" is visible` sat in the JUnit
+  report it had uploaded. The executor now reads the failing flow and its
+  assertion out of the report into the device row's `error` and
+  `test.failing_flow`; when Maestro produces no report, the error is its exit
+  code and last stderr line, never its command line, which carries the test
+  account's password.
+- **No host result says `ok: false` with nothing beside it.** Every host
+  workload's rows go through one wrapper in the executor: a device row with
+  only counts says so ("1 of 1 tests failed; the runner reported no failing
+  step"), and a final host row with no error of its own gets the failing
+  devices' reasons. A subprocess failure nobody caught is reported as its exit
+  code and last stderr line instead of Node's message. The collector also
+  copies a failure's reason into the job's `last_error`, so the job list and
+  the `job-failed` alert show it.
+- **`GET /api/artifacts/<sha256>` answered "no such endpoint".** It is where
+  `DELETE` and `/pin` already live, so it is the URL a person reaches for, and
+  the 404 read as a missing artifact: the ui-smoke JUnit report was in the
+  store all along. It now redirects (308) to
+  `/api/v1/artifacts/<sha256>/content`, and says plainly when no artifact by
+  that hash was ever uploaded.
+- **The executor registered Rokus as `platform: android`.** Its Roku
+  descriptor said `os: roku-15.3.4` but no platform, and the collector's
+  fallback for anything that is not iOS is Android. It now sends
+  `platform: "roku"`; `os ~ 'roku'` targeting and the tvloop workload are
+  unaffected.
+- **A Roku seen first by address and later by serial was listed twice.** A
+  sweep where the box answered SSDP but not device-info left a
+  `roku-ip-192-168-50-218` row offline beside `roku-X01600EMFRJ9`. A
+  serial-named registration now retires the IP-named row at the same address.
 
 ## [0.8.0] — 2026-10-15
 

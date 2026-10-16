@@ -441,7 +441,7 @@
             "name": "status",
             "in": "query",
             "required": false,
-            "description": "Comma-separated: waiting, queued, claimed, done, failed, cancelled.",
+            "description": "Comma-separated: waiting, queued, claimed, done, failed, cancelled, skipped.",
             "schema": {
               "type": "string"
             }
@@ -2169,7 +2169,8 @@
               "claimed",
               "done",
               "failed",
-              "cancelled"
+              "cancelled",
+              "skipped"
             ]
           },
           "ok": {
@@ -2458,7 +2459,8 @@
               "claimed",
               "done",
               "failed",
-              "cancelled"
+              "cancelled",
+              "skipped"
             ]
           },
           "claimed_by": {
@@ -3571,7 +3573,7 @@
           },
           "status": {
             "type": "string",
-            "description": "What the job would be on enqueue: queued, waiting or failed."
+            "description": "What the job would be on enqueue: queued, waiting, failed (a dependency failed) or skipped (a dependency skipped)."
           },
           "fanout": {
             "type": "array",
