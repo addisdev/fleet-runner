@@ -36,6 +36,7 @@ And the weekly mission bench:
 | `surface` | from the device | `touch` or `dpad`. Android TV, Fire TV, Roku and tvOS default to `dpad` |
 | `credentials` | | `{account, email_var, password_var}` for setup flows; the password comes from the host's Keychain |
 | `mirror` | `true` | Stream each step's screenshot to the job's live view on the dashboard |
+| `short_night` | | Set by `explore-night.ts`, not by hand: `{asked}`, the spec's own `minutes`, when `minutes` was cut to fit the night. See [short nights](#short-nights-and-skips) |
 
 ## Models
 
@@ -121,6 +122,8 @@ Metrics on each device row:
 | Metric | |
 |---|---|
 | `explore_missions` | Missions run |
+| `explore_cards_planned` | Cards lined up for the device, in priority order. Fewer missions than cards means the budget ran out first |
+| `explore_minutes` | The minutes the device was given: `params.minutes`, cut to fit on a short night |
 | `explore_steps` · `explore_actions` | Model steps; actions actually performed |
 | `explore_screens` · `explore_new_screens` | Screens reached tonight; screens no night had reached |
 | `explore_candidates` | Raised by the checks, before replay |
@@ -135,6 +138,11 @@ Metrics on each device row:
 The row also carries `missions`: per mission, its condition, steps, how it
 ended, screens, candidates, misses, refusals by class, the goal verdict, the
 bench result and the model's answer.
+
+On a short night the device row and the final row are still `ok: true`, and
+`error` says what ran: `short night: ran 3 of 7 cards: 40 minutes left of the
+60 asked`. `error` is the field the job summary, the digest and `fleetr` show,
+which is why the note is there and not in a field nothing reads.
 
 ## Artifacts
 
@@ -184,3 +192,54 @@ the harness's night queue runs `scripts/explore-night.ts` from the manifests in
 
 A lower number runs earlier; the products' own night jobs sit between 20 and
 85. [Running it on ultra](../deploy/explore-on-ultra.md) has the setup.
+
+### Short nights and skips
+
+The night queue decides **whether** a job starts: from 22:00, when memory
+pressure is normal, enough memory is free and no CI job is running, and only
+while the job's `max_minutes` still fits before 07:30. A job that is not
+admitted within its `wait_minutes` is skipped by the queue. That wait is the
+queue's, outside this repository: on 10-14 `fleet-explore-builds` and
+`fleet-explore` each spent their whole 120 minutes behind a CI job. What
+`explore-night.ts` controls is what happens **once admitted**, and it checks
+the cheap things first:
+
+1. **Is there a build to test?** With `--fresh-build` (the Apple and TV
+   nights), each spec asking for `"sha256": "latest"` needs a build the brain
+   shows as published tonight (since noon of the night's date).
+   `nightly-builds.sh` uploads an unchanged build again for exactly this. If
+   there is none, the job is posted to the brain as a skip, `skipped: no
+   greenfolio-ios build for tonight (fleet-explore-builds did not run, ...)`,
+   and the command exits 0. A pinned build (`sha256` a hash) only has to be
+   on the brain; if it is not, that is the spec's own failure.
+2. **Is there time?** The night ends at `--until` (default 07:30) or at the
+   job's `max_minutes`, read from the queue's manifest for `$NIGHT_JOB`,
+   whichever is first. Ten minutes are held back for the last replay, uploads
+   and shutting devices down, and three per spec for enqueueing and
+   installing. When the specs ask for more than is left, each gets a share in
+   proportion to what it asked for, and the workload runs its highest-priority
+   cards in that time (cards are ordered by today's changes and how long since
+   each last ran). If a share would be under 15 minutes (`--min-minutes`), the
+   last spec is dropped and posted as a skip; if even one spec cannot have 15
+   minutes, the whole night is skipped. The plan is made again before each
+   spec, with the time actually left.
+3. **Will the model load?** `--warm "<cmd>"` runs the shelf's warm-up only
+   after both checks pass. A warm-up refused for memory ("64% free, needs
+   65%", or "memory pressure") is retried every minute for up to
+   `--warm-wait` minutes (default 10), then the night is posted as `skipped:
+   the model would not load, no room on this host: ...`. Any other warm-up
+   failure fails the night, with the reason posted.
+
+Only then does it boot the simulator or emulator. A skip is `ok: true` with
+an error starting `skipped:`, the brain's convention for "nothing ran, and that
+is not a failure of the code". The command's exit code is 0 when every spec
+finished or skipped and 1 otherwise, because the night queue has no skip code
+of its own and a missing upstream build is not this job's failure.
+
+`--dry-run` opens the tunnel, runs the build and time checks against the live
+brain and prints the plan. It enqueues nothing, posts nothing, warms nothing
+and boots nothing.
+
+Not yet seen on a real night: a short night (every night since this was built
+has been either admitted in full or not at all) and the warm-up retry. Both
+are covered by `scripts/check-explore.ts` against a fake brain.
