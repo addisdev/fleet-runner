@@ -3,7 +3,7 @@
  *
  * Written by build.mjs from the repository's VERSION file, so the shipped
  * binary carries a number rather than looking for a file that is not next to
- * it. `scripts/version.mjs` keeps it honest with the other seven places --
+ * it. `scripts/version.mjs` keeps it honest with every other place --
  * see its header for why the number matters at all.
  */
-export const VERSION = "0.8.0";
+export const VERSION = "0.9.0";

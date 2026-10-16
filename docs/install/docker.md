@@ -17,8 +17,11 @@ docker run -d --restart unless-stopped -p 8788:8788 \
     machine agent to register and checks `fleet devices`, `fleet workloads` and
     `fleet whoami` against it. Its first run found that the image could not
     start on a fresh volume (the directory was created root-owned), fixed in
-    0.8.0. The arm64 image is built and has not been started. If you run it on
-    a NAS or a board, an issue saying how it went is welcome either way.
+    0.8.0. `container smoke (arm64)` does the same on linux/arm64, built
+    natively on GitHub's arm64 runner rather than under QEMU, and checks the
+    container reports `aarch64`. That is a cloud VM, not a board: if you run it
+    on a NAS or a Raspberry Pi, an issue saying how it went is welcome either
+    way.
 
     `runner-machine/Dockerfile`, the agent-only image, is still **not built at
     all**: nothing publishes it and nobody has run `docker build` on it.
@@ -91,7 +94,10 @@ objection to QEMU does not apply here.
   and a loopback bind would make the published port answer nothing at all.
   Everything in [binding and exposure](../deploy/index.md#binding-and-exposure)
   still applies to the *host* side of that mapping. **There is no
-  authentication.**
+  authentication by default**. [Authentication](../deploy/auth.md) turns it
+  on: `-e FLEET_AUTH=tokens`, and the first token created inside the container,
+  `docker exec <container> node /app/bin/fleet.mjs token create ops --scope admin`,
+  so it lands on the volume. Nobody has done that in a container yet.
 - **A `HEALTHCHECK` that asks `/api/health`** rather than checking the process is
   alive. A collector whose port is bound but whose database will not open is
   exactly the failure that looks healthy from the outside.

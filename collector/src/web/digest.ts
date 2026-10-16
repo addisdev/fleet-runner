@@ -115,7 +115,9 @@ async function runShelfBatch(
     await postBeacon(digestJob.job_id, "web:digest", {}).catch(() => {});
     const j = await apiJson<{ status: string; last_error?: string | null }>(`/jobs/${encodeURIComponent(jobId)}`);
     if (j.status === "done") break;
-    if (j.status === "failed" || j.status === "cancelled") {
+    // A skipped batch ran nothing and has no outputs to read; say that, rather
+    // than "finished without an outputs artifact" one step later.
+    if (j.status === "failed" || j.status === "cancelled" || j.status === "skipped") {
       throw new Error(`${label} batch ${jobId} ${j.status}: ${j.last_error ?? "no detail"}`);
     }
   }

@@ -242,6 +242,21 @@ export function registerSystem(app: FastifyInstance) {
     ).map((l) => ({ ...l, acquired_at: iso(l.acquired_at) })),
   }));
 
+  // One artifact, by the URL a person reaches for. DELETE and /pin live under
+  // /api/artifacts/:sha256, so a GET there is the obvious guess -- and it used
+  // to answer "no such endpoint", which read as "this artifact is gone" when
+  // the bytes were in the store all along (nightly-fleet-ui-smoke's JUnit
+  // report, October 2026). The bytes have two homes, /artifacts/:sha256 for
+  // runners and /api/v1/artifacts/:sha256/content for everyone else; this
+  // points at the second rather than becoming a third.
+  app.get("/api/artifacts/:sha256", async (req, reply) => {
+    const { sha256 } = req.params as { sha256: string };
+    if (!/^[a-f0-9]{64}$/.test(sha256)) return reply.code(400).send({ error: "sha256 must be 64 lowercase hex characters" });
+    const known = db.prepare("SELECT 1 FROM artifacts WHERE sha256 = ?").get(sha256);
+    if (!known) return reply.code(404).send({ error: `no artifact ${sha256} has been uploaded to this collector` });
+    return reply.redirect(`/api/v1/artifacts/${sha256}/content`, 308);
+  });
+
   app.get("/api/artifacts", async (req) => {
     const q = req.query as Record<string, string | undefined>;
     const { page, per_page, offset } = paging(q);
@@ -261,14 +276,14 @@ export function registerSystem(app: FastifyInstance) {
     const total = (db.prepare(`SELECT COUNT(*) AS n FROM artifacts${sql}`).get(...params) as { n: number }).n;
     const rows = db
       .prepare(
-        `SELECT sha256, name, size, created_at, app, build, platform, published_at, pinned, pin_reason
+        `SELECT sha256, name, size, created_at, app, build, platform, published_at, channel, pinned, pin_reason
            FROM artifacts${sql}
           ORDER BY COALESCE(publish_seq, rowid) DESC LIMIT ? OFFSET ?`,
       )
       .all(...params, per_page, offset) as {
         sha256: string; name: string | null; size: number; created_at: string;
         app: string | null; build: string | null; platform: string | null; published_at: string | null;
-        pinned: number; pin_reason: string | null;
+        channel: string | null; pinned: number; pin_reason: string | null;
       }[];
 
     const baselineShas = new Set(

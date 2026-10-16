@@ -127,7 +127,7 @@ than one brain needs.
 `~/.fleet/logs/agent.log`:
 
 ```
-[machine-macbookpro] fleet-runner-machine 0.5.0-dev on darwin/arm64, collector http://127.0.0.1:8788
+[machine-macbookpro] fleet-runner-machine 0.8.0 on darwin/arm64, collector http://127.0.0.1:8788
 [machine-macbookpro] registered with http://127.0.0.1:8788; capabilities: benchmark, build, build:gradle, build:xcode, build:npm, self-check, llm-eval
 ```
 
@@ -174,6 +174,23 @@ curl -s http://127.0.0.1:8788/jobs/hello-fleet
 ```
 
 `queued` → `claimed` → `done`, in a few seconds.
+
+!!! tip "The same with the CLI"
+
+    `curl` is here because it shows exactly what goes over the wire, and these
+    unversioned routes keep working. Day to day, `fleetr` (installed beside
+    `fleet`, the same program) does steps 4 and 5 in one command, validating
+    the spec against [`/api/v1`](api.md#control-api-apiv1) first and waiting for
+    the verdict:
+
+    ```bash
+    fleetr run benchmark --backend synthetic --pool machines \
+      --param prompt_tokens=256 --param gen_tokens=64 \
+      --param warmup_iters=1 --param measure_iters=3
+    ```
+
+    Its exit code is the verdict: 0 passed, 1 failed, 4 skipped because nothing
+    ran. [AI agents and automation](agents.md) has the rest of the commands.
 
 !!! tip "`targets.pool` has to match"
 
@@ -349,7 +366,7 @@ FLEET_URL=http://127.0.0.1:8788 npm start
 ```
 
 ```
-[machine-your-hostname] fleet-runner-machine 0.5.0-dev on darwin/arm64, collector http://127.0.0.1:8788
+[machine-your-hostname] fleet-runner-machine 0.8.0 on darwin/arm64, collector http://127.0.0.1:8788
 [machine-your-hostname] registered with http://127.0.0.1:8788; capabilities: benchmark, build, build:npm, self-check, llm-eval
 ```
 
@@ -365,7 +382,11 @@ it needs on `PATH`.
 
 - **[Concepts](concepts.md)** -- leases, capabilities and targeting, which is
   what you need before writing a job spec that does something interesting.
-- **[Workloads](workloads/index.md)** -- the other twenty-odd things it can run.
+- **[Workloads](workloads/index.md)** -- all <!-- count:workloads -->34 things it can run.
+- **[Exploratory QA](explore/index.md)** -- a vision model using tonight's build
+  overnight, and the bugs it reproduces.
+- **[AI agents and automation](agents.md)** -- `fleetr`, the skill and the MCP
+  tools, for scripts, CI and coding agents.
 - **[Adding devices](install/devices.md)** -- phones, televisions, Rokus,
   browsers.
 - **[Wire in your app](integration/index.md)** -- publish builds on merge and run
@@ -375,8 +396,8 @@ it needs on `PATH`.
 
 !!! warning "Before you put it on a network"
 
-    There is no authentication, by design -- anyone who can reach the collector
-    can enqueue a job. `fleet up` binds every interface and warns that it did.
+    By default there is no authentication -- anyone who can reach the collector
+    can enqueue a job. Scoped tokens are opt-in ([Authentication](deploy/auth.md)). `fleet up` binds every interface and warns that it did.
     `FLEET_BIND` (or `fleet config set collector.bind`) decides which networks it
     answers on, and loopback plus your tailnet address is the configuration most
     people want. [Deploy](deploy/index.md#binding-and-exposure) has the detail.

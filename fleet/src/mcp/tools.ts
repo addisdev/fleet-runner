@@ -71,6 +71,7 @@ const NEXT: Record<string, string> = {
   unauthorized: "The gateway or CLI has no valid token for the collector.",
   unreachable: "The collector did not answer. It may be down or the URL may be wrong.",
   rate_limited: "Too many calls; wait a minute.",
+  conflict: "The state does not allow it. For fleet_verdict fixed: mark the finding real first, and fixed once the fix has merged.",
 };
 
 export function refusal(name: string, e: unknown, remote: boolean): ToolResult {
@@ -196,6 +197,60 @@ const SUMMARY_OUT: Record<string, Json> = {
 };
 
 const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+
+const FINDING_ITEM: Record<string, Json> = {
+  type: "object",
+  required: ["id", "app", "check", "severity", "title", "verdict", "replay", "seen_count"],
+  properties: {
+    id: { type: "integer" }, app: { type: "string" }, check: { type: "string" }, severity: { type: "string" },
+    title: { type: "string" }, screen: { type: "string" }, platform: { type: "string" },
+    verdict: { type: ["string", "null"], description: "null: open. agent_mistake: not a bug in the app." },
+    replay: { type: "string", description: "reproduced 2/2, flaky 1/2, crash log." },
+    seen_count: { type: "integer" }, builds: { type: "integer" }, last_seen: { type: ["string", "null"] },
+    regression: { type: ["string", "null"], description: "candidate, active (in the nightly) or retired." },
+  },
+};
+
+const FINDINGS_OUT: Record<string, Json> = {
+  type: "object",
+  required: ["findings", "total"],
+  properties: { findings: { type: "array", items: FINDING_ITEM }, total: { type: "integer" } },
+};
+
+const FINDING_OUT: Record<string, Json> = {
+  type: "object",
+  required: ["id", "app", "check", "title", "verdict", "steps", "evidence", "history"],
+  properties: {
+    ...(FINDING_ITEM.properties as Record<string, Json>),
+    detail: { type: "string" },
+    steps: { type: "array", items: { type: "string" } },
+    evidence: { type: "array", items: { type: "object" } },
+    replay_flow: { type: ["object", "null"], description: "kind, sha256, and text when the flow is small enough to inline." },
+    regression_test: { type: ["object", "null"] },
+    history: { type: "array", items: { type: "object" } },
+    note: { type: "string" },
+  },
+};
+
+const VERDICT_OUT: Record<string, Json> = {
+  type: "object",
+  required: ["id", "verdict"],
+  properties: { id: { type: "integer" }, verdict: { type: ["string", "null"] }, change: { type: ["string", "null"] }, regression: { type: ["string", "null"] } },
+};
+
+type FindingRow = {
+  id: number; app: string; check: string; severity: string; title: string; screen_name: string; platform: string;
+  verdict: string | null; replay_label: string; seen_count: number; builds_seen: string[]; last_seen: string | null;
+  regression: { state: string } | null;
+};
+
+const findingItem = (f: FindingRow) => ({
+  id: f.id, app: f.app, check: f.check, severity: f.severity, title: f.title, screen: f.screen_name, platform: f.platform,
+  verdict: f.verdict, replay: f.replay_label, seen_count: f.seen_count, builds: f.builds_seen.length, last_seen: f.last_seen,
+  regression: f.regression?.state ?? null,
+});
+
+const VERDICT_WORDS = ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed"] as const;
 
 // --- the tools ---------------------------------------------------------------------------
 
@@ -464,6 +519,119 @@ export const TOOLS: Tool[] = [
       const sha = String(args.sha256 ?? "");
       if (!/^[a-f0-9]{64}$/.test(sha)) return failure("sha256 must be 64 lowercase hex characters");
       return readArtifact(client, sha, Math.max(500, Math.min(Number(args.max_chars ?? 20_000) || 20_000, 200_000)));
+    },
+  },
+  {
+    name: "fleet_findings",
+    title: "What night QA found",
+    cli: "fleetr findings [--app A] [--since 24h]",
+    description:
+      "Bugs night QA (the explore workload) found on real devices, newest sighting first. Each was replayed on a clean " +
+      "install before it was filed: `replay` says how often it reproduced (\"flaky 1/2\" is weaker evidence). verdict " +
+      "null is open; agent_mistake means the model misread the app and is NOT a bug. since=\"24h\" is last night. " +
+      "fleet_finding with an id gives the steps, evidence and the replay flow.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        app: { type: "string", description: "The explore app key, e.g. greenfolio." },
+        state: { type: "string", enum: ["open", "triaged", "all"], description: "Default all." },
+        verdict: { type: "string", description: "Comma-separated: real, duplicate, not_a_bug, agent_mistake, fixed." },
+        check: { type: "string", description: "crash, anr, frozen, blank, left_app, a11y, visual, goal, dead_control." },
+        since: { type: "string", description: "ISO 8601, or a span back from now: 24h, 7d." },
+        limit: { type: "number", description: "Default 30, at most 200." },
+      },
+    },
+    outputSchema: FINDINGS_OUT,
+    annotations: READ,
+    needs: "read",
+    async run({ client }, args) {
+      const s = (k: string) => (typeof args[k] === "string" && args[k] ? (args[k] as string) : undefined);
+      const page = await client.listFindings({
+        app: s("app"), state: s("state") as "open" | "triaged" | "all" | undefined, verdict: s("verdict"), check: s("check"), since: s("since"),
+        per_page: Math.max(1, Math.min(Number(args.limit ?? 30) || 30, 200)),
+      });
+      const out = { findings: page.items.map((f) => findingItem(f as FindingRow)), total: page.total };
+      return ok(out.findings.length ? out : "No findings match.", out);
+    },
+  },
+  {
+    name: "fleet_finding",
+    title: "One finding, with its replay flow",
+    cli: "fleetr finding ID [--flow FILE]",
+    description:
+      "One finding by id: what went wrong, the steps in words, links to the screenshot, contact sheet, trajectory and " +
+      "log (open them with fleet_artifact), its verdict history, its regression test, and the Maestro (or tvloop) flow " +
+      "that replays it -- inline when small, so you can reproduce the bug with fleet_run or locally.",
+    inputSchema: {
+      type: "object",
+      required: ["id"],
+      properties: {
+        id: { type: "integer", description: "The finding id." },
+        include_flow: { type: "boolean", description: "Include the replay flow text when it is small. Default true." },
+      },
+    },
+    outputSchema: FINDING_OUT,
+    annotations: READ,
+    needs: "read",
+    async run({ client }, args) {
+      const id = Number(args.id);
+      if (!Number.isInteger(id) || id < 1) return failure("id must be a finding id (a positive integer)");
+      const f = await client.getFinding(String(id));
+      const flow = f.replay_flow
+        ? { kind: f.replay_flow.kind, sha256: f.replay_flow.sha256, ...(args.include_flow !== false && f.replay_flow.text !== null ? { text: f.replay_flow.text } : {}),
+            ...(f.replay_flow.truncated ? { note: "too big to inline; fleet_artifact with this sha256 returns it" } : {}) }
+        : null;
+      const out = {
+        ...findingItem(f as FindingRow),
+        detail: clip(f.detail, 4000) ?? "",
+        steps: f.steps,
+        evidence: f.evidence.map((e) => ({ role: e.role, sha256: e.sha256, in_store: e.in_store })),
+        replay_flow: flow,
+        regression_test: f.regression
+          ? { state: f.regression.state, asserts: f.regression.asserts, runs: f.regression.runs, last_outcome: f.regression.last_outcome ?? null, last_detail: f.regression.last_detail ?? null }
+          : null,
+        history: f.history,
+        ...(f.verdict === "agent_mistake" ? { note: "agent_mistake: the model misread the app. Not a bug; do not fix the app for it." } : {}),
+      };
+      const result = ok(out, out);
+      if (f.artifacts.shot) result.content.push({ type: "resource_link", uri: `fleet://artifact/${f.artifacts.shot}`, name: "screenshot", mimeType: "image/png" });
+      return result;
+    },
+  },
+  {
+    name: "fleet_verdict",
+    title: "Judge a finding",
+    cli: "fleetr verdict ID VERDICT [--note TEXT]",
+    description:
+      "Record a verdict on a finding. real: a bug in the app (its replay flow is kept as a candidate regression test). " +
+      "fixed: only after real, and only once a fix has MERGED -- the flow then runs in the app's nightly and reopens the " +
+      "finding if the crash comes back. not_a_bug / agent_mistake: the check or the model was wrong (retires any test). " +
+      "duplicate needs duplicate_of. Verdicts decide which checks night QA keeps running, so do not guess.",
+    inputSchema: {
+      type: "object",
+      required: ["id", "verdict"],
+      properties: {
+        id: { type: "integer" },
+        verdict: { type: "string", enum: [...VERDICT_WORDS] },
+        note: { type: "string", description: "Why, for whoever reads it next. Name the fix's PR when marking fixed." },
+        duplicate_of: { type: "integer", description: "With duplicate: the finding this one duplicates." },
+      },
+    },
+    outputSchema: VERDICT_OUT,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    needs: "run",
+    async run({ client }, args) {
+      const id = Number(args.id);
+      if (!Number.isInteger(id) || id < 1) return failure("id must be a finding id (a positive integer)");
+      const verdict = String(args.verdict ?? "").replace(/-/g, "_");
+      if (!(VERDICT_WORDS as readonly string[]).includes(verdict)) return failure(`verdict must be one of ${VERDICT_WORDS.join(", ")}`);
+      const r = await client.setFindingVerdict(String(id), {
+        verdict: verdict as (typeof VERDICT_WORDS)[number],
+        ...(typeof args.note === "string" && args.note ? { note: args.note } : {}),
+        ...(args.duplicate_of !== undefined ? { duplicate_of: Number(args.duplicate_of) } : {}),
+      });
+      const out = { id, verdict: r.finding.verdict ?? null, change: r.change ?? null, regression: r.finding.regression?.state ?? null };
+      return ok(out, out);
     },
   },
   {

@@ -17,7 +17,7 @@
  *
  * ## Why the collector proxies instead of the browser calling directly
  *
- * Because there is no authentication, by design, and CORS would be the wrong
+ * Because there is no authentication by default, and CORS would be the wrong
  * end of the stick. Opening the read API cross-origin would let any website
  * open in the operator's browser read their entire fleet -- device names,
  * network prefixes, job history -- from any tab. The proxy keeps one origin,
@@ -31,11 +31,19 @@
  * brain means switching to it, which navigates to that brain's own dashboard:
  * one origin, one owner of that queue, and no question about which fleet a
  * button just acted on.
+ *
+ * ## A peer with tokens on
+ *
+ * A peer running `FLEET_AUTH=tokens` answers 401 to a request without a token,
+ * so this collector sends the one FLEET_PEER_TOKENS maps that peer's URL to, as
+ * a bearer token, on every request to it. One token per peer, because each
+ * brain issues its own: a token is a hash in that brain's tokens.json. Never
+ * the caller's token -- the person reading this dashboard holds a token for
+ * this brain, not for the other one.
  */
 import type { FastifyInstance } from "fastify";
-import { PEERS } from "../config.js";
+import { DATA_DIR, PEER_TOKENS, PEERS, peerKey } from "../config.js";
 import { identity } from "../identity.js";
-import { DATA_DIR } from "../config.js";
 
 /** How long to wait on a peer before calling it unreachable. */
 const PEER_TIMEOUT_MS = 4_000;
@@ -44,7 +52,7 @@ const PEER_TIMEOUT_MS = 4_000;
  * What may be proxied.
  *
  * An allow-list of prefixes rather than a rule about methods alone, because
- * `GET /api/artifacts/:sha` streams bytes and `GET /api/stream` is an endless
+ * `GET /api/artifacts/:sha` leads to bytes and `GET /api/stream` is an endless
  * SSE response -- neither belongs on a path whose whole purpose is to fill in a
  * summary table. Everything here answers with a bounded JSON document.
  */
@@ -75,10 +83,16 @@ export type PeerStatus = {
   devices: { total: number; online: number } | null;
 };
 
+/** The headers every request to this peer carries: its token, when one is configured. */
+function peerHeaders(base: string): Record<string, string> {
+  const token = PEER_TOKENS[peerKey(base)];
+  return { accept: "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) };
+}
+
 async function ask(url: string): Promise<PeerStatus> {
-  const base = url.replace(/\/+$/, "");
+  const base = peerKey(url);
   try {
-    const res = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(PEER_TIMEOUT_MS) });
+    const res = await fetch(`${base}/api/health`, { signal: AbortSignal.timeout(PEER_TIMEOUT_MS), headers: peerHeaders(base) });
     if (!res.ok) {
       return { url: base, id: null, name: null, version: null, reachable: false, error: `HTTP ${res.status}`, devices: null };
     }
@@ -87,6 +101,7 @@ async function ask(url: string): Promise<PeerStatus> {
     try {
       const overview = (await fetch(`${base}/api/overview`, {
         signal: AbortSignal.timeout(PEER_TIMEOUT_MS),
+        headers: peerHeaders(base),
       }).then((r) => r.json())) as { devices?: { total?: number; online?: number } };
       if (overview.devices) {
         devices = { total: overview.devices.total ?? 0, online: overview.devices.online ?? 0 };
@@ -163,7 +178,7 @@ export function registerPeers(app: FastifyInstance) {
     try {
       const res = await fetch(`${peer.url}/api/${rest}${query}`, {
         signal: AbortSignal.timeout(PEER_TIMEOUT_MS),
-        headers: { accept: "application/json" },
+        headers: peerHeaders(peer.url),
       });
       const body = await res.text();
       return reply.code(res.status).type(res.headers.get("content-type") ?? "application/json").send(body);

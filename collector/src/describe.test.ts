@@ -34,6 +34,25 @@ export async function runDescribeChecks(check: Check) {
   check("a wired devicectl entry is still hardware", d2.kind === "device", JSON.stringify(d2));
   check("and keeps its product type as the soc", d2.soc === "iPhone17,1", JSON.stringify(d2));
 
+  // --- an Apple TV simulator is tvOS ----------------------------------------
+  // simctl's runtime key was read for `iOS-` only, so a tvOS simulator
+  // registered as plain "ios" and every `os ~ 'tvos'` job skipped with "no
+  // device matches" -- three fleet-explore-tv nights in a row.
+  const sims = {
+    "com.apple.CoreSimulator.SimRuntime.tvOS-26-5": [{ udid: "TV-SIM", name: "fleet-explore-tvos" }],
+    "com.apple.CoreSimulator.SimRuntime.iOS-26-5": [{ udid: "IOS-SIM", name: "fleet-explore-ios" }],
+  };
+  const tv = await describeTarget({ id: "TV-SIM", platform: "tvos", kind: "simulator" } as never, sims, null);
+  check("a tvOS simulator's os is tvos-<version>", tv.os === "tvos-26.5", JSON.stringify(tv));
+  check("and it is a simulator", tv.kind === "simulator" && tv.soc === "simulator", JSON.stringify(tv));
+  const ph = await describeTarget({ id: "IOS-SIM", platform: "ios", kind: "simulator" } as never, sims, null);
+  check("an iOS simulator is still ios-<version>", ph.os === "ios-26.5", JSON.stringify(ph));
+  const { evalMatch } = await import("./match.js");
+  check("os ~ 'tvos' selects the TV and not the phone",
+    evalMatch("os ~ 'tvos'", tv) && !evalMatch("os ~ 'tvos'", ph));
+  check("os ~ 'ios' selects the phone and not the TV",
+    evalMatch("os ~ 'ios'", ph) && !evalMatch("os ~ 'ios'", tv));
+
   // --- a Roku is a Roku ------------------------------------------------------
   // It used to fall through to the iOS fallback and register as an iPhone.
   const express = {
@@ -49,6 +68,13 @@ export async function runDescribeChecks(check: Check) {
   check("and is attached to this host, which host routing follows", typeof r1.attached_to === "string");
   const r2 = await describeTarget({ id: "roku-gone", platform: "roku", kind: "device" } as never, null, null, []);
   check("a Roku discovery lost track of is still a Roku, not an iPhone", r2.os === "roku", JSON.stringify(r2));
+  // It used to say nothing, and the collector's fallback guess for anything
+  // that is not iOS is Android: the shelf's Roku Express listed as android.
+  check("a Roku says its platform is roku", r1.platform === "roku" && r2.platform === "roku",
+    JSON.stringify([r1.platform, r2.platform]));
+  const { devicePlatform } = await import("./api/shared.js");
+  check("and the collector believes it", devicePlatform(r1) === "roku", devicePlatform(r1));
+  check("os ~ 'roku' still selects it", evalMatch("os ~ 'roku'", r1) && evalMatch("os ~ 'roku-15'", r1));
 
   const { rokuPresenceHere } = await import("./drivers/roku.js");
   check("Roku presence is off unless this host is told it owns them",

@@ -174,6 +174,8 @@
         "avg_rating": { "type": "number", "description": "archive(asc/play) and digest: mean star rating over those reviews" },
         "clusters": { "type": "integer", "description": "digest: topic clusters in the assembled digest" },
         "explore_missions": { "type": "integer", "description": "explore: missions run on this device tonight" },
+        "explore_cards_planned": { "type": "integer", "description": "explore: mission cards lined up for this device tonight, in priority order; explore_missions of them ran before the budget ran out" },
+        "explore_minutes": { "type": "number", "description": "explore: the minutes this device was given (params.minutes, cut to fit on a short night)" },
         "explore_steps": { "type": "integer", "description": "explore: model steps taken (one model call each, however many actions it chained)" },
         "explore_actions": { "type": "integer", "description": "explore: actions performed on the device after the leash" },
         "explore_screens": { "type": "integer", "description": "explore: distinct screens reached tonight" },
@@ -216,7 +218,21 @@
       "properties": {
         "passed": { "type": "integer" },
         "failed": { "type": "integer" },
-        "artifacts": { "type": "array", "items": { "type": "string" }, "description": "sha256 refs of screenshots/videos/junit uploaded to the artifact store" }
+        "artifacts": { "type": "array", "items": { "type": "string" }, "description": "sha256 refs of screenshots/videos/junit uploaded to the artifact store" },
+        "skipped": { "type": "integer" },
+        "failing_flow": { "type": "string", "description": "The first failing flow or test case, by name; the step that broke is in the row's error" },
+        "regressions": {
+          "type": "array",
+          "description": "ui-test with params.regressions: each fixed finding's replay flow run on this device. reproduced reopens the finding",
+          "items": {
+            "type": "object",
+            "properties": {
+              "finding_id": { "type": "integer" },
+              "outcome": { "enum": ["passed", "reproduced", "failed", "skipped"] },
+              "detail": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "shot": {

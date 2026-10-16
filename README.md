@@ -13,8 +13,10 @@ One queued job installs a build on every attached device, runs a UI suite
 across them, benchmarks llama.cpp on real silicon, classifies a few hundred
 images through Core ML and LiteRT, screenshots a website on two real phone
 screens and diffs it against a baseline, or drains a battery on purpose and
-plots the curve. Everything lands in one results database with one dashboard
-in front of it.
+plots the curve. Overnight, a local vision model can use tonight's build the
+way a person would and leave a short list of bugs that reproduced on a clean
+install. Everything lands in one results database with one dashboard in front
+of it.
 
 Built to answer a question I could not otherwise answer: **would on-device
 machine learning actually be good enough to ship in my apps, and on which
@@ -27,7 +29,7 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 | **Problem** | Mobile tests and ML benchmarks are only useful when they run on the hardware, under conditions, and with the exact artifacts a product will ship. |
 | **System** | One collector owns the registry, queue, leases, artifacts, results and dashboard; independently implemented agents claim work through one tested JSON protocol. |
 | **Reach** | Five runner implementations across TypeScript, Swift, Kotlin, JavaScript and BrightScript, plus host-driven iOS and Android workloads. |
-| **Workloads** | 28 workload types spanning UI tests, visual regression, llama.cpp, Core ML, LiteRT, battery experiments, builds and deployment. |
+| **Workloads** | <!-- count:workloads -->34 workload types spanning UI tests, visual regression, exploratory QA by a vision model, llama.cpp, Core ML, LiteRT, battery experiments, builds and deployment. |
 | **Proof** | The first production question found an int8 CPU model faster to load and run than its fp32 GPU alternative while preserving useful accuracy. |
 
 **What this demonstrates:** distributed systems, mobile platforms, protocol
@@ -40,8 +42,8 @@ trade-offs.
 
 ![The Overview while one fan-out benchmark is claimed by three agents at once: the queue fills, three rows appear under running now, and the done count climbs as each reports back](docs/img/fanout.gif)
 
-One `POST /jobs` with `"fanout": true`, and every agent the expression matches
-claims its own child job. Above: a laptop and two browser runners on a collector
+One job with `"fanout": true`, and every agent the expression matches claims
+its own child job. Above: a laptop and two browser runners on a collector
 that did not exist a minute earlier. Nothing there is staged — it is the
 shipping agents against a real collector, recorded a frame every 250 ms.
 
@@ -63,8 +65,9 @@ curl -fsSL https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.
 > The installer verifies the download against the release's `SHASUMS256.txt` and
 > refuses to install if it does not match. It needs Node 22.13 or newer and
 > carries no runtime of its own. **`fleet up` itself has been watched to work on
-> macOS/arm64 only** -- CI runs the suites on Windows and Linux, which is not the
-> same as somebody having run a fleet on one.
+> macOS only**, on Apple silicon and on a 2016 Intel Mac that runs this lab's
+> brain -- CI runs the suites on Windows and Linux, and starts the container and
+> the systemd unit, which is not the same as somebody having run a fleet on one.
 > **[docs/install/](https://addisdev.github.io/fleet-runner/install/)** is honest
 > per platform.
 
@@ -135,9 +138,9 @@ something a runner can do without the collector shipping a release.
 
 ## What it can run
 
-![Twenty-eight workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
+![Thirty-four workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
 
-Twenty-eight workloads, and the column a workload sits in is the answer to
+<!-- count:workloads -->Thirty-four workloads, and the column a workload sits in is the answer to
 "who can physically do this". A benchmark runs inside the app on the phone. An
 install needs a cable and a Mac. A build needs a checkout and a toolchain.
 Each has [its own page](https://addisdev.github.io/fleet-runner/workloads/),
@@ -145,7 +148,7 @@ saying what it measures and what it refuses to guess.
 
 ## What is in here
 
-Seven projects in one repository, in three groups: **one brain**, **five
+Eight projects in one repository, in three groups: **one brain**, **five
 runners** that speak its protocol and share no code with each other or with it,
 and **two front doors** onto the whole thing. They ship independently but they
 are versioned together, because the protocol is the thing that breaks and a
@@ -155,7 +158,7 @@ change to it touches three of them at once.
 
 | | What it is |
 |---|---|
-| **[collector/](collector)** | Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. It also holds the host executor, which drives phones from outside over adb, simctl and devicectl. |
+| **[collector/](collector)** | Device registry, job queue with leases, artifact store, results database, scheduler, alert engine, and the dashboard above. Node + Fastify + SQLite, no broker, no cloud. It also holds the host executor, which drives phones from outside over adb, simctl and devicectl, and the [exploratory QA](https://addisdev.github.io/fleet-runner/explore/) workload a vision model drives. |
 
 **The runners** -- five hand-written implementations of one protocol, in five
 languages, sharing not one line
@@ -173,7 +176,14 @@ languages, sharing not one line
 | | What it is |
 |---|---|
 | **[fleet/](fleet)** | The CLI. `fleet up` runs this machine's components under a supervisor that backs off and gives up loudly rather than restarting a broken component forever; `fleet doctor` says what the machine can run and why not; `fleet service install` keeps it up. It wraps the three programs above and reimplements none of them. |
-| **[desktop/](desktop)** | A Tauri menu-bar app around that CLI: a tray menu, role switches, the dashboard in a window, and a notification when a component gives up. It exists to test one hypothesis about macOS local-network permissions, and **it has never been launched**: CI compiles its Rust and that is all -- read its README before believing anything in it. |
+| **[desktop/](desktop)** | A Tauri menu-bar app around that CLI: a tray menu, role switches, the dashboard in a window, and a notification when a component gives up. It exists to test one hypothesis about macOS local-network permissions, and **it has never run on a Mac**: CI compiles it on macOS, and launches it on Linux under a virtual display, where it starts its `fleet` sidecar and its settings window answers over WebDriver. The tray, the Mac and the hypothesis are untested -- read its README before believing anything in it. |
+
+**Alongside them**
+
+| | What it is |
+|---|---|
+| **[skills/fleet-runner/](skills/fleet-runner)** | The agent skill `fleet skill install` copies into a coding agent: which commands to run in what order. Its tool and exit-code tables are generated from the code. |
+| **[bug-garden/](bug-garden)** | An Android app with twenty planted defects, so exploratory QA has something with a known answer to be scored against. |
 
 Each directory has its own README, its own tests and its own CI job, filtered by
 path so a change to a phone runner does not build the dashboard.
@@ -272,8 +282,9 @@ that is not on this shelf is data this repository does not have.
 the handful of things this project learned the hard way. Behaviour is covered by
 the [Contributor Covenant](CODE_OF_CONDUCT.md).
 
-**There is no authentication, by design** — the collector is built for a home
-LAN or a tailnet. [`SECURITY.md`](SECURITY.md) says what that does and does not
+**By default there is no authentication** — the collector is built for a home
+LAN or a tailnet, and [scoped tokens](https://addisdev.github.io/fleet-runner/deploy/auth/)
+are opt-in. [`SECURITY.md`](SECURITY.md) says what that does and does not
 cover before you report it.
 
 ## License

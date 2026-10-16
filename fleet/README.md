@@ -45,10 +45,12 @@ once and then cannot start the fleet.
 |---|---|
 | `fleet up [--role brain,agent,executor] [--join <url>] [--port N]` | This machine's components, supervised. Roles are a list because the first machine this exists for is a brain and a runner at once |
 | `fleet collector` / `fleet agent` / `fleet executor` | Just the one component, in this process |
-| `fleet join <url>` | Run a runner pointed at a brain elsewhere, and write that down |
+| `fleet join <url>` / `fleet join --discover` | Run a runner pointed at a brain elsewhere, and write that down. `--discover` looks for a brain advertising over mDNS instead (off on the brain by default: `collector.discovery`) |
 | `fleet status` | What this fleet looks like right now: devices online, jobs by state, per collector |
 | `fleet doctor` | What this machine can and cannot run, **and why not** — adb, full Xcode against the Command Line Tools, Playwright, Maestro, and the capability list the agent would actually declare |
 | `fleet dash` | Open the dashboard |
+| `fleet mcp [--url U] [--token T]` | The lab as MCP tools over stdio, for a coding agent on this machine. See below |
+| `fleet mcp --http --issuer <idp> --audience <id>` | The same tools as a remote MCP server behind your identity provider's OAuth |
 | `fleet service install\|uninstall\|start\|stop\|status\|logs` | Start at login and stay up: launchd, systemd or a scheduled task, whichever this machine has |
 | `fleet config` / `config get <path>` / `config set <path> <value>` | Read and write `~/.fleet/config.json` |
 | `fleet version` | |
@@ -60,17 +62,19 @@ somebody put it in.
 ### Work commands
 
 Running jobs rather than running the fleet. Each calls `/api/v1` through the generated
-client in `collector/src/client/`, takes `--url`, `--token` and `--json`, and exits with the
-verdict: **0** passed, **1** failed, **2** usage or invalid spec, **3** still running, **4**
-skipped (nothing ran), **5** refused or unreachable.
+client in `collector/src/client/`, takes `--url`, `--token` and `--json` (except that
+`token` reads the tokens file, `--tokens-file`, rather than calling a collector, and
+`skill` and `logout` ignore `--token`), and exits with the verdict: **0** passed, **1**
+failed, **2** usage or invalid spec, **3** still running, **4** skipped (nothing ran),
+**5** refused or unreachable.
 
 | | |
 |---|---|
 | `fleet devices` / `fleet workloads [NAME]` | What is on the shelf; what it can run, with an example spec |
-| `fleet run WORKLOAD [--device\|--pool\|--match] [--param k=v] [--spec FILE]` | Validate, queue, wait, print the verdict. `--validate` checks only; `--no-wait` prints the id |
+| `fleet run WORKLOAD [--device\|--pool\|--match] [--app NAME] [--param k=v] [--target k=v] [--fanout] [--spec FILE\|-] [--timeout S]` | Validate, queue, wait (default 1800 s), print the verdict. `--validate` checks only; `--no-wait` prints the id. The full flag list is in [AI agents and automation](../docs/agents.md#the-cli) |
 | `fleet job ID` / `fleet wait ID` | A verdict now, or when it finishes |
 | `fleet cancel ID` / `fleet retry ID` | |
-| `fleet results` / `fleet flaky` / `fleet artifact SHA [--out FILE]` | What ran, what flips, and the files it left |
+| `fleet results` / `fleet flaky` / `fleet artifact SHA [--out FILE\|DIR\|-]` | What ran, what flips, and the files it left. `--out` is a directory only if it already exists |
 | `fleet login` / `logout` / `whoami` | Save a token for a collector (`~/.fleet/credentials.json`, 0600) |
 | `fleet token create\|list\|revoke` | On the brain's host: the collector's tokens, for `FLEET_AUTH=tokens` |
 | `fleet skill show\|install` | The agent skill, into Cursor, Claude Code and Codex |
@@ -104,8 +108,11 @@ fleet skill install
 ```
 
 It finds the brain the way the agent does -- `--url`, then `FLEET_RUNNER_URL` or
-`FLEET_URL`, then the config -- and adds nothing the HTTP API does not already do: one
-scheduler, one set of device locks, and nothing an agent can do that curl could not.
+`FLEET_URL`, then the config -- and its token the way every work command does: `--token`,
+then `FLEET_RUNNER_TOKEN`, then `FLEET_TOKEN`, then what `fleet login` saved for that URL.
+`FLEET_SOURCE` overrides the `source` label jobs are recorded with. It adds nothing the
+HTTP API does not already do: one scheduler, one set of device locks, and nothing an agent
+can do that curl could not.
 
 `fleet mcp --http` is the same tools as a remote MCP server behind your identity
 provider's OAuth, for chat clients and people without `fleet` installed. See
@@ -153,7 +160,7 @@ is almost always that.
 
 ### The settings this file has no key for
 
-The three programs read about twenty `FLEET_*` variables and the config names six. The rest
+The three programs read many more `FLEET_*` variables than the config has keys for. The rest
 are per-deployment facts with no good home — where this host's Maestro flows live, where its
 Playwright specs live, which Xcode project the generic iOS bundle builds from, whether web
 workloads are enabled here, where alerts go. `env` carries them:
@@ -191,7 +198,9 @@ and which will otherwise restart a broken collector every ten seconds forever.
 
 ## Status
 
-What has actually been watched to work, on **macOS/arm64 and nowhere else**:
+What has actually been watched to work on **macOS/arm64**. The one other machine with
+mileage is an Intel Mac on macOS 12 running a real brain under `fleet service` (below);
+Windows and Linux have CI coverage only:
 
 - `fleet up` starting a supervised brain and agent, and a synthetic benchmark running end to
   end through them — from a checkout, and from the bundled release.
@@ -223,21 +232,40 @@ the collector under it. Two things cost an outage each on the way and are fixed 
 `PATH` from the shell that ran the install, which is how an executor ends up unable to find
 `adb`.
 
-Since 0.8.0, two CI smoke jobs in `fleet.yml` run what had only been built:
+Since 0.8.0, CI smoke jobs in `fleet.yml` run what had only been built. Each
+runs on every pull request that touches `fleet/`, `collector/` or
+`runner-machine/`:
 
 - **systemd.** `systemd smoke` installs the built bundle as a systemd user unit on Ubuntu,
   checks it with `systemd-analyze verify`, waits for its collector to answer, and uninstalls
   it.
-- **A container.** `container smoke` builds `fleet/Dockerfile`, starts `fleet up` in it, and
-  waits for its machine agent to register. Its first run found the image could not start on
-  a fresh volume.
+- **launchd.** `launchd smoke` does the same on `macos-latest`: `fleet service install`
+  writes the LaunchAgent and bootstraps it into the runner's `gui/<uid>` domain (GitHub's
+  macOS runners have a logged-in GUI session, and the job prints it first). It waits for the
+  collector to answer and the agent to register, runs `fleet service status`, reinstalls once
+  so the bootout/bootstrap race is hit and retried rather than trusted -- the first run printed
+  "launchd is still letting go of the old job; waiting" and recovered -- then uninstalls and
+  checks nothing answers, the plist is gone and launchd no longer has the label.
+- **The Windows scheduled task.** `windows task smoke` runs the same lifecycle on
+  `windows-latest`. Its first run found that the task had never worked: the command it
+  stored kept the backslashes from a `\"` escaping meant for a `cmd` prompt, so the task
+  ran `\"C:\...\node.exe\"` and failed with "file not found". Fixed, and `fleet service
+  uninstall` (and `stop`) now kill `fleet up`'s process tree by the supervisor's pid before
+  ending the task, because deleting a task does not stop it and Windows does not take a
+  parent's children down with it. With that, a Windows machine agent registered against a
+  real collector for the first time.
+- **A container, on both architectures.** `container smoke` builds `fleet/Dockerfile`,
+  starts `fleet up` in it, and waits for its machine agent to register. Its first run found
+  the image could not start on a fresh volume. `container smoke (arm64)` builds it natively
+  on GitHub's arm64 runner and checks the container reports `aarch64` before doing the same.
 
 What has still not been run:
 
-- **`fleet service install` on Windows**, and the systemd unit surviving a reboot on a real
-  machine.
-- **The arm64 container image.** The release workflow builds and publishes it; nothing has
-  started it.
+- **A service surviving a reboot**, on any of the three. CI installs and starts each unit;
+  nobody has watched one come back at boot or at logon on a real machine.
+- **Windows stopping gracefully.** The task is stopped by killing the process tree, so the
+  collector does not drain; there is no signal Windows lets one process send another that
+  Node turns into SIGTERM.
 - **`install.ps1`.** No PowerShell was available to parse it, let alone run it. `install.sh`
   *has* been run against the real v0.5.0 release on macOS/arm64: checksum verified, binary
   installed and reporting its version.

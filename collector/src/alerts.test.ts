@@ -148,4 +148,66 @@ export function runAlertChecks(check: Check) {
     check("but a personal laptop that is thermally critical still alerts", thermal.includes("hot-daily-laptop"),
       JSON.stringify(thermal));
   });
+
+  // A schedule that keeps skipping. The tvloop nightly skipped every night for
+  // two weeks on a missing Roku password and nothing said so; its job ids are
+  // the scheduler's `<schedule>-<YYYYMMDDHHMM>`, which is how a run is found
+  // even on a brain whose old jobs carry no requested_by.
+  inTempDir((dir) => {
+    const db = openDb(dir);
+    const schedule = (id: string) =>
+      db.prepare("INSERT INTO schedules (id, cron, template, enabled, last_run) VALUES (?, '30 6 * * *', '{}', 1, NULL)").run(id);
+    const job = (id: string, status: string, lastError: string | null = null) =>
+      db.prepare(
+        `INSERT INTO jobs (job_id, executor, workload, spec, status, last_error, finished_at)
+         VALUES (?, 'host', 'tvloop', '{}', ?, ?, ${status === "queued" || status === "claimed" ? "NULL" : "datetime('now')"})`,
+      ).run(id, status, lastError);
+    const NO_PW = "skipped: no Roku developer password on this host";
+
+    schedule("nightly-tvloop-hardware");
+    job("nightly-tvloop-hardware-202610120630", "done");
+    job("nightly-tvloop-hardware-202610130630", "skipped", NO_PW);
+    job("nightly-tvloop-hardware-202610140630", "skipped", NO_PW);
+    job("nightly-tvloop-hardware-202610150630", "skipped", NO_PW);
+    // A schedule whose id is a prefix of this one must not borrow its runs.
+    schedule("nightly-tvloop");
+    job("nightly-tvloop-202610150630", "done");
+    // Two skips are not a streak yet.
+    schedule("nightly-two");
+    job("nightly-two-202610140630", "skipped", "skipped: locked");
+    job("nightly-two-202610150630", "skipped", "skipped: locked");
+    // A fan-out where every child skipped, for different reasons, three nights.
+    schedule("nightly-fan");
+    for (const day of ["13", "14", "15"]) {
+      job(`nightly-fan-202610${day}0230--phone-a`, "skipped", "skipped: com.example not installed");
+      job(`nightly-fan-202610${day}0230--phone-b`, "skipped", day === "15" ? "skipped: device locked by another job" : "skipped: com.example not installed");
+    }
+    // Three skips and then a run in flight: the in-flight one has not said
+    // anything yet, so the streak stands.
+    schedule("nightly-inflight");
+    for (const day of ["12", "13", "14"]) job(`nightly-inflight-202610${day}0230`, "skipped", "skipped: no device matches this job on ultra");
+    job("nightly-inflight-202610150230", "claimed");
+
+    const skipping = () => evaluate(new Date(), NO_SIZES).filter((f) => f.rule === "schedule-skipping");
+    const found = skipping();
+    const bySubject = new Map(found.map((f) => [f.subject, f]));
+    check("stale skip: three skips in a row raise one alert", bySubject.has("nightly-tvloop-hardware"), JSON.stringify(found));
+    check("stale skip: naming the schedule and the reason it keeps giving",
+      bySubject.get("nightly-tvloop-hardware")?.message ===
+        "nightly-tvloop-hardware has skipped 3 runs in a row: no Roku developer password on this host",
+      bySubject.get("nightly-tvloop-hardware")?.message);
+    check("stale skip: a schedule's runs are its own, not a longer id's", !bySubject.has("nightly-tvloop"));
+    check("stale skip: two skips are not a streak", !bySubject.has("nightly-two"));
+    check("stale skip: a fan-out whose every child skipped counts as a skipped run", bySubject.has("nightly-fan"));
+    check("stale skip: a run still in flight neither breaks nor extends the streak", bySubject.has("nightly-inflight"));
+    check("stale skip: one alert per schedule", found.length === 3, JSON.stringify(found.map((f) => f.subject)));
+
+    // A run that is not a skip resolves it.
+    job("nightly-tvloop-hardware-202610160630", "failed", "smoke: Assertion is false");
+    check("stale skip: the first run that is not a skip clears it",
+      !skipping().some((f) => f.subject === "nightly-tvloop-hardware"));
+    // Disabled schedules are not watched.
+    db.prepare("UPDATE schedules SET enabled = 0 WHERE id = 'nightly-fan'").run();
+    check("stale skip: a disabled schedule is not watched", !skipping().some((f) => f.subject === "nightly-fan"));
+  });
 }

@@ -24,17 +24,34 @@ environment or in the `env` object of `~/.fleet/config.json`
 (`"env": {"FLEET_AUTH": "tokens"}`). The token file is re-read when it
 changes, so creating and revoking need no restart.
 
+The file is `$FLEET_DATA_DIR/tokens.json` (`~/.fleet/data/tokens.json` under
+`fleet up`). `FLEET_TOKENS_FILE` moves it for the collector, and
+`fleet token ... --tokens-file PATH` points the command at the same place.
+
 | Scope | Allows |
 |---|---|
 | `read` | Every GET: devices, jobs, results, artifacts, the dashboard's data |
 | `run` | Enqueue and validate jobs; cancel or retry the jobs this token started |
-| `admin` | Everything else: other people's jobs, devices, schedules, the audit log |
+| `admin` | Everything else: other people's jobs, devices, schedules, the audit log, and the `shell` workload |
 | `agent` | The runner protocol, when `FLEET_AUTH_PROTOCOL=token` |
 | `delegate` | Name the person a request is for (`X-Fleet-Actor`). For a gateway only |
 
 `admin` implies `run` and `agent`; `run` implies `read`. Nothing implies
 `delegate`, because a token that can put a name on a job can put *anyone's*
 name on it.
+
+**Two checks go beyond the scope, and every route makes them.** A `run`
+token may cancel or retry only a job it started; `admin` may act on any. And
+the `shell` workload needs `admin`, however it is asked for. `/api/v1`, the
+dashboard's `POST /api/jobs/:id/cancel` and `/retry`, and the older enqueue
+routes `POST /jobs` and `POST /api/jobs` all ask the same function
+(`collector/src/api/policy.ts`), so there is no route that skips them; until
+0.9.0 the older routes skipped both. A job queued while auth was off carries
+whatever name its caller claimed then, usually none, so once tokens are on it
+is in practice `admin`'s to stop. What
+bounds `shell` besides the scope is each machine's own allowlist of script
+hashes: a machine with no allowlist file never declares `shell`, so nothing
+can be sent to it.
 
 **Runners stay open unless you close them.** Phones, TVs and the browser
 runner do not send tokens, so with `FLEET_AUTH=tokens` the runner protocol
@@ -43,10 +60,12 @@ scope; set it only when every runner can send `FLEET_TOKEN` (runner-machine
 and the host executor can).
 
 **People** run `fleetr login` once per collector; the token is saved to
-`~/.fleet/credentials.json` (mode 0600), keyed by URL. **The dashboard** asks
-for a token in a banner and exchanges it for an HttpOnly, SameSite=Strict
-cookie that is honoured for reads only, so a link on another site cannot
-make the browser change anything.
+`~/.fleet/credentials.json` (mode 0600), keyed by URL. `fleetr whoami` shows
+what the collector makes of it and `fleetr logout` forgets it; which token wins
+when several are set is in [AI agents and automation](../agents.md#the-cli).
+**The dashboard** asks for a token in a banner and exchanges it for an
+HttpOnly, SameSite=Strict cookie that is honoured for reads only, so a link on
+another site cannot make the browser change anything.
 
 **Every change is audited**: who, through which front door (`source`), what,
 and the result, readable at `GET /api/v1/audit` with `admin`.
@@ -95,6 +114,10 @@ stateless, so any number of replicas can sit behind one.
 
 | Flag | Environment | Default | |
 |---|---|---|---|
+| `--url` | `FLEET_RUNNER_URL`, `FLEET_URL` | the config | The collector, resolved the way the CLI resolves it |
+| `--token` | `FLEET_RUNNER_TOKEN`, `FLEET_TOKEN` | saved login | The gateway's own collector token (`run,delegate`) |
+| `--host` | `FLEET_MCP_HOST` | `127.0.0.1` | Address to listen on. `0.0.0.0` behind a proxy |
+| `--port` | `FLEET_MCP_PORT` | 8790 | |
 | `--issuer` | `FLEET_MCP_ISSUER` | | The IdP's issuer, exactly as in the token's `iss` |
 | `--audience` | `FLEET_MCP_AUDIENCE` | | This resource, as in `aud`. Required with `--issuer` |
 | `--jwks` | `FLEET_MCP_JWKS` | discovered | Signing keys URL, if not at the issuer's OpenID configuration |
@@ -107,7 +130,8 @@ stateless, so any number of replicas can sit behind one.
 | `--no-auth` | | | Development only; refused off loopback |
 
 Endpoints: `POST /mcp`, `GET /.well-known/oauth-protected-resource/mcp`
-(RFC 9728: tells a client which IdP to sign in with), `GET /healthz`. A
+(RFC 9728: tells a client which IdP to sign in with; also answered without the
+`/mcp` suffix), `GET /healthz`. A
 request without a valid token gets a 401 whose `WWW-Authenticate` header
 points at that metadata, which is how an MCP client discovers where to log in.
 

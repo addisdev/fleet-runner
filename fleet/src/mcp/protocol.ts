@@ -32,7 +32,9 @@ const INSTRUCTIONS = (where: string | null) =>
   "The usual order: fleet_devices (what is online) -> fleet_workloads name=<workload> (a valid example spec) -> " +
   "fleet_validate (fix what it says) -> fleet_run (waits for the verdict) -> fleet_artifact (screenshots, logs).\n" +
   "A verdict of skipped means nothing ran; never report it as a pass. Do not retry a failed job more than once " +
-  "without reading its error. Prefer targets.pool or targets.match over pinning a device_id another person may be using." +
+  "without reading its error. Prefer targets.pool or targets.match over pinning a device_id another person may be using.\n" +
+  "Night QA's findings: fleet_findings since=24h (last night) -> fleet_finding id=<id> (steps and the replay flow). " +
+  "agent_mistake is not a bug; mark a finding fixed with fleet_verdict only after a fix has merged." +
   (where ? `\n\nCollector: ${where}` : "");
 
 /** One message in, zero or one out. */

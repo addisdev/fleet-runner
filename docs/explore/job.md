@@ -25,17 +25,18 @@ And the weekly mission bench:
 | `bench` | `false` | Run only `bench-` cards, with no judge; file nothing; report end states reached |
 | `model` | see [below](#models) | The driver |
 | `judge` | see below | The second model, or `false` for none |
-| `minutes` | 150 | The night's budget, per device |
+| `minutes` | 150 | The night's budget, per device (1 to 600) |
 | `steps` | | Cap every card at this many steps, for a short trial night |
-| `findings_per_night` | 5 | New findings filed per app per night |
+| `findings_per_night` | 5 | New findings filed per app per night (0 to 50) |
 | `replay_attempts` | 2 | Clean-install replays per candidate (1 to 5) |
 | `confirm_per_mission` | 6 | Candidates replayed per mission, worst first |
 | `conditions` | `["baseline"]` | Rotated across the night's missions; see [below](#conditions) |
-| `changed` | | `{repo, since}` reads `git log`; `{files: [...]}` takes a list. Puts matching cards first |
-| `previous_app` | | `{sha256}` of the previous build; each reproduced finding is replayed on it too |
+| `changed` | | `{repo, since}` reads `git log` (`since` is a sha or a git date, default `24 hours ago`); `{files: [...]}` takes a list. Puts matching cards first |
+| `previous_app` | | `{sha256, build?}` of the previous build; each reproduced finding is replayed on it too |
 | `surface` | from the device | `touch` or `dpad`. Android TV, Fire TV, Roku and tvOS default to `dpad` |
 | `credentials` | | `{account, email_var, password_var}` for setup flows; the password comes from the host's Keychain |
 | `mirror` | `true` | Stream each step's screenshot to the job's live view on the dashboard |
+| `short_night` | | Set by `explore-night.ts`, not by hand: `{asked}`, the spec's own `minutes`, when `minutes` was cut to fit the night. See [short nights](#short-nights-and-skips) |
 
 ## Models
 
@@ -54,8 +55,11 @@ And the weekly mission bench:
 | `extra_body` | | Merged into every request, for server-specific switches |
 
 The API key is never in the spec (the collector refuses specs carrying
-`api_key` or `token`). It comes from the executor's environment
-(`FLEET_EXPLORE_API_KEY`) or its Keychain:
+`api_key` or `token`). The executor looks for it in this order:
+`FLEET_EXPLORE_API_KEY`, then `HARNESS_KEY` (what ultra's night queue hands
+its jobs), then the file `FLEET_EXPLORE_API_KEY_FILE` (default
+`~/.config/harness/keys/fleet.key`; a process started over SSH or by launchd
+cannot write the login Keychain), then the Keychain:
 
 ```bash
 security add-generic-password -s fleet-explore-gateway -a gateway -w
@@ -88,11 +92,15 @@ the judge which language to expect, so English left in a Spanish build is a
 
 | Variable | Default | |
 |---|---|---|
-| `FLEET_EXPLORE_BASE_URL` | `http://ultra.local:4000` | The gateway |
+| `FLEET_EXPLORE_BASE_URL` | `HARNESS_GATEWAY`, then `http://ultra.local:4000` | The gateway |
 | `FLEET_EXPLORE_MODEL` | `pilot` | The driver's name on it |
 | `FLEET_EXPLORE_JUDGE_MODEL` | `vision` | The judge's name on it |
-| `FLEET_EXPLORE_API_KEY` | | Otherwise the Keychain item `fleet-explore-gateway` |
-| `FLEET_MISSIONS_DIR` | `examples/missions` | Mission cards |
+| `FLEET_EXPLORE_API_KEY` | | Otherwise `HARNESS_KEY`, the key file, then the Keychain item `fleet-explore-gateway` |
+| `FLEET_EXPLORE_API_KEY_FILE` | `~/.config/harness/keys/fleet.key` | The key as a file |
+| `FLEET_KEYCHAIN_SERVICE` | `fleet-ui-test` | The Keychain service holding the sign-in passwords `credentials` names |
+| `FLEET_DASH_TOKEN` | | Sent with live-view frames as `x-fleet-token`, when the brain guards the dashboard with one |
+| `FLEET_TOKEN` | | Sent with live-view frames as a bearer token, which a brain with `FLEET_AUTH_PROTOCOL=token` requires (an `agent` token). The executor already sends it on everything else |
+| `FLEET_MISSIONS_DIR` | `examples/missions` in the working directory, then beside the bundle | Mission cards |
 | `FLEET_FLOWS_DIR` | `examples/flows` | Setup flows |
 | `FLEET_STATE_DIR` | `~/.fleet` | Screen maps and last-run times live under `explore/<app>/` |
 | `FLEET_TVLOOP_DIR` | `~/tvloop` | A built tvloop checkout, for Rokus |
@@ -114,6 +122,8 @@ Metrics on each device row:
 | Metric | |
 |---|---|
 | `explore_missions` | Missions run |
+| `explore_cards_planned` | Cards lined up for the device, in priority order. Fewer missions than cards means the budget ran out first |
+| `explore_minutes` | The minutes the device was given: `params.minutes`, cut to fit on a short night |
 | `explore_steps` · `explore_actions` | Model steps; actions actually performed |
 | `explore_screens` · `explore_new_screens` | Screens reached tonight; screens no night had reached |
 | `explore_candidates` | Raised by the checks, before replay |
@@ -128,6 +138,11 @@ Metrics on each device row:
 The row also carries `missions`: per mission, its condition, steps, how it
 ended, screens, candidates, misses, refusals by class, the goal verdict, the
 bench result and the model's answer.
+
+On a short night the device row and the final row are still `ok: true`, and
+`error` says what ran: `short night: ran 3 of 7 cards: 40 minutes left of the
+60 asked`. `error` is the field the job summary, the digest and `fleetr` show,
+which is why the note is there and not in a field nothing reads.
 
 ## Artifacts
 
@@ -159,6 +174,72 @@ recommended: a night that died halfway should not start again at 3 a.m.
 | Schedule | When | What |
 |---|---|---|
 | `nightly-explore-greenfolio` | 22:00 daily, window 22–01 | GreenFolio Android on ultra, 100 minutes, six conditions, aimed at the day's commits |
-| `nightly-explore-dozehound-tv` | 23:45 daily | Dozehound on Fire TV, D-pad, 40 minutes. Leave off until a model passes the TV test |
+| `nightly-explore-dozehound-tv` | 23:45 daily | Dozehound on Fire TV, D-pad, 40 minutes. Parked: the Fire TV app needs the production backend, which is the owner's call (WB-297); the TV question is being answered on tvOS instead |
 | `weekly-explore-shelf` | Wednesdays 23:00 | GreenFolio on the Galaxy S8+ (Android 9) through fleet-host's executor |
 | `weekly-explore-bench` | Sundays 22:00 | The bug garden's bench cards, for a weekly model score |
+
+The nights that actually run today do not come from these schedules. On ultra
+the harness's night queue runs `scripts/explore-night.ts` from the manifests in
+`collector/deploy/explore/night/`, each with a job spec from
+`examples/jobs/`:
+
+| Night job | Priority | Spec |
+|---|---|---|
+| `fleet-explore-builds` | 19 | none: `deploy/explore/nightly-builds.sh` builds GreenFolio iOS and Dozehound tvOS from `origin/develop` and uploads them |
+| `fleet-explore` | 20 | `explore-garden-ultra.json`, the bug garden on the Android emulator |
+| `fleet-explore-tv` | 85 | `explore-dozehound-tvos-ultra.json` and the two tvOS bench specs, on a tvOS simulator |
+| `fleet-explore-apple` | 86 | `explore-greenfolio-ios-ultra.json`, on an iOS simulator |
+
+A lower number runs earlier; the products' own night jobs sit between 20 and
+85. [Running it on ultra](../deploy/explore-on-ultra.md) has the setup.
+
+### Short nights and skips
+
+The night queue decides **whether** a job starts: from 22:00, when memory
+pressure is normal, enough memory is free and no CI job is running, and only
+while the job's `max_minutes` still fits before 07:30. A job that is not
+admitted within its `wait_minutes` is skipped by the queue. That wait is the
+queue's, outside this repository: on 10-14 `fleet-explore-builds` and
+`fleet-explore` each spent their whole 120 minutes behind a CI job. What
+`explore-night.ts` controls is what happens **once admitted**, and it checks
+the cheap things first:
+
+1. **Is there a build to test?** With `--fresh-build` (the Apple and TV
+   nights), each spec asking for `"sha256": "latest"` needs a build the brain
+   shows as published tonight (since noon of the night's date).
+   `nightly-builds.sh` uploads an unchanged build again for exactly this. If
+   there is none, the job is posted to the brain as a skip, `skipped: no
+   greenfolio-ios build for tonight (fleet-explore-builds did not run, ...)`,
+   and the command exits 0. A pinned build (`sha256` a hash) only has to be
+   on the brain; if it is not, that is the spec's own failure.
+2. **Is there time?** The night ends at `--until` (default 07:30) or at the
+   job's `max_minutes`, read from the queue's manifest for `$NIGHT_JOB`,
+   whichever is first. Ten minutes are held back for the last replay, uploads
+   and shutting devices down, and three per spec for enqueueing and
+   installing. When the specs ask for more than is left, each gets a share in
+   proportion to what it asked for, and the workload runs its highest-priority
+   cards in that time (cards are ordered by today's changes and how long since
+   each last ran). If a share would be under 15 minutes (`--min-minutes`), the
+   last spec is dropped and posted as a skip; if even one spec cannot have 15
+   minutes, the whole night is skipped. The plan is made again before each
+   spec, with the time actually left.
+3. **Will the model load?** `--warm "<cmd>"` runs the shelf's warm-up only
+   after both checks pass. A warm-up refused for memory ("64% free, needs
+   65%", or "memory pressure") is retried every minute for up to
+   `--warm-wait` minutes (default 10), then the night is posted as `skipped:
+   the model would not load, no room on this host: ...`. Any other warm-up
+   failure fails the night, with the reason posted.
+
+Only then does it boot the simulator or emulator. A skip is `ok: true` with
+an error starting `skipped:`, the brain's convention for "nothing ran, and that
+is not a failure of the code". The command's exit code is 0 when every spec
+finished or skipped and 1 otherwise, because the night queue has no skip code
+of its own and a missing upstream build is not this job's failure.
+
+`--dry-run` opens the tunnel, runs the build and time checks against the live
+brain and prints the plan. It enqueues nothing, posts nothing, warms nothing
+and boots nothing.
+
+Not yet seen on a real night: a short night (every night since this was built
+has been either admitted in full or not at all) and the warm-up retry. Both
+are covered by `scripts/check-explore.ts` against a fake brain.

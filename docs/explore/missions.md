@@ -119,8 +119,8 @@ evaluate without a model:
 | `focused_label` | The focused element's label contains it (TV cards) |
 | `screen` | The final screen's name contains it |
 
-Bench cards run only in bench mode (`params.bench: true`) and exploration cards
-only outside it. Bench missions run with no judge and file nothing; the number
+Bench cards run only in bench mode (`params.bench: true`), unless `missions`
+names them, and exploration cards only outside it. Bench missions run with no judge and file nothing; the number
 that comes out is how many end states the model reached. See
 [Measuring a model](measuring.md#the-mission-bench-b4).
 
@@ -132,5 +132,5 @@ that comes out is how many end states the model reached. See
 | `greenfolio/` | 3 Android: the sign-in gate, forgot password, a read-only signed-in tour |
 | `greenfolio-ios/` | 2 iOS, offline: the sign-in gate, creating an account with no network |
 | `dozehound-tv/` | Android TV / Fire TV: 3 exploration, 10 bench |
-| `dozehound-tvos/` | tvOS: 1 exploration, 1 bench (its end-state text is unverified) |
+| `dozehound-tvos/` | tvOS: 1 exploration, 10 bench, end states taken from a hand walk on a tvOS 26.5 simulator |
 | `fakeroku/` | 10 bench, for tvloop's fake Roku |

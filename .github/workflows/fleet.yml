@@ -89,8 +89,21 @@ jobs:
     # run it the way the docs say, and drive it through the CLI from outside:
     # a container whose port is published but whose collector never answers is
     # the failure a `docker build` alone would call green.
-    name: container smoke
-    runs-on: ubuntu-latest
+    #
+    # The arm64 row builds natively on GitHub's arm64 runner rather than under
+    # QEMU on the amd64 one. The release publishes linux/arm64 from a QEMU
+    # build, and an image that only ever ran emulated is the one a Raspberry Pi
+    # owner would be first to start for real.
+    name: container smoke${{ matrix.suffix }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            suffix: ""
+          - runner: ubuntu-24.04-arm
+            suffix: " (arm64)"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -99,13 +112,21 @@ jobs:
           cache: npm
           cache-dependency-path: fleet/package-lock.json
       - working-directory: .
-        run: docker build -f fleet/Dockerfile -t fleet:ci .
+        run: |
+          docker build -f fleet/Dockerfile -t fleet:ci .
+          docker image inspect fleet:ci --format 'built for {{.Os}}/{{.Architecture}}'
+
       - working-directory: .
         run: docker run -d --name fleet -p 8788:8788 fleet:ci up --role brain,agent
       - name: The collector answers, and the machine agent registers
         shell: bash
+        env:
+          EXPECT_ARCH: ${{ matrix.runner == 'ubuntu-24.04-arm' && 'aarch64' || 'x86_64' }}
         run: |
           set -euo pipefail
+          arch=$(docker exec fleet uname -m)
+          echo "container is running on $arch"
+          [ "$arch" = "$EXPECT_ARCH" ] || { echo "::error::expected $EXPECT_ARCH, the container says $arch"; exit 1; }
           for i in $(seq 1 60); do
             curl -fsS http://127.0.0.1:8788/api/v1/health && break
             sleep 2
@@ -165,3 +186,138 @@ jobs:
         run: |
           export XDG_RUNTIME_DIR="/run/user/$(id -u)"
           journalctl --user -u fleet.service --no-pager | tail -100 || true
+
+  launchd:
+    # The twin of the systemd smoke for macOS. `fleet service install` writes a
+    # user LaunchAgent and bootstraps it into the gui/<uid> domain; GitHub's
+    # macOS runners run their jobs inside a logged-in GUI session, so that
+    # domain exists here the way it does on a desk. The first step says so
+    # rather than assuming it, because a runner without one would make every
+    # later failure look like a fleet bug.
+    name: launchd smoke
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: npm
+          cache-dependency-path: fleet/package-lock.json
+      - run: npm ci && npm --prefix ../collector ci && npm run build
+      - name: The runner has a GUI launchd domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "uid $(id -u), user $(id -un)"
+          launchctl print "gui/$(id -u)" | head -15
+      - name: Install as a LaunchAgent, it serves, and its agent registers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.fleet"
+          cp -R dist/. "$HOME/.fleet/"
+          fleet() { node "$HOME/.fleet/bin/fleet.mjs" "$@"; }
+          plist="$HOME/Library/LaunchAgents/com.addisdev.fleet.plist"
+          fleet service install
+          plutil -lint "$plist"
+          launchctl print "gui/$(id -u)/com.addisdev.fleet" | head -20
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8788/api/v1/health && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8788/api/v1/health >/dev/null
+          n=0
+          for i in $(seq 1 30); do
+            n=$(fleet devices --url http://127.0.0.1:8788 --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).items.length))')
+            [ "$n" -gt 0 ] && break
+            sleep 2
+          done
+          [ "$n" -gt 0 ] || { echo "::error::the agent under launchd never registered"; exit 1; }
+          fleet devices --url http://127.0.0.1:8788
+          fleet service status
+          # Reinstalling is bootout-then-bootstrap, the race service.ts retries.
+          # Run it once here so the retry is exercised rather than trusted.
+          fleet service install
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8788/api/v1/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8788/api/v1/health >/dev/null
+          fleet service uninstall
+          sleep 5
+          if curl -fsS http://127.0.0.1:8788/api/v1/health 2>/dev/null; then
+            echo "::error::the collector is still answering after uninstall"
+            exit 1
+          fi
+          [ ! -e "$plist" ] || { echo "::error::$plist is still there after uninstall"; exit 1; }
+          if launchctl print "gui/$(id -u)/com.addisdev.fleet" >/dev/null 2>&1; then
+            echo "::error::launchd still has com.addisdev.fleet loaded after uninstall"
+            exit 1
+          fi
+          if fleet service status; then
+            echo "::error::fleet service status exited 0 after uninstall"
+            exit 1
+          fi
+      - if: failure()
+        shell: bash
+        run: |
+          tail -100 "$HOME/.fleet/logs/fleet.log" || true
+          for f in "$HOME"/.fleet/logs/*.log; do echo "== $f"; tail -40 "$f"; done || true
+
+  windows-task:
+    # `fleet service install` on Windows creates a scheduled task that runs
+    # `fleet up` at logon and starts it at once. Same lifecycle as the systemd
+    # and launchd smokes: install, it serves, its agent registers, status says
+    # so, uninstall, and nothing is left answering.
+    name: windows task smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+          cache: npm
+          cache-dependency-path: fleet/package-lock.json
+      - shell: bash
+        run: npm ci && npm --prefix ../collector ci && npm run build
+      - name: Install as a scheduled task, it serves, and its agent registers
+        shell: bash
+        run: |
+          set -euo pipefail
+          home="$(cygpath -u "$USERPROFILE")/.fleet"
+          mkdir -p "$home"
+          cp -R dist/. "$home/"
+          fleet() { node "$home/bin/fleet.mjs" "$@"; }
+          fleet service install
+          schtasks //Query //TN FleetRunner //FO LIST //V
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8788/api/v1/health && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8788/api/v1/health >/dev/null
+          n=0
+          for i in $(seq 1 30); do
+            n=$(fleet devices --url http://127.0.0.1:8788 --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).items.length))')
+            [ "$n" -gt 0 ] && break
+            sleep 2
+          done
+          [ "$n" -gt 0 ] || { echo "::error::the agent under the scheduled task never registered"; exit 1; }
+          fleet devices --url http://127.0.0.1:8788
+          fleet service status
+          fleet service uninstall
+          sleep 5
+          if curl -fsS http://127.0.0.1:8788/api/v1/health 2>/dev/null; then
+            echo "::error::the collector is still answering after uninstall"
+            exit 1
+          fi
+          if schtasks //Query //TN FleetRunner >/dev/null 2>&1; then
+            echo "::error::the FleetRunner task is still there after uninstall"
+            exit 1
+          fi
+      - if: failure()
+        shell: bash
+        run: |
+          home="$(cygpath -u "$USERPROFILE")/.fleet"
+          schtasks //Query //TN FleetRunner //FO LIST //V || true
+          for f in "$home"/logs/*.log; do echo "== $f"; tail -60 "$f"; done || true
+          tasklist //FI "IMAGENAME eq node.exe" || true

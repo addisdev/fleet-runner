@@ -10,6 +10,12 @@ to: llama.cpp and LiteRT benchmarks, batch inference, and image-classification
 evals, with a telemetry beacon reporting battery, charging and thermal state
 every 60 seconds.
 
+The same APK installs on Android TV, Google TV and Fire TV, on a Meta Quest
+and on Wear OS, and works out at run time which of those it is on. That is
+less proven than it sounds: the APK declares a leanback launcher and a banner
+(checked with `aapt2 dump badging`) but no TV has run it, and no Quest or Wear
+device ever has. [Platforms](../docs/platforms.md) has the state of each.
+
 Old hardware is the point. A phone too slow for an LLM still runs the
 synthetic backend and still produces a comparable number, which is what makes
 a drawer of retired handsets useful as a test matrix instead of e-waste.
@@ -41,7 +47,7 @@ Open the app, keep the default `http://127.0.0.1:8788`, tap **Start agent**,
 then enqueue a job:
 
 ```
-curl -X POST http://127.0.0.1:8788/jobs -H 'content-type: application/json' -d '{
+curl -X POST http://127.0.0.1:8788/api/v1/jobs -H 'content-type: application/json' -d '{
   "schema": 1, "job_id": "bench-synthetic-1", "workload": "benchmark",
   "executor": "device", "backend": "synthetic",
   "params": { "prompt_tokens": 256, "gen_tokens": 64, "warmup_iters": 1, "measure_iters": 3 },
@@ -62,6 +68,11 @@ SM-X930, not an emulator. `benchmark`, `batch`, `batch:litert`, `pipeline`,
 dispatched from the same table, so the collector is never offered work this
 runner would bounce back.
 
+**Android 7.0 and 7.1 (API 24-25) start the runner service with
+`startService`**, because `startForegroundService` only exists from API 26 and
+threw `NoSuchMethodError` there. That fix is covered by a Robolectric test and
+has not run on a real API 24 or 25 device.
+
 **There is no offline result queue.** Results retry through the agent loop's
 backoff and nothing else, so a device that loses the collector for longer than
 that loses those rows. This is the one gap worth knowing about before you trust
@@ -76,6 +87,12 @@ the suite with no NDK installed:
 ```
 ./gradlew :app:testDebugUnitTest -Pfleet.skipNative
 ```
+
+CI also runs `./gradlew :app:lintDebug -Pfleet.skipNative`. Passing it meant
+dropping the manifest's `android.hardware.type.watch` feature line, which lint
+rejects as not-required and which a store reads as Wear-only; the runner still
+detects a watch at run time. No Wear device has run the APK before or after
+that change.
 
 ## License
 

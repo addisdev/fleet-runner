@@ -12,7 +12,8 @@ import { db } from "../db.js";
 import { powerRetention } from "../power.js";
 import { isValidMatch } from "../match.js";
 import { requireToken } from "./guard.js";
-import { forward } from "../auth.js";
+import { authOf, forward } from "../auth.js";
+import { needsAdmin, notOwned } from "./policy.js";
 import { iso, parse, sha256Refs } from "./shared.js";
 
 /** How long explore keeps a whole night's trajectories before only the findings' remain (plan, phase 5). */
@@ -33,11 +34,21 @@ type MatchingDevices = (
 // inserted as 'waiting', which the claim loop does not look at, and becomes
 // 'queued' when the last of its dependencies is 'done'.
 //
+// A dependency that skipped produced nothing -- no build, no artifact, no
+// metric -- so a job waiting on it skips too, with `last_error` saying
+// "dependency X skipped". Not a failure: nothing went wrong with the code, and
+// a red install behind a build that never ran would be a lie in the other
+// direction.
+//
 // The machinery lives in this file because both of the places a job can close
 // have to settle whatever was waiting on it: a final result (server.ts) and a
 // cancellation (below), and only one of those can import the other.
 
-export type DepSettlement = { promoted: string[]; failed: { job_id: string; reason: string }[] };
+export type DepSettlement = {
+  promoted: string[];
+  failed: { job_id: string; reason: string }[];
+  skipped: { job_id: string; reason: string }[];
+};
 
 // `${jobs.<id>.artifact}` and `${jobs.<id>.metrics.<key>}`. The id is matched
 // lazily and the suffix is what anchors the match, so a job id that itself
@@ -179,17 +190,21 @@ export function validateDepRefs(specJson: string, deps: string[]): string | null
 /** What status a job with these dependencies should be inserted as. A chain
  *  whose build already failed is failed on arrival rather than parked in
  *  'waiting' forever: nothing will ever close that dependency again, so no
- *  promotion event is coming. */
+ *  promotion event is coming. One whose build skipped is skipped on arrival,
+ *  for the same reason. A failure outranks a skip. */
 export function dependencyState(
   deps: string[],
-): { status: "queued" | "waiting" } | { status: "failed"; reason: string } {
+): { status: "queued" | "waiting" } | { status: "failed" | "skipped"; reason: string } {
   let allDone = true;
+  let skipped: string | null = null;
   for (const d of deps) {
     const row = db.prepare("SELECT status FROM jobs WHERE job_id = ?").get(d) as { status: string } | undefined;
     if (row?.status === "failed" || row?.status === "cancelled")
       return { status: "failed", reason: `dependency ${d} ${row.status}` };
+    if (row?.status === "skipped") skipped ??= d;
     if (row?.status !== "done") allDone = false;
   }
+  if (skipped) return { status: "skipped", reason: `dependency ${skipped} skipped` };
   return { status: allDone ? "queued" : "waiting" };
 }
 
@@ -216,13 +231,25 @@ function failWaiter(jobId: string, reason: string, out: DepSettlement) {
   settleWaiters(jobId, out);
 }
 
+function skipWaiter(jobId: string, reason: string, out: DepSettlement) {
+  db.prepare(
+    `UPDATE jobs SET status = 'skipped', finished_at = datetime('now'),
+                     lease_deadline = NULL, last_error = ?
+     WHERE job_id = ?`,
+  ).run(reason, jobId);
+  out.skipped.push({ job_id: jobId, reason });
+  // An install that skipped has nothing for the ui-test behind it either.
+  settleWaiters(jobId, out);
+}
+
 /**
  * Resolve everything that was waiting on a job that just closed.
  *
  * A waiter whose last dependency is now 'done' is promoted to 'queued' with its
  * `${jobs.…}` references filled in from the dependency's final row. A waiter
  * whose dependency failed or was cancelled is failed with `last_error` naming
- * it, and that failure cascades.
+ * it, and that failure cascades. One whose dependency skipped is skipped the
+ * same way -- unless another dependency failed, which wins.
  *
  * Callers run this inside the transaction that closed the job, and announce
  * what it returns after that transaction commits — a broken dashboard pipe must
@@ -230,7 +257,7 @@ function failWaiter(jobId: string, reason: string, out: DepSettlement) {
  */
 export function settleWaiters(
   closedJobId: string,
-  out: DepSettlement = { promoted: [], failed: [] },
+  out: DepSettlement = { promoted: [], failed: [], skipped: [] },
 ): DepSettlement {
   for (const w of waitersOn(closedJobId)) {
     const deps = parse<string[]>(w.depends_on, []);
@@ -248,6 +275,11 @@ export function settleWaiters(
         broken.status === null ? `dependency ${broken.id} no longer exists` : `dependency ${broken.id} ${broken.status}`,
         out,
       );
+      continue;
+    }
+    const skippedDep = states.find((s) => s.status === "skipped");
+    if (skippedDep) {
+      skipWaiter(w.job_id, `dependency ${skippedDep.id} skipped`, out);
       continue;
     }
     if (!states.every((s) => s.status === "done")) continue;
@@ -294,6 +326,9 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
   app.post("/api/jobs/:id/cancel", async (req, reply) => {
     if (!requireToken(req, reply)) return;
     const { id } = req.params as { id: string };
+    // The same owner check /api/v1 makes: a run token stops only its own jobs.
+    const foreign = notOwned(authOf(req), [id]);
+    if (foreign) return reply.code(403).send({ error: foreign.message, hint: foreign.hint });
     const reason = ((req.body as { reason?: string } | null)?.reason ?? "cancelled from the dashboard").slice(0, 500);
 
     const out = cancelTx(id, reason);
@@ -322,6 +357,8 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
   app.post("/api/jobs/:id/retry", async (req, reply) => {
     if (!requireToken(req, reply)) return;
     const { id } = req.params as { id: string };
+    const foreign = notOwned(authOf(req), [id]);
+    if (foreign) return reply.code(403).send({ error: foreign.message, hint: foreign.hint });
     const body = (req.body ?? {}) as { pool?: string; device_id?: string; priority?: number };
 
     const row = db.prepare("SELECT spec, template_id FROM jobs WHERE job_id = ?").get(id) as
@@ -373,6 +410,10 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
   // The composer's enqueue. Guarded, then handed to POST /jobs unchanged.
   app.post("/api/jobs", async (req, reply) => {
     if (!requireToken(req, reply)) return;
+    // Asked here and not only in POST /jobs, because the forward below arrives
+    // there as an internal request, which has already been decided.
+    const refused = needsAdmin(authOf(req), (req.body as { workload?: unknown } | null)?.workload);
+    if (refused) return reply.code(403).send({ error: refused.message, hint: refused.hint });
     const res = await forward(app, req, { method: "POST", url: "/jobs", payload: req.body as object });
     return reply.code(res.statusCode).send(res.json());
   });

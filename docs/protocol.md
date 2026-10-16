@@ -49,13 +49,13 @@ means "nothing", and they are different on purpose.
 ### `platform` and `kind`
 
 **`platform`** is which OS family you run. An open string: `android`, `ios`,
-`tvos`, `watchos`, `visionos`, `macos`, `linux`, `windows`, `web` are the ones
-in use. Send it. An agent that omits it gets the old rule — iOS if `os` looks
+`tvos`, `watchos`, `visionos`, `macos`, `linux`, `windows`, `roku`, `web` are
+the ones in use. Send it. An agent that omits it gets the old rule — iOS if `os` looks
 like iOS, Android otherwise — which is kept so that a collector upgrade does
 not relabel agents written before the field existed. That rule is also why the
 field had to exist: it does not report a platform, it reports a guess, and
 every desktop agent registered as an Android phone until it could say
-otherwise.
+otherwise, and so did the host executor's Rokus until 0.9.
 
 **`kind`** is the form factor: `phone`, `tablet`, `laptop`, `desktop`, `tv`,
 `watch`, `headset`, `sbc`, `browser`, `ci`, `container`. Null when you do not
@@ -88,6 +88,12 @@ under its own job. When it does expire the row is kept, not deleted: the
 results you posted stay attributable and `GET /api/devices/:id` still resolves
 you. What changes is that the queue stops offering you work and you leave the
 shelf.
+
+One exception, decided by the collector rather than the agent: a row whose
+descriptor says `kind: "simulator"` or `soc: "simulator"` is **deleted** once
+it has been offline for `FLEET_SIMULATOR_TTL_DAYS` (default 7), because a
+simulator is recreated under a new UUID and never comes back. Its results and
+beacons are kept, as with the dashboard's Forget.
 
 ## 2. Claim work
 
@@ -243,6 +249,14 @@ The last row for a device carries `final`:
 the verdict. `error` carries the reason on a failure, and it is what the
 dashboard shows against the job — so make it a sentence a person can act on.
 
+**If you could not run the job at all**, say `"ok": true` with an `error` that
+begins `skipped:` and names why (`skipped: com.example not installed`). The job
+closes as `skipped` rather than `done`, nothing waiting on it runs, and no
+commit status is posted. A host row of plain `ok: true` over device rows that
+all said `skipped:` counts the same. See
+[Skipped is not done](concepts.md#skipped-is-not-done). Nothing about the row's
+shape changed; a runner that already said `skipped:` needs no update.
+
 ### Metric names are not free-form
 
 `metrics` keys come from
@@ -294,6 +308,30 @@ Uploading with `x-artifact-app`, `x-artifact-build` and `x-artifact-platform`
 stamps the upload as a published build, which is what makes
 `"sha256": "latest"` resolvable. There is no separate publish call.
 
+## Authentication (optional)
+
+Off by default, and off for the runner protocol even when the control API has
+tokens on (`FLEET_AUTH=tokens`): phones, TVs, Rokus and the browser runner send
+no token. With `FLEET_AUTH_PROTOCOL=token` as well, every call on this page
+needs
+
+```
+Authorization: Bearer fr_...
+```
+
+from a token with the `agent` scope (or `admin`, which implies it). No token
+is a 401; a token without the scope is a 403. `GET /artifacts/{sha256}` also
+accepts a `read` token, so a person can open a screenshot. runner-machine and
+the host executor send `FLEET_TOKEN` from their environment when it is set;
+the Android, iOS, Roku and browser runners do not, so do not turn this on while
+any of them is on the shelf. See [Authentication](deploy/auth.md).
+
+The same rule covers the protocol's smaller routes, which a minimal agent never
+calls: `POST /jobs/{id}/release`, `POST /locks/acquire` · `/release`,
+`POST /events/{topic}` and `GET /events/{topic}/poll`, `POST /findings` (an
+`explore` finding from an executor) and `POST /api/jobs/{id}/mirror` (a live
+JPEG frame).
+
 ## Writing your own agent
 
 The contract above is the whole thing. [Writing a runner](writing-a-runner.md)
@@ -313,6 +351,9 @@ Worth stating, because each of these is a design decision rather than a gap:
   which makes the next beacon return `lease_renewed: false`. Work in flight
   finishes; nothing new starts.
 - **It carries no secrets in job specs.** A job names a credential; the agent
-  reads it from its own environment or Keychain. This is enforced by the design
-  rather than by validation — `POST /jobs` is unauthenticated, so a spec is not
-  a place a secret could safely live.
+  reads it from its own environment or Keychain. Enqueue refuses, with 400
+  `secret_in_spec`, any spec containing a key (or string value) named
+  `password`, `passwd`, `secret`, `token`, `api_key` or `apikey`, in any case.
+  The check is a backstop, not the reason: a spec is stored, served by the API
+  and shown on the dashboard, and `POST /jobs` is unauthenticated by default,
+  so a spec is not a place a secret could safely live.

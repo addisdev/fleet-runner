@@ -4,7 +4,7 @@ How the queue thinks. Everything here is the collector's behaviour rather than
 any one runner's, and it is what you need before writing a job spec that does
 something more interesting than the one in [Get started](getting-started.md).
 
-![The life of a job: waiting until its dependencies close, queued, claimed and running under a lease that beacons renew, then done — with a lapsed lease swept back to the queue, a preemption handing its attempt back, and ok: false or a last lapsed attempt ending in failed](img/lifecycle.png)
+![The life of a job: waiting until its dependencies close, queued, claimed and running under a lease that beacons renew, then done — with a lapsed lease swept back to the queue, a preemption handing its attempt back, ok: false or a last lapsed attempt ending in failed, and a job that ran nothing closing as skipped](img/lifecycle.png)
 
 ## Two kinds of job
 
@@ -65,6 +65,12 @@ the ones that need no agent to vouch for them — **plus any workload some
 registered agent declares.** Anything else is a 422 naming the missing
 capability, at enqueue time, rather than a job that sits queued forever with
 nothing to explain why.
+
+Through [`/api/v1/jobs`](api.md#control-api-apiv1) (and so `fleetr run`) the
+spec is also validated strictly: an unknown top-level field is refused as
+`invalid_spec` rather than ignored, so a typo is an error instead of a setting
+that silently did nothing. The older `POST /jobs` does not check for unknown
+fields.
 
 That is what lets a new runner add a workload the collector has never heard of
 without a release in the collector. [Writing a runner](writing-a-runner.md) is
@@ -214,6 +220,46 @@ Host jobs fan out too, and the executor's own target selection honours
 `targets.device_id`, so an `install` plus `ui-test` pair can cover the OS matrix
 with two job specs.
 
+## Skipped is not done
+
+A runner that claims a job and cannot run it says so with a final row whose
+`ok` is `true` and whose `error` begins `skipped:` — the app is not installed,
+the device was locked by another job, nothing attached matched, the host was
+under memory pressure, no Roku password. `ok: true` because nothing went wrong
+with the code; the prefix because nothing was tested either.
+
+The job closes as **`skipped`**, a status of its own beside `done`, `failed`
+and `cancelled`. Until 0.9 it closed as `done`, and the job list, the status
+counts and the digest counted it as a pass: two nightlies passed in two seconds
+a night for two weeks while testing nothing.
+
+How the queue decides, when the final row arrives:
+
+| The rows say | The job is |
+|---|---|
+| the final row has `ok: false` | `failed`, with `last_error` from that row or, if it has none, from the first failing device (`988a1b35…: smoke: Assertion is false: …`) |
+| the final row's own `error` begins `skipped:` | `skipped` |
+| every device row skipped and none failed, under a plain `ok: true` host row (a ui-test where no phone had the app) | `skipped` |
+| anything else, including one device that ran while others skipped | `done` |
+
+A skipped job's `last_error` is the reason, so the job list, the
+[`schedule-skipping` alert](deploy/alerts.md#a-schedule-that-keeps-skipping)
+and the [morning digest](explore/findings.md#the-morning-digest) all read it
+from one place. The result rows are stored exactly as the runner posted them.
+
+- **A fan-out family** is `skipped` when no child ran: every child skipped, or
+  skipped and cancelled. One child that ran makes the family `done`, and one
+  that failed makes it `failed`, as before.
+- **The v1 summary's verdict** was already `skipped` for these jobs and still
+  is, so `fleetr`'s exit 4 and the MCP tools' verdict are unchanged. What
+  changed is that the job's status now agrees with it.
+- **A skip posts no commit status**, as before. A green check where no device
+  ran would be a lie.
+- **Jobs that closed as `done` before 0.9** are re-labelled once, when a 0.9
+  collector first opens the database: every `done` job with a `skipped:` result
+  is judged by the same rule as above. It runs inside the migration that adds
+  the status, so it costs one pass over the results table, once.
+
 ## Job chains
 
 Build, then install what it built, then run the UI suite against it. That shape
@@ -245,6 +291,14 @@ not work the fleet is failing to pick up.
   `last_error` naming it, and that cascades the whole way down. A broken build
   must not leave an install and a ui-test sitting in `waiting` until somebody
   notices next week.
+- When a dependency **[skipped](#skipped-is-not-done)**, the waiter skips too,
+  with `last_error` `dependency <id> skipped`, and that cascades the same way.
+  A skipped build produced no artifact and no metric, so there is nothing for
+  the install to install; failing it would blame the code for a phone that was
+  on a charger somewhere else, and running it would test whatever was already
+  installed. If one dependency failed and another skipped, the failure wins. A
+  job enqueued behind a dependency that has already skipped is skipped on
+  arrival, and a dry run warns first.
 - A dependency that does not exist, and a cycle, are refused at enqueue with a
   400. A chain naming a job nobody ever posted would otherwise sit in `waiting`
   forever, looking exactly like a chain whose build is merely slow.
@@ -336,6 +390,7 @@ a function in the middle of the executor.
 | `adb` | Android phones, tablets, TV sticks, headsets and watches — one driver, every Android shape |
 | `simctl` | booted Apple simulators: iOS, tvOS, watchOS, visionOS |
 | `devicectl` | cabled or paired Apple hardware: iPhone, iPad, Apple TV, Watch, Vision Pro |
+| `roku` | Roku players and Roku TVs on the LAN, found over SSDP and spoken to over ECP. It discovers and launches; it does not install |
 
 Every target carries both `platform` (what it is) and `driver` (what reaches
 it), because the two do not line up: one adb drives four shapes that all call

@@ -23,16 +23,19 @@ LaunchDaemons. Explore plugs into that rather than running its own.
 | The emulator | AVD `fleet-explore-1`, android-35 `google_apis`, 1080×2400 at 420 dpi |
 | Holo4 | `~/.lmstudio/models/Hcompany/Holo4-35B-A3B-GGUF/`: the vendor's Q4_K_M and its vision projector, renamed to LM Studio's convention (`Holo4-35B-A3B-Q4_K_M.gguf`, `mmproj-Holo4-35B-A3B-F16.gguf`) or LM Studio lists the projector as a separate model and cannot pair them. Model key `holo4-35b-a3b`, identifier `holo4-35b-a3b-gguf` |
 | The gateway name | `pilot` in the harness's `litellm.yaml`: Holo4, 300 s timeout, no fallback. The judge is the harness's `judge` role |
-| The shelf | `ondemand holo4-35b-a3b@holo4-35b-a3b-gguf 65536 1 3600` in `~/harness/shelf.conf`; `bash ~/harness/shelf.sh warm pilot` loads it when at least 65% of memory is free |
+| The shelf | `ondemand holo4-35b-a3b@holo4-35b-a3b-gguf 65536 1 3600` in `~/harness/shelf.conf`; `bash ~/harness/shelf.sh warm pilot` loads it when enough memory is free: 65% by default, 45% for explore, which sets `WARM_MIN_FREE_PCT=45` in its manifests and in `~/explore/env.sh` (the resident models keep ultra near 56% free, so at 65% Holo4 never loaded; at 45% its ~25 GB leaves about 29 GB). The shelf still refuses under memory pressure. The night command runs it (`--warm`) after its own checks, and retries a refusal for memory for ten minutes |
 | The key | `~/.config/harness/keys/fleet.key` (roles `pilot`, `judge`, `vision`). Not the Keychain: neither SSH nor a LaunchDaemon can write the login Keychain on ultra. The workload reads `HARNESS_KEY`, then this file |
 | The night | `~/night/recurring/fleet-explore.json`, run by the harness's night queue from 22:00 when memory pressure is normal, 35 GB is free and no CI job is running |
 | The brain | On fleet-host, which ultra cannot route to. The night command opens `ssh -L 18788:192.168.50.27:8788 runner-ts` for the length of the run |
 
-The night command (`collector/scripts/explore-night.ts`) boots the AVD if
-needed, opens the tunnel, enqueues the spec on the brain pinned to the executor
-name `ultra`, runs an executor in-process until the job ends, then shuts down
-what it started and exits with the job's result, so the night queue knows when
-the memory is free again.
+The night command (`collector/scripts/explore-night.ts`) opens the tunnel,
+checks that each spec has a build and the night has time for it, warms the
+model, boots the AVD or simulator if needed, enqueues the spec on the brain
+pinned to the executor name `ultra` with `minutes` cut to what is left, runs an
+executor in-process until the job ends, then shuts down what it started and
+exits, so the night queue knows when the memory is free again. A spec that
+cannot run tonight is posted to the brain as a skip and exits 0; see
+[short nights and skips](../explore/job.md#short-nights-and-skips).
 
 ### Builds, TVs and Apple simulators (from 12 October 2026)
 
@@ -43,7 +46,7 @@ explore night can never push those past 07:30.
 
 | Job | Priority | What it does |
 |---|---|---|
-| `fleet-explore-builds` | 19 | `deploy/explore/nightly-builds.sh`: resets `~/explore/builds/{greenfolio-ios,dozehound-tvos}` to `origin/develop`, builds a simulator `.app` (zipped) and uploads it to the brain as app `<name>`, build `develop-<sha>`. An unchanged sha is skipped; a failed build leaves the previous one as `latest` |
+| `fleet-explore-builds` | 19 | `deploy/explore/nightly-builds.sh`: resets `~/explore/builds/{greenfolio-ios,dozehound-tvos}` to `origin/develop`, builds a simulator `.app` (zipped) and uploads it to the brain as app `<name>`, build `develop-<sha>`. An unchanged sha is not rebuilt but is uploaded again, so the brain shows it as tonight's; a failed build leaves the previous one as `latest`, and the TV and Apple nights skip rather than test it again |
 | `fleet-explore` | 20 | The bug garden on `fleet-explore-1` (unchanged) |
 | `fleet-explore-tv` | 85 | Dozehound tvOS on simulator `fleet-explore-tvos` (tvOS 26.5) with its stub catalog: the 10 bench cards with Holo4, the same cards with the resident `vision` model (phase 3's 20 navigation missions), then the every-button explorer |
 | `fleet-explore-apple` | 86 | GreenFolio iOS offline on simulator `fleet-explore-ios` (iOS 26.5): the first real-build night, phase 2's precision bar, and phase 4 |
@@ -59,6 +62,36 @@ and refuses to start without a real `https` backend, so exploring it means
 reading the production catalog. That is the owner's call (WB-297); until then
 the script builds it only when named (`nightly-builds.sh dozehound-firetv`)
 and the TV question is answered on tvOS.
+
+### When a night cannot run (from 16 October 2026)
+
+On 10-14 a CI job held the machine from 22:00 to 04:00. The night queue skipped
+`fleet-explore-builds` and `fleet-explore` after their 120-minute waits; that
+admission is the queue's and nothing in this repository can shorten it.
+`fleet-explore-tv` then "passed" in 1.4 minutes and `fleet-explore-apple`
+exited 1 in 0.0 minutes, which turned ultra's `model-ladder#night` check red.
+
+- **The Apple night's exit 1 was the warm-up, not the build.** Its log has one
+  line: `not loading holo4-35b-a3b@holo4-35b-a3b-gguf: 64% free, needs 65%`.
+  The queue had admitted it on its own measure (35 GB free); the shelf
+  refused on another (`memory_pressure`'s free percentage, 65% for an
+  on-demand model) and the manifest's `&&` ended the job before
+  `explore-night.ts` started. Yesterday's GreenFolio build was on the brain.
+  The warm-up now runs inside the night command after its checks, a refusal
+  for memory is retried for ten minutes and then posted as a skip, and with
+  `--fresh-build` that night would have skipped earlier still, at "no
+  greenfolio-ios build for tonight".
+- **The TV night has tested nothing since it started.** Every job in it ended
+  in twenty seconds with `skipped: no device matches this job on ultra`: the
+  executor described a tvOS simulator as `os: ios`, so `os ~ 'tvos'` never
+  matched. It now says `tvos-26.5`. No TV night has run since the fix, so the
+  phase 3 bench result is still to come.
+- **A night admitted late runs short instead of being killed.** The night
+  queue already refuses to start a job whose `max_minutes` would run past
+  07:30, so on ultra the binding limit is usually `max_minutes` itself (the
+  TV night's three specs plus booting and warming come close to its 150). The
+  `--until` check matters for a run started by hand and for any future
+  queue that admits a job with less than its full budget.
 
 `explore-night.ts` takes `--spec` more than once (run in turn on one device)
 and `--sim name:runtime:devicetype`, which creates the simulator if missing,
@@ -106,8 +139,10 @@ Serve it two ways and keep the faster one behind the gateway name `pilot`:
   ```
 
 Merge `deploy/explore/litellm-pilot.yaml` into the gateway's `model_list`.
-`pilot` has no cloud fallback on purpose. Then put the gateway key in the
-Keychain, where the workload reads it:
+`pilot` has no cloud fallback on purpose. On ultra the gateway key is the file
+`~/.config/harness/keys/fleet.key` (see the table at the top: nothing started
+over SSH or by launchd can write the login Keychain there). On a laptop, the
+Keychain works:
 
 ```bash
 security add-generic-password -s fleet-explore-gateway -a gateway -w
@@ -180,10 +215,12 @@ replayed real-build findings marked real. Under 30% real: switch the judge off
 ## Phase 3: the TV question
 
 The fake Roku first (`npx @tvloop/fakeroku --agent`), then the real Roku once
-its developer password is in fleet-host's Keychain, then Fire TV through adb
-D-pad keys. The TV cards are in `examples/missions/fakeroku/` and
-`examples/missions/dozehound-tv/`; each bench card's end state is a focused
-element the harness can read.
+its developer password is in fleet-host's Keychain (WB-101). Fire TV was the
+next step and is parked (WB-297, above), so the question is answered on a tvOS
+simulator with the Dozehound stub catalog: the `fleet-explore-tv` night. The TV
+cards are in `examples/missions/fakeroku/`, `examples/missions/dozehound-tv/`
+and `examples/missions/dozehound-tvos/`; each bench card's end state is a
+focused element the harness can read.
 
 **Exit:** the better of Holo4 and plain Qwen completes at least half of 20
 navigation missions. If neither does, TVs keep scripted tvloop replays with the
@@ -213,7 +250,8 @@ FLEET_URL=http://127.0.0.1:18788 npm run seed:schedules
 ultra is on the Mini's side of the home network and cannot route to
 fleet-host's 192.168.50.x address, so the tunnel goes over the tailnet
 (`fleet-ts`). Turn `nightly-explore-greenfolio` on from the Schedules page after
-phase 2 passes; leave `nightly-explore-dozehound-tv` off until phase 3 does.
+phase 2 passes. Leave `nightly-explore-dozehound-tv` off: it is the Fire TV
+schedule, parked with Fire TV itself.
 
 On the brain, set `FLEET_FINDINGS_DIGEST_AT=07:30` for the morning digest
 through the alert webhook. GitHub issues stay dry-run until both
@@ -222,7 +260,8 @@ through the alert webhook. GitHub issues stay dry-run until both
 `/api/findings/issues` shows what would have been filed.
 
 **Exit:** seven nights in a row without help, morning triage under ten minutes,
-and no night over five new findings per app.
+and no night over five new findings per app (the bug garden's night allows 25
+on purpose and does not count).
 
 ## Guards
 

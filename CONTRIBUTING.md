@@ -11,7 +11,7 @@ that is not on this shelf is data this repository does not have.
 
 ## Running the suites
 
-Four components, four suites. Only run the one you touched.
+Five components, five suites. Only run the one you touched.
 
 === "collector"
 
@@ -80,7 +80,7 @@ Four components, four suites. Only run the one you touched.
     npm install && npm test
     ```
 
-    122 tests, about a second. This is the easiest component to contribute to
+    About a second. This is the easiest component to contribute to
     and the reference implementation of the protocol.
 
 ## Things this project learned the hard way
@@ -151,7 +151,16 @@ this is the first rule rather than a nice sentiment.
 - Run the suite for what you touched, and say in the description what you ran.
 - Update the docs in the same change. The site builds with `--strict`, so a
   broken link fails CI.
-- Add a `CHANGELOG.md` entry under `## [Unreleased]` for anything user-visible.
+- Add a `CHANGELOG.md` entry under `## [Unreleased]` for anything user-visible,
+  ending with a link to the pull request
+  (`([#86](https://github.com/addisdev/fleet-runner/pull/86))`) once it has a
+  number. A pull request nobody using Fleet Runner would notice — CI plumbing,
+  a typo — gets the `no-changelog` label instead. The release check below holds
+  both to it.
+- A number the docs state by hand (how many workloads there are) is marked
+  `<!-- count:workloads -->34`. `repo scripts` in `ci.yml` fails when a marked
+  number disagrees with `collector/src/workloads/catalog.ts`; fix the number,
+  keep the marker.
 
 `ci-ok` is the only required check. It always reports, and it passes when every
 component suite is green **or skipped** — a change to one runner does not build
@@ -161,8 +170,10 @@ the others.
 
 One version covers every component, so a release is one number everywhere.
 
-1. On a branch from `develop`, run `node scripts/version.mjs set X.Y.Z`. It
-   writes `VERSION` and every component's own version. Then run
+1. On a branch named `release/X.Y.Z` from `develop`, run
+   `node scripts/version.mjs set X.Y.Z`. It writes `VERSION` and every
+   component's own version, the desktop app's `Cargo.toml` and
+   `tauri.conf.json` included. Then run
    `npm --prefix collector run gen:api`, because `openapi.json` carries the
    version and CI fails when it is stale. Android's `versionCode` is not
    derived from it; bump that by hand if the Play Store build needs it.
@@ -171,6 +182,17 @@ One version covers every component, so a release is one number everywhere.
    at the bottom.
 3. Merge that into `develop`, then open a `develop` → `main` pull request named
    `Release X.Y.Z` and merge it once `ci-ok` passes.
+
+   On both pull requests `ci.yml` runs `changelog coverage`
+   (`scripts/changelog-coverage.mjs`). It lists every pull request merged
+   into `develop` since the last `v*` tag and fails, naming each, if one is
+   not mentioned as `#N` or a `/pull/N` link between `## [Unreleased]` and the
+   last release's heading. Label a pull request `no-changelog` to exempt it;
+   Dependabot's are exempt already. The check only runs when the branch is
+   `release/*`, or `develop` into `main` — so name the branch that way, or it
+   will not look. Run it yourself first with
+   `node scripts/changelog-coverage.mjs --head origin/develop` (it needs `gh`
+   for the labels).
 4. Tag the merge commit on `main` and push the tag:
    `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z`.
 

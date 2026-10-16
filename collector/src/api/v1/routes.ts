@@ -23,8 +23,7 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
-import { onAnnounce } from "../../announce.js";
+import { announce, onAnnounce } from "../../announce.js";
 import { authOf, forward, type Scope } from "../../auth.js";
 import { ARTIFACT_DIR, AUTH, AUTH_PROTOCOL } from "../../config.js";
 import { APP_VERSION } from "../../version.js";
@@ -33,8 +32,13 @@ import { enqueueJob, WORKLOADS, type ErrorCode, type JobSpec } from "../../queue
 import { CATALOG, catalogEntry, type CatalogEntry } from "../../workloads/catalog.js";
 import { isTextual } from "../../media-type.js";
 import { AGE, capabilityMatches, deviceCapabilities, inClause, iso, isExpired, ONLINE_S, paging, parse, sha256Refs } from "../shared.js";
+import { needsAdmin, notOwned } from "../policy.js";
+import { dashTokenOk } from "../guard.js";
 import { schedulesView } from "../system.js";
 import { SCHEMAS } from "./schemas.js";
+import { isSkipError } from "../../skip.js";
+import { errorsOf, paramsValidator, validateSpec, type SchemaError } from "./spec-check.js";
+import { findingDetail, listFindings, parseVerdictBody, setVerdict } from "../../findings.js";
 
 // --- the table's types ------------------------------------------------------------
 
@@ -69,7 +73,7 @@ export type Route = {
   method: "GET" | "POST";
   /** OpenAPI-style path: `/api/v1/jobs/{id}`. */
   path: string;
-  tag: "meta" | "devices" | "workloads" | "jobs" | "results" | "artifacts" | "fleet" | "protocol";
+  tag: "meta" | "devices" | "workloads" | "jobs" | "results" | "artifacts" | "findings" | "fleet" | "protocol";
   summary: string;
   description?: string;
   scope: "public" | "protocol" | Scope;
@@ -123,7 +127,9 @@ async function inner<T>(app: FastifyInstance, req: FastifyRequest, method: "GET"
   const body = res.body ? (JSON.parse(res.body) as Record<string, unknown>) : {};
   if (res.statusCode >= 400) {
     const message = typeof body.error === "string" ? body.error : `upstream ${res.statusCode}`;
-    const code: ErrorCode = res.statusCode === 404 ? "not_found" : res.statusCode === 409 ? "conflict" : res.statusCode === 400 ? "bad_request" : "internal";
+    const code: ErrorCode =
+      res.statusCode === 404 ? "not_found" : res.statusCode === 409 ? "conflict" : res.statusCode === 400 ? "bad_request"
+        : res.statusCode === 401 ? "unauthorized" : res.statusCode === 403 ? "forbidden" : "internal";
     throw new ApiError(res.statusCode, code, message);
   }
   return body as T;
@@ -143,6 +149,12 @@ const PAGE: Param[] = [
   { name: "per_page", in: "query", type: "integer", description: "Items per page.", minimum: 1, maximum: 500 },
 ];
 const JOB_ID: Param = { name: "id", in: "path", type: "string", required: true, description: "A job id, or a fan-out parent's id." };
+const FINDING_ID: Param = { name: "id", in: "path", type: "integer", required: true, description: "The finding's id." };
+/** A finding id from the path, or a 404 for anything that cannot be one. */
+const findingId = (raw: string) => {
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) throw new ApiError(404, "not_found", `finding ${raw} not found`, "finding ids are positive integers");
+  return Number(raw);
+};
 const SHA: Param = { name: "sha256", in: "path", type: "string", required: true, description: "The artifact's sha256 (64 hex)." };
 
 const E400: Response = { status: 400, description: "The request was malformed or the spec is invalid.", schema: "Error" };
@@ -152,30 +164,6 @@ const E404: Response = { status: 404, description: "No such thing.", schema: "Er
 const E409: Response = { status: 409, description: "The state does not allow it (already finished, duplicate id).", schema: "Error" };
 
 // --- spec validation ----------------------------------------------------------------
-
-const ajv = new Ajv2020({ allErrors: true, strict: false });
-const validateSpec = ajv.compile(SCHEMAS.JobSpecInput);
-const paramValidators = new Map<string, ValidateFunction | null>();
-
-function paramsValidator(entry: CatalogEntry | null): ValidateFunction | null {
-  if (!entry?.params) return null;
-  if (!paramValidators.has(entry.name)) {
-    try {
-      paramValidators.set(entry.name, ajv.compile(entry.params));
-    } catch {
-      paramValidators.set(entry.name, null);
-    }
-  }
-  return paramValidators.get(entry.name) ?? null;
-}
-
-type SchemaError = { path: string; message: string };
-
-const errorsOf = (v: ValidateFunction, prefix = ""): SchemaError[] =>
-  (v.errors ?? []).slice(0, 20).map((e) => ({
-    path: `${prefix}${e.instancePath}` || "/",
-    message: `${e.message ?? "invalid"}${e.params && "additionalProperty" in e.params ? `: ${String(e.params.additionalProperty)}` : ""}${e.params && "allowedValues" in e.params ? ` (${(e.params.allowedValues as unknown[]).join(", ")})` : ""}`,
-  }));
 
 /** The spec as v1 accepts it: schema and job_id filled in, then checked strictly. */
 function prepareSpec(req: FastifyRequest): { spec: JobSpec; entry: CatalogEntry | null } {
@@ -200,9 +188,10 @@ function prepareSpec(req: FastifyRequest): { spec: JobSpec; entry: CatalogEntry 
     throw new ApiError(400, "invalid_spec", `params do not match the ${entry!.name} manifest`, `GET /api/v1/workloads/${entry!.name} has the params schema`, { schema_errors: errorsOf(pv, "/params") });
 
   // A script runner reachable from a chat window is the one thing this API
-  // will not do for an ordinary token, however the spec is phrased.
-  if (entry?.dangerous && ctx.mode === "tokens" && !ctx.scopes.has("admin"))
-    throw new ApiError(403, "forbidden", `the ${entry.name} workload needs the admin scope`, "ask an operator to run it, or use a token with admin");
+  // will not do for an ordinary token, however the spec is phrased. The same
+  // function decides it for the older enqueue routes.
+  const refused = needsAdmin(ctx, spec.workload);
+  if (refused) throw new ApiError(403, "forbidden", refused.message, refused.hint);
 
   return { spec: spec as JobSpec, entry };
 }
@@ -252,7 +241,7 @@ type SummaryJob = {
 const SUMMARY_COLUMNS = `job_id, workload, status, claimed_by, last_error, requested_by, source, spec,
   CASE WHEN claimed_at IS NOT NULL THEN CAST(strftime('%s', COALESCE(finished_at, datetime('now'))) - strftime('%s', claimed_at) AS INTEGER) END AS duration_s`;
 
-const FINISHED = new Set(["done", "failed", "cancelled"]);
+const FINISHED = new Set(["done", "failed", "cancelled", "skipped"]);
 const likePrefix = (p: string) => `${p.replace(/[\\%_]/g, "\\$&")}--%`;
 
 function familyOf(id: string): { jobs: SummaryJob[]; fanout: boolean } | null {
@@ -290,16 +279,18 @@ function outcomesOf(job: SummaryJob): DeviceOutcome[] {
   const spec = parse<Record<string, any>>(job.spec, {});
   if (entries.length === 0) {
     const device = String(job.claimed_by ?? spec.targets?.device_id ?? "(unassigned)");
-    const skipped = typeof job.last_error === "string" && job.last_error.startsWith("skipped:");
+    // A job skipped because its dependency skipped never reached a runner, so
+    // it has no rows; its status is the whole story.
+    const skipped = job.status === "skipped" || isSkipError(job.last_error);
     return [{
       device_id: device, job_id: job.job_id, status: job.status,
-      ok: job.status === "done" ? !skipped : job.status === "failed" ? false : null,
+      ok: job.status === "skipped" ? true : job.status === "done" ? !skipped : job.status === "failed" ? false : null,
       skipped, error: job.last_error, metrics: null, test: null, failing_step: null,
     }];
   }
   return entries.map(([device, p]) => {
     const error = typeof p.error === "string" ? p.error : null;
-    const skipped = !!error && error.startsWith("skipped:");
+    const skipped = isSkipError(error);
     const test = p.test && typeof p.test === "object"
       ? { passed: p.test.passed ?? null, failed: p.test.failed ?? null, skipped: p.test.skipped ?? null }
       : null;
@@ -363,7 +354,10 @@ export function summarize(id: string) {
   const has = (s: string) => jobs.some((j) => j.status === s);
   const familyStatus = !finished
     ? has("claimed") ? "claimed" : has("queued") ? "queued" : "waiting"
-    : jobs.every((j) => j.status === "cancelled") ? "cancelled" : has("failed") ? "failed" : "done";
+    : jobs.every((j) => j.status === "cancelled") ? "cancelled" : has("failed") ? "failed"
+    // Nothing in the family ran: every child skipped (or skipped and was
+    // cancelled). One that ran is enough for the family to be done.
+    : !has("done") && has("skipped") ? "skipped" : "done";
   const status = fanout ? familyStatus : head.status;
   return {
     job_id: id,
@@ -419,14 +413,8 @@ function waitFor(id: string, timeoutS: number, reply: FastifyReply) {
 }
 
 function owned(req: FastifyRequest, ids: string[]) {
-  const ctx = authOf(req);
-  if (ctx.mode !== "tokens" || ctx.internal || ctx.scopes.has("admin")) return;
-  const rows = db.prepare(`SELECT job_id, requested_by FROM jobs WHERE job_id IN (${ids.map(() => "?").join(",")})`).all(...ids) as {
-    job_id: string; requested_by: string | null;
-  }[];
-  const foreign = rows.filter((r) => r.requested_by !== ctx.actor);
-  if (foreign.length)
-    throw new ApiError(403, "forbidden", `you can stop only jobs you started; ${foreign[0].job_id} was started by ${foreign[0].requested_by ?? "someone unrecorded"}`, "an admin token can act on any job");
+  const refused = notOwned(authOf(req), ids);
+  if (refused) throw new ApiError(403, "forbidden", refused.message, refused.hint);
 }
 
 // --- results ---------------------------------------------------------------------------
@@ -491,18 +479,19 @@ function listResults(q: Query) {
 
 type ArtifactRow = {
   sha256: string; name: string | null; size: number; media_type: string | null; app: string | null; build: string | null;
-  platform: string | null; created_at: string; published_at: string | null; pinned: number | null;
+  platform: string | null; created_at: string; published_at: string | null; pinned: number | null; channel: string | null;
 };
 
 function artifactMeta(sha: string) {
   if (!/^[a-f0-9]{64}$/.test(sha)) throw new ApiError(400, "bad_request", "sha256 must be 64 lowercase hex characters");
   const a = db
-    .prepare("SELECT sha256, name, size, media_type, app, build, platform, created_at, published_at, pinned FROM artifacts WHERE sha256 = ?")
+    .prepare("SELECT sha256, name, size, media_type, app, build, platform, created_at, published_at, pinned, channel FROM artifacts WHERE sha256 = ?")
     .get(sha) as ArtifactRow | undefined;
   if (!a) throw notFound("artifact");
   return {
     sha256: a.sha256, name: a.name, size: a.size, media_type: a.media_type, app: a.app, build: a.build,
     platform: a.platform, created_at: iso(a.created_at), published_at: iso(a.published_at), pinned: !!a.pinned,
+    channel: a.channel === "pr" ? ("pr" as const) : ("main" as const),
     in_store: existsSync(path.join(ARTIFACT_DIR, a.sha256)), url: `/api/v1/artifacts/${a.sha256}/content`,
   };
 }
@@ -559,10 +548,12 @@ export const ROUTES: Route[] = [
       { name: "expired", in: "query", type: "boolean", description: "Include expired ephemeral agents." },
       ...PAGE,
     ],
-    responses: [{ status: 200, description: "Devices.", schema: "list:Device" }],
+    responses: [{ status: 200, description: "Devices, and the facets a filter menu is built from.", schema: "DeviceList" }],
     handler: async ({ app, req, q }) => {
-      const body = await inner<{ devices: unknown[] }>(app, req, "GET", `/api/devices${qs(q, ["status", "pool", "platform", "kind", "simulator", "q", "expired"])}`);
-      return pageOf(body.devices, q);
+      const body = await inner<{ devices: unknown[]; pools: string[]; platforms: string[]; kinds: string[] }>(
+        app, req, "GET", `/api/devices${qs(q, ["status", "pool", "platform", "kind", "simulator", "q", "expired"])}`,
+      );
+      return { ...pageOf(body.devices, q), facets: { pools: body.pools, platforms: body.platforms, kinds: body.kinds } };
     },
   },
   {
@@ -620,7 +611,7 @@ export const ROUTES: Route[] = [
     operationId: "listJobs", method: "GET", path: "/api/v1/jobs", tag: "jobs", scope: "read", readOnly: true, idempotent: true,
     summary: "Jobs, newest first, filterable.",
     params: [
-      { name: "status", in: "query", type: "string", description: "Comma-separated: waiting, queued, claimed, done, failed, cancelled." },
+      { name: "status", in: "query", type: "string", description: "Comma-separated: waiting, queued, claimed, done, failed, cancelled, skipped." },
       { name: "workload", in: "query", type: "string", description: "Comma-separated workload names." },
       { name: "executor", in: "query", type: "string", enum: ["device", "host"], description: "device or host." },
       { name: "device", in: "query", type: "string", description: "Claimed by, or pinned to, this device." },
@@ -631,17 +622,24 @@ export const ROUTES: Route[] = [
       { name: "q", in: "query", type: "string", description: "Substring of the job id." },
       { name: "from", in: "query", type: "string", description: "Created at or after (ISO 8601)." },
       { name: "to", in: "query", type: "string", description: "Created at or before (ISO 8601)." },
+      { name: "has_error", in: "query", type: "boolean", description: "true: only jobs with a last_error." },
       ...PAGE,
     ],
-    responses: [{ status: 200, description: "Jobs.", schema: "list:Job" }],
+    responses: [{ status: 200, description: "Jobs, and the facets a filter menu is built from.", schema: "JobList" }],
     handler: async ({ app, req, q }) => {
       const query: Query = { ...q };
       if (q.mine === true) query.requested_by = authOf(req).actor ?? "\u0000nobody";
-      const body = await inner<{ jobs: unknown[]; page: number; per_page: number; total: number }>(
+      const body = await inner<{
+        jobs: unknown[]; page: number; per_page: number; total: number;
+        status_counts: Record<string, number>; workloads: string[]; pools: string[];
+      }>(
         app, req, "GET",
-        `/api/jobs${qs(query, ["status", "workload", "executor", "device", "pool", "requested_by", "source", "q", "from", "to", "page", "per_page"])}`,
+        `/api/jobs${qs(query, ["status", "workload", "executor", "device", "pool", "requested_by", "source", "q", "from", "to", "has_error", "page", "per_page"])}`,
       );
-      return list(body.jobs, body.page, body.per_page, body.total);
+      return {
+        ...list(body.jobs, body.page, body.per_page, body.total),
+        facets: { status_counts: body.status_counts, workloads: body.workloads, pools: body.pools },
+      };
     },
   },
   {
@@ -654,8 +652,19 @@ export const ROUTES: Route[] = [
     body: { schema: "JobSpecInput", description: "The job spec.", required: true },
     responses: [
       { status: 201, description: "Queued (or waiting on dependencies).", schema: "JobCreated" },
-      E400, E401, E403, E409,
-      { status: 422, description: "Valid, but nothing can run it (no capable agent, no matching device, no build).", schema: "Error" },
+      {
+        status: 400,
+        description:
+          "Malformed or refused before queueing: invalid_spec, no_matching_devices (no registered device matches the targets), " +
+          "no_build (no artifact for app `latest`), invalid_match, invalid_dependency, secret_in_spec, bad_request.",
+        schema: "Error",
+      },
+      E401, E403, E409,
+      {
+        status: 422,
+        description: "Valid, but cannot be queued: no_capable_agent (nothing declares the workload), unresolved_reference (a template reference that does not resolve).",
+        schema: "Error",
+      },
     ],
     handler: async ({ req, reply }) => {
       const { spec } = prepareSpec(req);
@@ -856,6 +865,72 @@ export const ROUTES: Route[] = [
     },
   },
 
+  // findings
+  {
+    operationId: "listFindings", method: "GET", path: "/api/v1/findings", tag: "findings", scope: "read", readOnly: true, idempotent: true,
+    summary: "What night QA (the explore workload) found, newest sighting first.",
+    description:
+      "Each finding was replayed on a clean install before it was filed; `replay_label` says how often it reproduced. " +
+      "verdict agent_mistake means the model misread the app, not a bug in it. since=24h is the morning brief.",
+    params: [
+      { name: "app", in: "query", type: "string", description: "Only this app (the explore app key)." },
+      { name: "state", in: "query", type: "string", enum: ["open", "triaged", "all"], description: "open: no verdict yet (or reopened by a regression). Default all." },
+      { name: "verdict", in: "query", type: "string", description: "Comma-separated: real, duplicate, not_a_bug, agent_mistake, fixed." },
+      { name: "check", in: "query", type: "string", description: "crash, anr, frozen, blank, left_app, a11y, visual, goal, dead_control." },
+      { name: "since", in: "query", type: "string", description: "Last seen at or after: ISO 8601, or a span back from now such as 90m, 24h, 7d." },
+      ...PAGE,
+    ],
+    responses: [{ status: 200, description: "Findings, and the facets a filter menu is built from.", schema: "FindingList" }, E400],
+    handler: async ({ q }) => {
+      const { page, per_page, offset } = paging(q as Record<string, string | undefined>, 50, 500);
+      const out = listFindings({
+        app: q.app as string | undefined, status: q.state as string | undefined,
+        verdict: q.verdict as string | undefined, check: q.check as string | undefined, since: q.since as string | undefined,
+        limit: per_page, offset,
+      });
+      if (!out.ok) throw new ApiError(400, "bad_request", out.error);
+      const b = out.body;
+      return { ...list(b.findings, page, per_page, b.total), facets: { apps: b.apps, checks: b.checks, counts: b.counts } };
+    },
+  },
+  {
+    operationId: "getFinding", method: "GET", path: "/api/v1/findings/{id}", tag: "findings", scope: "read", readOnly: true, idempotent: true,
+    summary: "One finding: the steps in words, its evidence as links, the replay flow (inline when small), its regression test and verdict history.",
+    params: [FINDING_ID],
+    responses: [{ status: 200, description: "The finding.", schema: "FindingDetail" }, E404],
+    handler: async ({ p }) => findingDetail(findingId(p.id)) ?? (() => { throw notFound(`finding ${p.id}`, "GET /api/v1/findings lists them"); })(),
+  },
+  {
+    operationId: "setFindingVerdict", method: "POST", path: "/api/v1/findings/{id}/verdict", tag: "findings", scope: "run", idempotent: true,
+    summary: "Judge a finding: real, duplicate, not_a_bug, agent_mistake, or fixed (only after real). null reopens.",
+    description:
+      "real keeps the finding's replay flow as a candidate regression test; fixed makes it active, so the app's nightly " +
+      "ui-test (with params.regressions) runs it. duplicate, not_a_bug and agent_mistake retire it. Mark fixed only once a fix " +
+      "has merged. Each verdict counts towards the check's precision, which decides what night QA runs tomorrow.",
+    params: [FINDING_ID],
+    body: { schema: "FindingVerdictInput", description: "The verdict and an optional note.", required: true },
+    responses: [
+      { status: 200, description: "Recorded.", schema: "FindingVerdictResult" },
+      E400, E401, E403, E404,
+      { status: 409, description: "fixed on a finding that is not real (conflict).", schema: "Error" },
+    ],
+    handler: async ({ req, p }) => {
+      const id = findingId(p.id);
+      // FLEET_DASH_TOKEN's speed bump, as on the dashboard's older route and on
+      // cancel (which forwards to a guarded route): a verdict decides what the
+      // nightly runs.
+      if (!dashTokenOk(req))
+        throw new ApiError(401, "unauthorized", "X-Fleet-Token required (FLEET_DASH_TOKEN is set on the collector)", "send the dashboard token as X-Fleet-Token");
+      const body = parseVerdictBody(req.body);
+      if (!body.ok) throw new ApiError(400, "bad_request", body.error);
+      const ctx = authOf(req);
+      const out = setVerdict(id, body.verdict, body.note, body.duplicateOf, { who: { actor: ctx.actor, source: ctx.source ?? "api" } });
+      if (!out.ok) throw new ApiError(out.status, out.status === 404 ? "not_found" : out.status === 409 ? "conflict" : "bad_request", out.error, out.hint);
+      announce({ type: "finding", id, verdict: out.finding.verdict });
+      return { finding: findingDetail(id), change: out.change };
+    },
+  },
+
   // fleet
   {
     operationId: "listSchedules", method: "GET", path: "/api/v1/schedules", tag: "fleet", scope: "read", readOnly: true, idempotent: true,
@@ -924,8 +999,26 @@ export const ROUTES: Route[] = [
   {
     operationId: "uploadArtifact", method: "POST", path: "/artifacts", tag: "protocol", scope: "protocol", documentOnly: true,
     summary: "Upload bytes (application/octet-stream). Answers with the sha256 and the detected media type.",
-    description: "Headers: x-artifact-name, x-artifact-media-type (optional), x-artifact-app, x-artifact-build.",
+    description:
+      "Headers: x-artifact-name, x-artifact-media-type (optional), x-artifact-app, x-artifact-build, " +
+      "x-artifact-channel (optional: `pr` for a pull request's build, which `\"sha256\": \"latest\"` never resolves to; absent means a merged build).",
     responses: [{ status: 201, description: "Stored.", schema: null }],
+  },
+  {
+    operationId: "postFinding", method: "POST", path: "/findings", tag: "protocol", scope: "protocol", documentOnly: true,
+    summary: "The explore workload filing a finding (an ExploreFinding). Upserts on the fingerprint.",
+    responses: [{ status: 201, description: "New.", schema: null }, { status: 200, description: "Seen again.", schema: null }],
+  },
+  {
+    operationId: "listRegressionFlows", method: "GET", path: "/findings/regressions", tag: "protocol", scope: "protocol", documentOnly: true,
+    summary: "A nightly ui-test pulling an app's regression flows (?app= &state=active &platform=).",
+    responses: [{ status: 200, description: "{regressions: [...]}, each with its flow text.", schema: null }],
+  },
+  {
+    operationId: "postRegressionRun", method: "POST", path: "/findings/{id}/regression", tag: "protocol", scope: "protocol", documentOnly: true,
+    summary: "An executor reporting one regression run: {job_id, device_id, build, outcome: passed|reproduced|failed|skipped, detail}. reproduced reopens the finding.",
+    params: [{ name: "id", in: "path", type: "integer", required: true, description: "The finding's id." }],
+    responses: [{ status: 200, description: "Recorded.", schema: null }],
   },
   {
     operationId: "downloadArtifact", method: "GET", path: "/artifacts/{sha256}", tag: "protocol", scope: "protocol", documentOnly: true,

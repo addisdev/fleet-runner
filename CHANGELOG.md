@@ -11,20 +11,384 @@ itself is `"schema": 1` and stays there until something breaks compatibility,
 independently of the version below.
 
 Since 0.5.0 that is enforced rather than asserted: `VERSION` at the repository
-root is the source, `scripts/version.mjs` writes it into all eleven places, and
+root is the source, `scripts/version.mjs` writes it into all thirteen places, and
 a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.0] — 2026-10-15
+
+Green that means something. A job that ran nothing is `skipped`, not `done`,
+and a schedule that keeps skipping says so; every failure carries its reason.
+Exploratory QA's findings reach the code: they are in `/api/v1`, `fleetr` and
+MCP, and a finding marked Real and then Fixed becomes a regression test in the
+app's nightly. The overnight explore jobs run short instead of not at all and
+skip when their build is missing. The older routes make the same scope checks
+as `/api/v1`, a pull request's build no longer becomes `latest`, and CI now
+runs `fleet service` under launchd and Windows, the arm64 image and the
+desktop app, each for the first time.
+
+### Added
+
+- **A pull request's build no longer becomes the nightly's `latest`.**
+  `ci-upload` always tagged an upload with its app, and `ci-enqueue` did
+  whenever the spec named one, so the next nightly asking for `latest` tested
+  an unmerged branch. An upload can now carry `x-artifact-channel: pr`, which
+  `"sha256": "latest"` never resolves to; both scripts send it when
+  `GITHUB_EVENT_NAME` is `pull_request` (or with `--channel pr`). The pull
+  request's own job still names its build by hash. Builds uploaded before this
+  count as merged builds, and the same bytes republished from main come off the
+  channel. The `/api/v1` artifact document shows it as `channel: pr|main`
+  since #96.
+- **`FLEET_PEER_TOKENS`: the brain switcher can read a peer with tokens on.**
+  The peers proxy sent no token, so a peer running `FLEET_AUTH=tokens`
+  answered 401 through it. Each peer's URL now maps to a `read` token that
+  peer issued, sent only to that peer. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **An explore night admitted late runs short instead of not at all.**
+  `scripts/explore-night.ts` now knows when the night ends: `--until`
+  (default 07:30, ultra's night-queue stop) or the job's own `max_minutes`,
+  read from the night queue's manifest for `$NIGHT_JOB`, whichever is first.
+  When the specs ask for more than is left, each gets a proportional share,
+  the workload runs its highest-priority cards in it, and the result says so
+  on an `ok` row: `short night: ran 3 of 7 cards: 40 minutes left of the 60
+  asked`. Under 15 minutes (`--min-minutes`) the night is posted as a skip
+  rather than started. New metrics `explore_cards_planned` and
+  `explore_minutes` record what the device was given. The night queue's own
+  admission wait (120 minutes behind a CI job on 10-14) is outside this
+  repository and unchanged. Not yet seen on a real night. ([#93](https://github.com/addisdev/fleet-runner/pull/93))
+- **`explore-night.ts --dry-run`** opens the tunnel, runs the build and time
+  checks against the live brain and prints the plan, without enqueueing,
+  posting, warming or booting anything. ([#93](https://github.com/addisdev/fleet-runner/pull/93))
+- **A job that ran nothing now has a status of its own: `skipped`.** A runner
+  that could not run a job says `ok: true` with an error beginning `skipped:`,
+  and the queue closed that as `done`, so the job list, the status counts and
+  the digest counted it as a pass: `nightly-tvloop-hardware` and three explore
+  jobs a night "passed" in two seconds for two weeks while testing nothing.
+  The queue now closes it as `skipped`, with the reason in `last_error`; a host
+  row of plain `ok: true` over device rows that all skipped counts the same,
+  and a fan-out family where no child ran is `skipped`. `skipped` is accepted
+  by the `status` filter of `GET /api/jobs` and `GET /api/v1/jobs`, counted in
+  the status facets, `GET /metrics` and the Overview (`skipped 24h`, beside
+  done rather than in it), drawn as a grey chip on the dashboard, and given its
+  own line in the morning digest. The v1 summary's verdict, `fleetr`'s exit 4
+  and the MCP verdict were already `skipped` and are unchanged. A database
+  opened by this release is migrated once: every `done` job with a `skipped:`
+  result is re-labelled by the same rule. Result rows are not touched. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **A job waiting on a skipped job skips too.** A skipped build produced no
+  artifact, so the install behind it had nothing to install; it used to be
+  promoted and run against whatever was already on the phone. It now skips
+  with `last_error` `dependency <id> skipped`, the whole way down the chain,
+  and a job enqueued behind an already-skipped one is skipped on arrival. A
+  failed dependency still fails its waiters, and wins over a skipped one. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **A `schedule-skipping` alert.** A schedule whose last three runs
+  (`FLEET_ALERT_SKIP_STREAK`) all skipped raises one alert naming the reason it
+  keeps giving, for example "nightly-tvloop-hardware has skipped 3 runs in a
+  row: no Roku developer password on this host", and resolves on the first run
+  that is not a skip. The tvloop nightly needed it for two weeks. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **Simulator rows are forgotten after a week offline.** The lease sweep deletes
+  a row whose descriptor says `kind` or `soc` is `simulator` once it has been
+  offline for `FLEET_SIMULATOR_TTL_DAYS` (default 7), because simulators are
+  recreated under new UUIDs and never come back; the live brain listed thirteen
+  of them. Real devices and Android emulators are never forgotten, a row that
+  holds a lock is left alone, and results and beacons are kept. `POST
+  /jobs/sweep` reports what it forgot. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **A changelog coverage check for releases.** On a `release/*` pull request,
+  and on `develop` into `main`, `changelog coverage` in `ci.yml` lists every
+  pull request merged into `develop` since the last tag and fails, naming
+  each, if the section being released does not mention it as `#N` or a
+  `/pull/N` link. 0.8.0's notes left out work that had shipped in it and had
+  to be amended the day after; this is the check that would have caught it.
+  Label a pull request `no-changelog` to exempt it; Dependabot's are exempt.
+  The logic is `scripts/changelog-coverage.mjs`, with unit tests.
+  ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **The documented workload count is checked.** The README and the docs said
+  28 while the catalog grew to 34. Each hand-written count is now marked
+  `<!-- count:workloads -->34`, and `repo scripts` in `ci.yml` fails on any
+  pull request, docs-only ones included, when a marked number disagrees with
+  the shipped entries in `collector/src/workloads/catalog.ts`. The collector's
+  suite checks that reading against the real `CATALOG`. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **Findings are in the control API.** `/api/v1` had 22 routes and none was
+  findings, so a coding agent could run a job but not read the bug list night
+  QA wrote for it. `GET /api/v1/findings` (filter by `app`, `state`,
+  `verdict`, `check`, `since`, which takes `24h` as well as ISO 8601),
+  `GET /api/v1/findings/{id}` (the steps in words, the evidence as links, the
+  replay flow inline up to 16 KiB, the regression test, the verdict history)
+  and `POST /api/v1/findings/{id}/verdict` (scope `run`, audited). The legacy
+  `/api/findings` routes call the same functions and gained the same filters
+  and fields. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
+- **`fleetr findings`, `fleetr finding`, `fleetr verdict`, and three MCP
+  tools.** "What did last night find in GreenFolio, and give me the Maestro
+  flow" is now one call: `fleetr findings --app greenfolio --since 24h`, then
+  `fleetr finding ID --flow repro.yaml`; `fleet_findings`, `fleet_finding`
+  (flow text inline) and `fleet_verdict` (not read-only, scope `run`) do the
+  same over MCP. `fleetr findings --since 24h --json` is the input a scheduled
+  agent session can start from; its shape is documented in docs/agents.md.
+  The skill has a section on reading a finding: the replay count first,
+  `agent_mistake` is not a bug, and never `fixed` without a fix merged. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
+- **A fixed finding becomes a regression test.** A new verdict, `fixed`, comes
+  only after `real` (a 409 otherwise). Marking a finding real copies its replay
+  flow into a new `regressions` table as a candidate; fixed makes it active;
+  duplicate, not a bug or agent's mistake retire it. A nightly `ui-test` with
+  `params.regressions: "<app>"` pulls the app's active flows from the
+  collector at run time and runs each after its own flow, so a finding marked
+  fixed today is in tonight's run without anyone editing a schedule. For a
+  crash or ANR finding on Android the executor reads `logcat -b crash` and
+  `am_anr` around the flow; a new crash of the package is `reproduced`, fails
+  the row and reopens the finding (verdict cleared, seen once more, the build
+  added, a `regressed on build ...` line in its new verdict history). Every
+  other check can only be asserted as "replays without error", and the docs
+  and each run's detail say so; a failing flow fails the row but reopens
+  nothing. GitHub issues are only ever created, never read back, so closing
+  one does not mark a finding fixed. The dashboard has a **Fixed** button
+  (<kbd>f</kbd>) and a regression panel. A database opened by this release
+  rebuilds the findings table once to allow `fixed` and backfills one history
+  row per existing verdict. Not yet run on a real nightly: covered by the
+  suite against fake crash readings and a fake Maestro. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
+- **The Findings page reads and judges through `/api/v1`.** Its list, detail
+  and verdict calls go through the generated client, so its types are the API's
+  and a dashboard verdict is the same call as `fleetr verdict`. `GET
+  /api/findings`, `GET /api/findings/{id}` and `POST
+  /api/findings/{id}/verdict` now carry `Deprecation` and a successor `Link`;
+  `/api/findings/precision`, `/digest` and `/issues` have no v1 counterpart and
+  do not. The v1 list carries `facets` (every app and check, and open/triaged
+  counts) like the device and job lists, and the v1 verdict keeps the
+  `FLEET_DASH_TOKEN` speed bump the older route had. Part of #83. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
+
+### Changed
+
+- **Explore loads its model at 45% free memory, not 65%.** ultra's resident
+  models alone hold it near 56% free, so the shelf's default bar meant no
+  explore night could load Holo4 (~25 GB); 10-15's garden night skipped for
+  it. The night manifests pass `WARM_MIN_FREE_PCT=45` to the warm-up; the
+  shelf's default for everything else is unchanged, and it still refuses
+  under memory pressure. ([#95](https://github.com/addisdev/fleet-runner/pull/95))
+- **`ci-enqueue` speaks `/api/v1` and exits like `fleetr run`.** It polled the
+  deprecated `GET /jobs/:id` and exited 0 on `done`, which includes a job that
+  skipped and tested nothing, and it sent no token, so it failed against a
+  collector with tokens on. It now enqueues with `POST /api/v1/jobs`, waits
+  with `/wait`, and exits 0 passed, 1 failed, 2 invalid spec, 3 still running,
+  4 skipped, 5 refused or unreachable. A workflow that read exit 1 as "timed
+  out" now sees 3. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **`ci-enqueue` and `ci-upload` send `FLEET_RUNNER_TOKEN` (or
+  `FLEET_TOKEN`) as a bearer token.** `ci-upload` read only
+  `FLEET_DASH_TOKEN`, even when the collector needed an `agent` token there.
+  `FLEET_DASH_TOKEN` is still sent as `x-fleet-token`. `ci-upload` exits 5
+  rather than 1 when the upload is refused or the collector is unreachable. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **The example jobs are checked the way `/api/v1` checks a spec.**
+  `check-examples.ts` used the loose `job.schema.json`, so an example could
+  pass the check and be refused by the API it documents. It now runs the API's
+  strict schema and each workload's params manifest, imported rather than
+  copied. All 37 pass. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **Explore's `CHECK_NAMES` lists only checks something raises.** `regression`,
+  `agent_stuck` and `leash` were accepted by `POST /findings` and raised by
+  nothing; they are refused now. A refused action is on the mission's steps,
+  not a finding. Stored findings are not touched, and reading does not
+  validate the name. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **The desktop app is versioned with everything else.** `scripts/version.mjs`
+  now writes `desktop/src-tauri/Cargo.toml` and `tauri.conf.json` (they said
+  0.5.0), so the CI version check covers them. Both say 0.8.0. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **The explore docs' three diagrams are drawn, not generated.** The night,
+  one mission's sequence and the code map were mermaid blocks; they are now
+  figures in `docs/figures/` rendered to PNG like the rest
+  (`explore-night`, `explore-step`, `explore-code`). The docs workflow fails on
+  a mermaid fence under `docs/`, and `mkdocs.yml` no longer configures one. ([#90](https://github.com/addisdev/fleet-runner/pull/90))
+- **The workloads figure shows all 34 shipped workloads.** It had 28; `enrol`,
+  `explore`, `upgrade-test`, `size-report`, `tvloop` and `llm-eval` are added. ([#90](https://github.com/addisdev/fleet-runner/pull/90))
+- **`devices.png` is the new device drawings, and there is a `findings.png`.**
+  Both are captured read-only from a running brain by the new
+  `npm run shoot:live`, filtered to what was online and to the `bug-garden`
+  fixture app; docs/brand.md says why a throwaway collector cannot make them. ([#90](https://github.com/addisdev/fleet-runner/pull/90))
+- **Explore nights that need tonight's build skip, not fail, when there is
+  none.** With `--fresh-build` (now on `fleet-explore-apple` and
+  `fleet-explore-tv`), the night checks through the tunnel that the brain has
+  a build of each app published tonight before it warms the model or boots a
+  simulator. If not, the job is posted to the brain as `ok: true`, `skipped:
+  no greenfolio-ios build for tonight (fleet-explore-builds did not run, ...)`,
+  and the command exits 0: ultra's night queue has no skip exit code, and a
+  missing upstream build is not this job's failure. `nightly-builds.sh` now
+  uploads an unchanged build again (the brain ignores the duplicate bytes and
+  stamps it published), so a quiet day on `develop` does not look like a
+  missed build. ([#93](https://github.com/addisdev/fleet-runner/pull/93))
+- **The model warm-up moved inside the night command.** The four night-queue
+  manifests ran `shelf.sh warm pilot &&` before `explore-night.ts`, so a
+  warm-up the shelf refused ended the job with `exit 1` before any check ran.
+  `explore-night.ts --warm "<cmd>"` runs it after the build and time checks,
+  retries a refusal for memory every minute for up to `--warm-wait` minutes
+  (default 10), and then posts the night as `skipped: the model would not
+  load, no room on this host: ...`. Any other warm-up failure is posted as a
+  failure with its last line. The manifests in
+  `collector/deploy/explore/night/` need copying to `~/night/recurring/` on
+  ultra. ([#93](https://github.com/addisdev/fleet-runner/pull/93))
+- **The dashboard reads devices, jobs, templates and schedules through
+  `/api/v1`.** It called the deprecated `GET /api/devices`, `/api/jobs` and
+  their detail routes, and enqueued with `POST /api/jobs`, with response types
+  written by hand, so the server could change a field and the dashboard would
+  show a blank column with nothing failing. It now uses the generated client
+  for every read and change `/api/v1` offers, and its types are the client's.
+  The `/api/v1` schemas state every field the dashboard reads, so
+  `check-api-v1` fails when a handler stops sending one, and a new suite step
+  fails if `dash/src` calls a route the deprecation headers mark. To carry the
+  Devices and Jobs filter menus, `GET /api/v1/devices` and `/api/v1/jobs` now
+  return `facets`, and `/api/v1/jobs` takes `has_error=true`. Two things a
+  person can see: the composer's spec is checked strictly, so an unknown
+  top-level field or params outside the workload's manifest is refused with
+  the path named instead of failing later, and its jobs record `source: dash`.
+  Enqueueing is no longer behind `FLEET_DASH_TOKEN`, as `POST /jobs` never
+  was. Findings, the Overview, results, system, events, the live stream and the
+  other changes stay on `/api/*` until `/api/v1` has them.
+  ([#97](https://github.com/addisdev/fleet-runner/pull/97))
+
 ### Fixed
 
+- **The OpenAPI document named the wrong status for two enqueue refusals.**
+  `POST /api/v1/jobs` listed `no_matching_devices` and `no_build` under 422,
+  but `queue.ts` refuses both with 400. The 400 and 422 entries now name the
+  codes each really carries. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
+- **The older job routes skipped two auth checks.** With `FLEET_AUTH=tokens`,
+  `POST /api/jobs/:id/cancel` and `/retry` let any `run` token stop or re-run
+  anyone's job, and `POST /jobs` and `POST /api/jobs` accepted the `shell`
+  workload from a token without `admin`. Only `/api/v1` asked. Both paths now
+  call the same two functions (`collector/src/api/policy.ts`). With auth off
+  nothing changes. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **`fleet-cli`'s `bin` pointed at a file the build does not produce.** It
+  named `dist/cli.mjs`; the build writes `dist/bin/fleet.mjs`, and `dist/` was
+  left out of the package by `.gitignore`, so installing from a tarball gave no
+  command. Both `fleet` and `fleetr` now point at the bundle, and `files`
+  includes `dist/`. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **A mistyped timer interval became a near-zero one.** `FLEET_SWEEP_MS`,
+  `FLEET_SCHEDULER_TICK_MS` and `FLEET_ALERT_TICK_MS` went through a bare
+  `Number()`, so `15s` was NaN and `15` (seconds, meant) a sweep every 15 ms.
+  Anything but whole milliseconds of at least 1000 now falls back to the
+  default, with a startup warning. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **Explore's live-view frames were refused with `FLEET_AUTH_PROTOCOL=token`.**
+  They sent only `FLEET_DASH_TOKEN`; they now also send `FLEET_TOKEN` as a
+  bearer token. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- **A schedule template's empty `job_id` was replaced without a word.** A
+  non-empty one was already refused; an empty or `null` one was stored and
+  overwritten at every firing. It is dropped now and the reply carries a
+  `warnings` entry, and a stored template that still has one is named in the
+  log when it fires. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
+- Two comments said `fleet up` turns mDNS discovery on. It passes
+  `collector.discovery`, which is off by default. ([#92](https://github.com/addisdev/fleet-runner/pull/92))
 - **`fleet skill` failed on an installed 0.8.0.** The 0.8.0 archives carry
   `skills/`, but `install.sh` and `install.ps1` copy a release's directories
   by name and did not name it, so `fleet skill show` and `fleet skill install`
   could not find `SKILL.md`. Both installers now copy it, and a test fails if
   the bundle gains a directory the installers do not copy. The installers are
   fetched from `main`, so re-running the install command fixes an existing
-  0.8.0 install; no new release is needed.
+  0.8.0 install; no new release is needed. ([#86](https://github.com/addisdev/fleet-runner/pull/86))
+- **`bug-garden/tools/check-bench.mjs` passed `bench-delete-plant` without
+  checking the plant was gone.** The card's `check` gained `absent_text`, which
+  the harness enforces and the standalone checker ignored; it also matched
+  case-sensitively where the harness does not. It now reads `absent_text` and
+  matches case-insensitively, as the bug garden's README says. ([#88](https://github.com/addisdev/fleet-runner/pull/88))
+- **`fleet-explore-apple` exited 1 in 0.0 minutes on 10-14.** Not a missing
+  build: the shelf refused to load Holo4 at 64% free memory against its 65%
+  threshold, after the night queue had admitted the job on its own measure.
+  See the warm-up change above; with `--fresh-build` that night would also
+  have skipped earlier, at "no greenfolio-ios build for tonight". ([#93](https://github.com/addisdev/fleet-runner/pull/93))
+- **tvOS simulators registered as `os: ios`, so the TV explore night tested
+  nothing.** The executor read simctl's runtime key for `iOS-` only, so an
+  Apple TV simulator was described as plain `ios`, every `os ~ 'tvos'` job
+  skipped with "no device matches this job on ultra", and each
+  `fleet-explore-tv` night "passed" in about a minute. A tvOS simulator is
+  now `tvos-26.5` (watchOS and visionOS likewise). No TV night has run with
+  the fix yet. ([#93](https://github.com/addisdev/fleet-runner/pull/93))
+- **A failing `ui-test` now says which step failed.** `nightly-fleet-ui-smoke`
+  failed on the Galaxy S8+ every night from 10-10 with `failed: 1` and no
+  error, while `Assertion is false: "Fleet Runner" is visible` sat in the JUnit
+  report it had uploaded. The executor now reads the failing flow and its
+  assertion out of the report into the device row's `error` and
+  `test.failing_flow`; when Maestro produces no report, the error is its exit
+  code and last stderr line, never its command line, which carries the test
+  account's password. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **No host result says `ok: false` with nothing beside it.** Every host
+  workload's rows go through one wrapper in the executor: a device row with
+  only counts says so ("1 of 1 tests failed; the runner reported no failing
+  step"), and a final host row with no error of its own gets the failing
+  devices' reasons. A subprocess failure nobody caught is reported as its exit
+  code and last stderr line instead of Node's message. The collector also
+  copies a failure's reason into the job's `last_error`, so the job list and
+  the `job-failed` alert show it. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **`GET /api/artifacts/<sha256>` answered "no such endpoint".** It is where
+  `DELETE` and `/pin` already live, so it is the URL a person reaches for, and
+  the 404 read as a missing artifact: the ui-smoke JUnit report was in the
+  store all along. It now redirects (308) to
+  `/api/v1/artifacts/<sha256>/content`, and says plainly when no artifact by
+  that hash was ever uploaded. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **The executor registered Rokus as `platform: android`.** Its Roku
+  descriptor said `os: roku-15.3.4` but no platform, and the collector's
+  fallback for anything that is not iOS is Android. It now sends
+  `platform: "roku"`; `os ~ 'roku'` targeting and the tvloop workload are
+  unaffected. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **A Roku seen first by address and later by serial was listed twice.** A
+  sweep where the box answered SSDP but not device-info left a
+  `roku-ip-192-168-50-218` row offline beside `roku-X01600EMFRJ9`. A
+  serial-named registration now retires the IP-named row at the same address. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
+- **`fleet service install` on Windows had never started anything.** The
+  scheduled task's command kept the backslashes of a `\"` escaping meant for a
+  `cmd` prompt -- execFile quotes the argument itself -- so the task ran
+  `\"C:\...\node.exe\"` and failed with "file not found" every time. Found by
+  the new Windows smoke on its first run. `fleet service uninstall` and `stop`
+  also now kill `fleet up`'s process tree before ending the task: deleting a
+  task does not stop it, and Windows does not take a parent's children down
+  with it. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **The desktop app left `fleet up` running when it was killed, and its Quit
+  item could not quit.** SIGTERM (a `kill`, a `killall`, the end of a session)
+  killed the app outright and orphaned its sidecar on the collector's port. And
+  `RunEvent::ExitRequested` refused every exit, including the `app.exit(0)` the
+  Quit item calls, so Quit stopped the fleet and left the app running. SIGTERM,
+  SIGINT and SIGHUP now take the Quit path -- stop `fleet up`, then exit -- and
+  only the implicit last-window exit is refused. Found by the first launch of
+  the app, in CI. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **`/api/v1` cancel and retry were always refused with `FLEET_DASH_TOKEN`
+  set.** They hand the request to the guarded `/api/jobs/:id/cancel` and
+  `/retry`, and dropped `X-Fleet-Token` on the way, so with the guard on every
+  one answered 401 whatever the caller sent. The header is now carried, and
+  the refusal says `unauthorized` rather than `internal`.
+  ([#97](https://github.com/addisdev/fleet-runner/pull/97))
+
+### Now verified
+
+Four items from earlier "Not verified" lists, each now checked by
+GitHub-hosted CI on every pull request that touches them. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **`fleet service install` on launchd.** `fleet / launchd smoke` installs the
+  LaunchAgent on `macos-latest` (the runner has a `gui/<uid>` domain), waits
+  for its collector to answer and its agent to register, checks
+  `fleet service status`, reinstalls once so the bootstrap race is hit and
+  retried (it was), then uninstalls and checks nothing answers, the plist is
+  gone and launchd no longer has the job. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **The Windows scheduled task.** `fleet / windows task smoke` runs the same
+  lifecycle on `windows-latest`. It found the bug above; with it fixed, a
+  Windows machine agent registered against a real collector for the first
+  time. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **The arm64 container image.** `fleet / container smoke (arm64)` builds
+  `fleet/Dockerfile` natively on `ubuntu-24.04-arm`, checks the container
+  reports `aarch64`, and waits for its agent to register and answer
+  `fleet devices`, `fleet workloads` and `fleet whoami`. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **The desktop app launches.** `desktop / launch smoke` builds it on Ubuntu
+  and runs it under Xvfb: its `fleet` sidecar starts a collector whose agent
+  registers, the app is still up 20 seconds later, and SIGTERM stops both.
+  Then, under `tauri-driver`, the settings window is driven over WebDriver:
+  it is titled `Fleet`, `get_status` answers over IPC with the sidecar
+  running, and a screenshot is uploaded. This was the first time the app ever
+  ran. It has still never run on a Mac, and the tray menu has never been
+  clicked.
+
+Still not verified: any of the three services coming back after a reboot, a
+graceful stop on Windows, and the MCP gateway against a real identity provider
+(it needs a tenant). ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+### Not verified
+
+- **No regression flow has run on a device.** The executor side is tested
+  against a fake crash buffer and a fake Maestro; no app's nightly sets
+  `params.regressions` yet.
+- **No short explore night, no warm-up at 45%, and no tvOS night since the
+  `os: tvos` fix has been seen on ultra.** The first is the night of
+  2026-10-15.
+- **The MCP gateway has still not met a real identity provider.**
+- **The desktop app on a Mac:** CI launches it on Linux; its tray, menus and
+  windows on macOS are unrun.
 
 ## [0.8.0] — 2026-10-15
 
@@ -125,6 +489,63 @@ pull request that touches them:
 - **The dashboard does not use the generated client yet.** It still calls the
   unversioned routes with hand-written types
   ([#83](https://github.com/addisdev/fleet-runner/issues/83)).
+
+### Also in this release
+
+These merged into `develop` before 0.8.0 was cut and shipped in it, but were
+left out of the notes above on release day.
+
+- **Exploratory QA, the `explore` workload.** A vision model works through
+  mission cards on tonight's build, driving a device the way a person would,
+  while the harness checks every step for crashes, ANRs, frozen and blank
+  screens, dead controls, accessibility and visual defects. Each candidate is
+  replayed twice on a clean install and only what reproduces is filed; a crash
+  stands on its log. See [Exploratory QA](docs/explore/index.md).
+  ([#70](https://github.com/addisdev/fleet-runner/pull/70))
+- **Findings, verdicts and a morning digest.** `POST /findings` merges repeats
+  by fingerprint; the dashboard's Findings page has Real, Duplicate, Not a bug
+  and Agent's mistake. A check under 30% precision after ten verdicts is
+  switched off for that app (crashes and ANRs never are). GitHub issues stay a
+  dry run unless `FLEET_GITHUB_ISSUES=1` and a token are set, and the collector
+  only ever creates them. ([#70](https://github.com/addisdev/fleet-runner/pull/70))
+- **What it drives:** Android phones, tablets, Android TV and Fire TV over adb;
+  iOS and tvOS through FleetDriver, a new XCUITest command server in
+  `runner-ios`; a Roku through tvloop. The leash refuses delete, purchase,
+  invite and sign-out controls unless a card allows them and never types into
+  a password field. ([#70](https://github.com/addisdev/fleet-runner/pull/70))
+- **The bug garden**, an Android fixture app with twenty planted defects, a
+  scoring rule and scorer, and twenty bench cards for scoring a model without
+  a judge. Its screenshot walks capture each screen in the base, dark, Spanish
+  and large-text settings. ([#70](https://github.com/addisdev/fleet-runner/pull/70),
+  [#74](https://github.com/addisdev/fleet-runner/pull/74))
+- **Nights on ultra.** `scripts/explore-night.ts` is the night-queue command:
+  it boots the devices, opens its own tunnel to the brain, runs one job and
+  exits with its result. `nightly-builds.sh` builds GreenFolio iOS and
+  Dozehound tvOS from `origin/develop`; the tvOS and iOS nights run after the
+  products' own night jobs. Holo4 35B-A3B measured 100 of 100 on pointing and
+  a median step of 6.8 s. Fire TV is parked and the TV question is answered on
+  tvOS. ([#73](https://github.com/addisdev/fleet-runner/pull/73),
+  [#77](https://github.com/addisdev/fleet-runner/pull/77),
+  [#78](https://github.com/addisdev/fleet-runner/pull/78))
+- **The dashboard draws each device as the object it is**: 22 drawings
+  (phones, tablets, TV boxes and sticks, computers, watches, a headset, a
+  board, a browser) instead of seven silhouettes, chosen from the model string
+  first because older agents report a Roku as `android` and an Apple TV or a
+  watch as `ios`. ([#69](https://github.com/addisdev/fleet-runner/pull/69))
+- **The Android runner starts on Android 7.0 and 7.1.** `RunnerService` called
+  `startForegroundService`, which exists from API 26, so API 24 and 25 threw
+  `NoSuchMethodError`; it uses `startService` there now.
+  ([#75](https://github.com/addisdev/fleet-runner/pull/75))
+- **The Android runner is linted in CI.** The `android.hardware.type.watch`
+  feature line that failed `lintDebug` is gone; the runner still detects a
+  watch at run time. ([#76](https://github.com/addisdev/fleet-runner/pull/76))
+
+Not verified, from those pull requests: a physical iPhone or Apple TV through
+FleetDriver; a real Roku (its developer password is not on the host yet); any
+model-driven night on an Apple surface (the iOS and tvOS simulators were driven
+without a model); the GreenFolio Android cards; the Android 7 fix on a real
+API 24 or 25 device (Robolectric only); and any Wear device, before or after
+the lint change.
 
 ## [0.7.2] — 2026-09-30
 
@@ -1047,7 +1468,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/addisdev/fleet-runner/compare/v0.7.0...v0.7.1

@@ -40,8 +40,11 @@ import { admit, isTailnetAddress, normaliseIp, whois } from "./tailnet.js";
 // from this file, so there is no cycle.
 import { firstArtifactSha, settleWaiters, type DepSettlement } from "./api/mutations.js";
 import { announce } from "./announce.js";
+import { closingStatus, type Closing } from "./skip.js";
+import { forgetStaleSimulators, retireRokuIpDuplicate } from "./registry-hygiene.js";
 import { enqueueJob, matchingDevices, resolveLatestBuild, type JobSpec } from "./queue.js";
-import { authWarnings, provenanceOf, registerAuth } from "./auth.js";
+import { authOf, authWarnings, provenanceOf, registerAuth } from "./auth.js";
+import { needsAdmin } from "./api/policy.js";
 import { registerDeprecations } from "./api/v1/deprecations.js";
 import { cleanMediaType, sniffMediaType } from "./media-type.js";
 import { registerDashStatic } from "./dash-static.js";
@@ -49,7 +52,7 @@ import { registerRunnerWeb } from "./runner-web.js";
 import { startPowerSampler } from "./power.js";
 import { endMirror } from "./api/mirror.js";
 import { digestTick, digestTickOptions } from "./findings.js";
-import { FINDINGS_REPOS_ERROR } from "./config.js";
+import { alertTickMs, FINDINGS_REPOS_ERROR, intervalWarnings, PEER_TOKENS_ERROR } from "./config.js";
 
 
 /**
@@ -460,6 +463,13 @@ const sweepLeasesTx = db.transaction((): { requeued: SweptJob[]; failed: SweptJo
 
 function sweepLeases() {
   const swept = sweepLeasesTx();
+  // Registry hygiene rides on the same timer: simulators offline past
+  // FLEET_SIMULATOR_TTL_DAYS are forgotten. See registry-hygiene.ts.
+  const forgotten = forgetStaleSimulators();
+  for (const id of forgotten) {
+    app.log.info({ device_id: id }, "simulator offline past its TTL; forgotten");
+    announce({ type: "device", device_id: id, event: "forget", reason: "simulator offline past FLEET_SIMULATOR_TTL_DAYS" });
+  }
   for (const j of swept.requeued) {
     app.log.warn({ job_id: j.job_id, claimed_by: j.claimed_by, attempt: j.attempts }, "lease expired; requeued");
     announce({ type: "job", job_id: j.job_id, status: "queued", reason: "lease expired", attempts: j.attempts });
@@ -468,7 +478,7 @@ function sweepLeases() {
     app.log.error({ job_id: j.job_id, claimed_by: j.claimed_by, attempts: j.attempts }, "lease expired; job failed");
     announce({ type: "job", job_id: j.job_id, status: "failed", reason: "lease expired", attempts: j.attempts });
   }
-  return swept;
+  return { ...swept, forgotten };
 }
 
 // --- devices ---
@@ -537,6 +547,12 @@ app.post("/devices/register", async (req, reply) => {
     type: "device", device_id: b.device_id, event: "register",
     pools: b.pools ?? [], capabilities: b.capabilities ?? null,
   });
+  // The same Roku, seen earlier by address only: one row is the truth.
+  const retired = retireRokuIpDuplicate(b.device_id, (b.descriptor ?? {}) as Record<string, unknown>);
+  if (retired) {
+    app.log.info({ device_id: retired, now: b.device_id }, "retired a Roku's IP-named duplicate");
+    announce({ type: "device", device_id: retired, event: "forget", reason: `same Roku as ${b.device_id}` });
+  }
   return { ok: true };
 });
 
@@ -589,6 +605,9 @@ app.get("/executor/next-job", async (req, reply) => {
 // --- jobs ---
 
 app.post("/jobs", async (req, reply) => {
+  // With tokens on, `shell` needs admin here exactly as it does on /api/v1.
+  const refused = needsAdmin(authOf(req), (req.body as { workload?: unknown } | null)?.workload);
+  if (refused) return reply.code(403).send({ error: refused.message, hint: refused.hint });
   const out = enqueueJob(req.body as JobSpec, { provenance: provenanceOf(req) });
   if (!out.ok) return reply.code(out.http).send({ error: out.message });
   return reply.code(201).send(
@@ -673,6 +692,7 @@ app.post("/jobs/sweep", async () => {
     ok: true,
     requeued: swept.requeued.map((j) => j.job_id),
     failed: swept.failed.map((j) => j.job_id),
+    forgotten: swept.forgotten,
   };
 });
 
@@ -689,11 +709,15 @@ app.get("/jobs/:id", async (req, reply) => {
  *  A crash between the two would leave a chain permanently stalled on a
  *  dependency that is already finished, which nothing on the collector would
  *  ever come back and fix. */
-const closeJobTx = db.transaction((jobId: string, status: "done" | "failed"): DepSettlement => {
+const closeJobTx = db.transaction((jobId: string, status: Closing["status"], reason: string | null): DepSettlement => {
   // Dropping the deadline takes the job out of the sweep's reach for good.
+  // The reason replaces last_error only when there is one: a skip always has
+  // one, a failure usually does, and a pass has nothing to say.
   db.prepare(
-    "UPDATE jobs SET status = ?, finished_at = datetime('now'), lease_deadline = NULL WHERE job_id = ?",
-  ).run(status, jobId);
+    `UPDATE jobs SET status = ?, finished_at = datetime('now'), lease_deadline = NULL,
+                     last_error = COALESCE(?, last_error)
+     WHERE job_id = ?`,
+  ).run(status, reason, jobId);
   db.prepare("DELETE FROM device_locks WHERE job_id = ?").run(jobId);
   return settleWaiters(jobId);
 });
@@ -815,8 +839,16 @@ app.post("/results", async (req, reply) => {
       app.log.warn({ job_id: b.job_id }, "preempted result for a job that is no longer claimed");
     }
 
-    const status = b.ok === false ? "failed" : "done";
-    const settled = closeJobTx(b.job_id, status);
+    // Failed, done or skipped, judged over every row the job posted: a host
+    // job's final row is the executor's verdict, and its devices may all have
+    // said `skipped:` underneath a plain `ok: true`.
+    const rows = (db
+      .prepare("SELECT device_id, payload FROM results WHERE job_id = ? ORDER BY iter, rowid")
+      .all(b.job_id) as { device_id: string; payload: string }[])
+      .map((r) => ({ device_id: r.device_id, payload: JSON.parse(r.payload) as Record<string, unknown> }));
+    const closing = closingStatus(rows, b as Record<string, unknown>);
+    const status = closing.status;
+    const settled = closeJobTx(b.job_id, status, closing.reason);
     // A finished job has nothing left to show. Outside the transaction, because
     // closing viewer sockets must not be able to roll back a device's result.
     endMirror(b.job_id);
@@ -827,14 +859,18 @@ app.post("/results", async (req, reply) => {
       announce({ type: "job", job_id: jobId, status: "queued", reason: `dependency ${b.job_id} finished` });
     for (const f of settled.failed)
       announce({ type: "job", job_id: f.job_id, status: "failed", reason: f.reason });
+    for (const s of settled.skipped)
+      announce({ type: "job", job_id: s.job_id, status: "skipped", reason: s.reason });
 
-    // A skip -- nothing attached, a host under pressure -- is ok for the queue
-    // and says nothing about the code, so it must not become a green check.
-    const skipped = b.ok === true && typeof b.error === "string" && b.error.startsWith("skipped:");
-    reportStatus(b.job_id, status === "failed" ? "failure" : "success", skipped).catch((e) =>
+    // A skip -- nothing attached, a host under pressure -- says nothing about
+    // the code, so it must not become a green check.
+    reportStatus(b.job_id, status === "failed" ? "failure" : "success", status === "skipped").catch((e) =>
       app.log.error(e, "status report failed"),
     );
-    return { ok: true, status, promoted: settled.promoted, failed: settled.failed.map((f) => f.job_id) };
+    return {
+      ok: true, status, promoted: settled.promoted, failed: settled.failed.map((f) => f.job_id),
+      skipped: settled.skipped.map((s) => s.job_id),
+    };
   }
   return { ok: true };
 });
@@ -963,14 +999,24 @@ app.post("/schedules", async (req, reply) => {
   if (!b?.id || !b.cron || !b.template)
     return reply.code(400).send({ error: "id, cron, and template required" });
   if (!isValidCron(b.cron)) return reply.code(400).send({ error: `invalid cron: ${b.cron}` });
+  if (typeof b.template !== "object" || Array.isArray(b.template))
+    return reply.code(400).send({ error: "template must be a job spec object" });
   if ((b.template as { job_id?: string }).job_id)
     return reply.code(400).send({ error: "template must not carry job_id; the scheduler generates it" });
+  // An empty or null job_id used to be stored and then replaced at every firing
+  // without a word. It is dropped instead, and the response says so.
+  const warnings: string[] = [];
+  const template = { ...(b.template as Record<string, unknown>) };
+  if ("job_id" in template) {
+    delete template.job_id;
+    warnings.push(`template.job_id was ignored: each run is named ${b.id}-<minute> (or ${b.id}-manual-<time> when run by hand)`);
+  }
   db.prepare(
     `INSERT INTO schedules (id, cron, template, enabled) VALUES (?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET cron = excluded.cron, template = excluded.template, enabled = excluded.enabled`,
-  ).run(b.id, b.cron, JSON.stringify(b.template), b.enabled ? 1 : 0);
+  ).run(b.id, b.cron, JSON.stringify(template), b.enabled ? 1 : 0);
   announce({ type: "schedule", event: "upsert", id: b.id, enabled: !!b.enabled });
-  return reply.code(201).send({ ok: true, id: b.id, enabled: !!b.enabled });
+  return reply.code(201).send({ ok: true, id: b.id, enabled: !!b.enabled, ...(warnings.length ? { warnings } : {}) });
 });
 
 app.get("/schedules", async () =>
@@ -1010,6 +1056,10 @@ async function schedulerTick(now = new Date()): Promise<string[]> {
     let payload: Record<string, unknown>;
     try {
       payload = resolveLatestBuild(JSON.parse(s.template) as JobSpec) as Record<string, unknown>;
+      // A row written before POST /schedules refused one. Replaced, as it
+      // always was, but no longer silently.
+      if (payload.job_id !== undefined)
+        app.log.warn({ schedule: s.id, ignored_job_id: payload.job_id, job_id: jobId }, "schedule template carries a job_id; ignored");
     } catch (e) {
       // No build to test is not a red nightly -- it is a nightly that did not
       // run. Firing it anyway against a hash that resolves to nothing would
@@ -1050,10 +1100,25 @@ app.post("/power/:pool/:state", async (req, reply) => {
 
 // --- artifacts (models and app builds, addressed by sha256) ---
 
+/**
+ * `x-artifact-channel`: absent for a build that may become `latest`, `pr` for
+ * one that must not. Undefined for anything else, so a typo is refused rather
+ * than quietly published to the nightly.
+ */
+function artifactChannel(raw: unknown): "pr" | null | undefined {
+  if (raw === undefined || raw === null) return null;
+  const v = String(raw).trim().toLowerCase();
+  if (v === "") return null;
+  return v === "pr" ? "pr" : undefined;
+}
+
 app.post("/artifacts", async (req, reply) => {
   const stream = req.body as Readable;
   if (!stream || typeof (stream as { pipe?: unknown }).pipe !== "function")
     return reply.code(400).send({ error: "raw application/octet-stream body required" });
+  // Before a byte is read, so a refused upload leaves nothing in the store.
+  const channel = artifactChannel(req.headers["x-artifact-channel"]);
+  if (channel === undefined) return reply.code(400).send({ error: 'x-artifact-channel must be "pr" or absent' });
 
   const tmp = path.join(ARTIFACT_DIR, `.upload-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const hash = createHash("sha256");
@@ -1097,8 +1162,8 @@ app.post("/artifacts", async (req, reply) => {
   const platform = (req.headers["x-artifact-platform"] as string | undefined) ?? null;
   const mediaType = cleanMediaType(req.headers["x-artifact-media-type"]) ?? sniffMediaType(head ?? Buffer.alloc(0), name);
   db.prepare(
-    "INSERT OR IGNORE INTO artifacts (sha256, name, size, app, build, platform, media_type) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(sha256, name, size, app_, build, platform, mediaType);
+    "INSERT OR IGNORE INTO artifacts (sha256, name, size, app, build, platform, media_type, channel) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+  ).run(sha256, name, size, app_, build, platform, mediaType, channel);
   // Bytes uploaded before media types were recorded learn theirs the next time
   // somebody uploads them.
   db.prepare("UPDATE artifacts SET media_type = ? WHERE sha256 = ? AND media_type IS NULL").run(mediaType, sha256);
@@ -1107,17 +1172,23 @@ app.post("/artifacts", async (req, reply) => {
   // build's original created_at and sort BEHIND the build it just replaced.
   // Stamping published_at is what makes `latest` mean "most recently
   // published" rather than "first seen".
+  //
+  // A pull request's build is published on the `pr` channel, which `latest`
+  // never resolves to: the nightly tests what was merged, not a branch. A
+  // merged build re-publishing the same bytes takes them off the channel; a PR
+  // build that happens to match bytes already published from main leaves that
+  // row alone rather than moving it, or demoting it, on a branch's say-so.
   if (app_) {
     db.prepare(
       `UPDATE artifacts
           SET app = ?, build = COALESCE(?, build), platform = COALESCE(?, platform),
-              published_at = datetime('now'),
+              published_at = datetime('now'), channel = ?,
               publish_seq = (SELECT COALESCE(MAX(publish_seq), 0) + 1 FROM artifacts)
-        WHERE sha256 = ?`,
-    ).run(app_, build, platform, sha256);
+        WHERE sha256 = ?${channel === "pr" ? " AND channel = 'pr'" : ""}`,
+    ).run(app_, build, platform, channel, sha256);
   }
-  announce({ type: "artifact", sha256, name, size, app: app_, build });
-  return reply.code(201).send({ ok: true, sha256, size, app: app_, build, media_type: mediaType });
+  announce({ type: "artifact", sha256, name, size, app: app_, build, channel });
+  return reply.code(201).send({ ok: true, sha256, size, app: app_, build, media_type: mediaType, channel });
 });
 
 app.get("/artifacts/:sha256", async (req, reply) => {
@@ -1179,7 +1250,7 @@ app.get("/", async (_req, reply) => reply.redirect("/dash"));
 
 // --- alerts (plan D5) ---
 
-const ALERT_TICK_MS = Number(process.env.FLEET_ALERT_TICK_MS ?? 60_000);
+const ALERT_TICK_MS = alertTickMs();
 
 function fileSize(f: string) {
   try {
@@ -1331,7 +1402,9 @@ export async function listen(): Promise<{ port: number; addresses: string[]; id:
   // A malformed repo map files nothing; said once here rather than discovered
   // when the first issue that should have been composed is not.
   if (FINDINGS_REPOS_ERROR) app.log.warn(FINDINGS_REPOS_ERROR);
+  if (PEER_TOKENS_ERROR) app.log.warn(PEER_TOKENS_ERROR);
   for (const w of authWarnings()) app.log.warn(w);
+  for (const w of intervalWarnings()) app.log.warn(w);
   {
     const opts = digestTickOptions((o, m) => app.log.warn(o, m));
     if (opts.at && opts.webhook) {

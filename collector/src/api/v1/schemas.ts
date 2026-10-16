@@ -101,12 +101,22 @@ export const SCHEMAS: Record<string, Schema> = {
     },
   ),
 
+  // Every field the dashboard reads is stated and required, because the
+  // dashboard's types are these types: a field a handler stops sending fails
+  // check-api-v1 rather than blanking a column.
   Beacon: {
     type: ["object", "null"],
     properties: {
       battery_pct: { type: ["number", "null"] }, charging: { type: ["boolean", "null"] }, thermal: nstr,
-      mem_mb: { type: ["number", "null"] }, job_id: nstr,
+      mem_mb: { type: ["number", "null"] },
+      mem_method: { ...nstr, description: "How mem_mb was measured: iOS phys_footprint and Android PSS are different quantities." },
+      process_alive: { type: ["boolean", "null"] }, job_id: nstr,
+      busy: {
+        description: "Set when the device is running a job for a different collector.",
+        oneOf: [{ type: "null" }, object({ job_id: nstr, collector: nstr })],
+      },
     },
+    required: ["battery_pct", "charging", "thermal", "mem_mb", "mem_method", "process_alive", "job_id", "busy"],
   },
 
   Device: object(
@@ -120,20 +130,33 @@ export const SCHEMAS: Record<string, Schema> = {
       beacon: ref("Beacon"), current_job: nstr,
       lock: { oneOf: [{ type: "null" }, object({ job_id: str, acquired_at: nstr })] },
     },
-    ["device_id", "name", "descriptor", "pools", "capabilities", "platform", "kind", "simulator", "status", "last_seen"],
   ),
 
   DeviceDetail: {
     allOf: [
       ref("Device"),
-      object({ counts: obj, jobs: arr(obj), benchmarks: arr(obj) }, ["jobs"]),
+      object({
+        counts: object({ results: int, beacons: int }),
+        jobs: arr(object({
+          job_id: str, workload: str, executor: str, status: str, created_at: nstr, finished_at: nstr,
+          attempts: int, max_attempts: int, last_error: nstr,
+        })),
+        benchmarks: arr(object({ job_id: str, at: nstr, model: str, quant: nstr, backend: str, metrics: nobj })),
+      }),
     ],
   },
+
+  DeviceList: listWith("Device", {
+    facets: {
+      ...object({ pools: strs, platforms: strs, kinds: strs }),
+      description: "Over every device, not the filtered set, so choosing a filter never empties its own menu.",
+    },
+  }),
 
   Job: object(
     {
       job_id: str, workload: str, executor: { enum: ["device", "host"] },
-      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled"] },
+      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled", "skipped"] },
       claimed_by: nstr, attempts: int, max_attempts: int, priority: int, template_id: nstr,
       depends_on: strs, lease_ttl_s: int, lease_deadline: nstr, lease_remaining_s: nint, duration_s: nint,
       last_error: nstr, created_at: nstr, claimed_at: nstr, finished_at: nstr,
@@ -142,8 +165,21 @@ export const SCHEMAS: Record<string, Schema> = {
       requested_by: { ...nstr, description: "Verified only when the collector runs with FLEET_AUTH=tokens." },
       source: { ...nstr, description: "Which front door: mcp, cli, ci, dash, schedule, api." },
     },
-    ["job_id", "workload", "executor", "status", "attempts", "max_attempts", "created_at", "requested_by", "source"],
   ),
+
+  JobList: listWith("Job", {
+    facets: {
+      ...object({
+        status_counts: object(
+          Object.fromEntries(["waiting", "queued", "claimed", "done", "failed", "cancelled", "skipped"].map((s) => [s, int])),
+          [],
+        ),
+        workloads: strs,
+        pools: strs,
+      }),
+      description: "Over the whole table, not this page: jobs per status, and every workload and pool a job has named.",
+    },
+  }),
 
   JobDetail: {
     allOf: [
@@ -154,9 +190,12 @@ export const SCHEMAS: Record<string, Schema> = {
           results: arr(object({ device_id: str, iter: int, created_at: nstr, payload: obj })),
           beacons: arr(obj),
           artifacts: arr(object({ sha256: str, name: nstr, size: nint, created_at: nstr, in_store: bool, role: { enum: ["input", "output"] } })),
-          locks: arr(obj), status_report: nobj, derived_timeline: arr(object({ at: nstr, what: str })),
+          locks: arr(object({ device_id: str, acquired_at: nstr })),
+          status_report: {
+            oneOf: [{ type: "null" }, object({ target: str, state: str, posted: bool, detail: nstr, created_at: nstr })],
+          },
+          derived_timeline: arr(object({ at: nstr, what: str })),
         },
-        ["spec", "results", "artifacts"],
       ),
     ],
   },
@@ -171,7 +210,7 @@ export const SCHEMAS: Record<string, Schema> = {
   DeviceOutcome: object(
     {
       device_id: str, job_id: str,
-      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled"] },
+      status: { enum: ["waiting", "queued", "claimed", "done", "failed", "cancelled", "skipped"] },
       ok: { type: ["boolean", "null"] },
       skipped: { ...bool, description: "Nothing ran (no matching device, or a host refusing work). Not a pass." },
       error: nstr, metrics: nobj,
@@ -221,7 +260,7 @@ export const SCHEMAS: Record<string, Schema> = {
     {
       valid: bool,
       job_id: str,
-      status: { type: "string", description: "What the job would be on enqueue: queued, waiting or failed." },
+      status: { type: "string", description: "What the job would be on enqueue: queued, waiting, failed (a dependency failed) or skipped (a dependency skipped)." },
       fanout: strs,
       spec: { ...obj, description: "The spec as it would be stored: `latest` resolved, lease filled in." },
       candidates: arr(ref("CandidateDevice")),
@@ -244,7 +283,13 @@ export const SCHEMAS: Record<string, Schema> = {
   ),
 
   Template: object({ id: str, name: nstr, spec: obj, created_at: nstr, updated_at: nstr }),
-  Schedule: object({ id: str, cron: str, enabled: bool, last_run: nstr, next_run: nstr }, ["id", "cron", "enabled"]),
+  Schedule: object({
+    id: str, cron: str, enabled: bool, last_run: nstr, next_run: nstr, next_run_in_s: nint,
+    prev_expected: { ...nstr, description: "When it should last have fired." },
+    missed: { ...bool, description: "Enabled, has fired before, and its last expected firing did not happen." },
+    late_by_s: nint, workload: nstr, executor: nstr, fanout: bool, pool: nstr,
+    template: { ...obj, description: "The job spec each firing enqueues." },
+  }),
   Alert: object({ id: { type: ["integer", "string"] }, rule: str, subject: nstr, severity: str, state: str, message: nstr }, ["id", "rule", "state"]),
 
   Result: object(
@@ -268,9 +313,14 @@ export const SCHEMAS: Record<string, Schema> = {
   Artifact: object(
     {
       sha256: str, name: nstr, size: nint, media_type: nstr, app: nstr, build: nstr, platform: nstr,
-      created_at: nstr, published_at: nstr, pinned: bool, in_store: bool, url: str,
+      created_at: nstr, published_at: nstr, pinned: bool,
+      channel: {
+        enum: ["main", "pr"],
+        description: "pr: uploaded from a pull request (x-artifact-channel: pr); `\"sha256\": \"latest\"` never resolves to it. main: everything else.",
+      },
+      in_store: bool, url: str,
     },
-    ["sha256", "name", "size", "media_type", "in_store", "url"],
+    ["sha256", "name", "size", "media_type", "channel", "in_store", "url"],
   ),
 
   CancelResult: object(
@@ -283,6 +333,144 @@ export const SCHEMAS: Record<string, Schema> = {
   ),
 
   RetryResult: object({ job_id: str, retry_of: str }),
+
+  Finding: object(
+    {
+      id: int, fingerprint: str, app: { ...str, description: "The explore app key the finding was filed under." },
+      build: { ...str, description: "The build it was first seen on." }, platform: str, device_id: str,
+      job_id: { ...str, description: "The job that first found it." }, last_job_id: nstr, mission_id: str,
+      check: { type: "string", description: "crash, anr, frozen, blank, left_app, a11y, visual, goal, dead_control." },
+      severity: { enum: ["high", "medium", "low"] }, title: str, detail: str, screen: str, screen_name: str,
+      steps: { ...strs, description: "What to do to see it, in words, one step per entry." },
+      replay: {
+        oneOf: [
+          { type: "null" },
+          object({ kind: { enum: ["maestro", "tvloop", "none"] }, sha256: nstr, attempts: int, reproduced: int }),
+        ],
+        description: "The replay on a clean install: how many of `attempts` reproduced it. null only for a crash, whose crash log is the evidence.",
+      },
+      replay_label: { ...str, description: "reproduced 2/2, flaky 1/2, crash log." },
+      artifacts: {
+        ...object({ shot: str, sheet: str, trajectory: str, log: str, replay: str }, []),
+        description: "Artifact sha256s by role: shot, sheet, trajectory, log, replay. Absent roles were not posted.",
+      },
+      first_seen: nstr, last_seen: nstr, seen_count: int, builds_seen: strs,
+      verdict: {
+        enum: ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed", null],
+        description: "null: nobody has judged it, or a regression test reopened it. agent_mistake is NOT a bug in the app.",
+      },
+      verdict_note: nstr, verdict_at: nstr, duplicate_of: nint,
+      issue: {
+        oneOf: [
+          { type: "null" },
+          object({
+            state: { enum: ["dry_run", "pending", "filed", "failed", "capped", "no_repo"] },
+            dry_run: { ...bool, description: "True means nothing was sent to GitHub." },
+            repo: nstr, title: str, body: str, labels: strs, url: nstr, number: nint, detail: str, at: str,
+          }),
+        ],
+        description: "The GitHub issue it would file, or did. Fleet Runner only ever creates issues; it never reads them back.",
+      },
+      status: { enum: ["open", "triaged"] },
+      regression: {
+        oneOf: [
+          { type: "null" },
+          object({ state: { enum: ["candidate", "active", "retired"] }, kind: { enum: ["maestro", "tvloop"] }, last_outcome: nstr }),
+        ],
+        description: "The regression test it became: candidate once real, active (in the nightly) once fixed.",
+      },
+    },
+    [
+      "id", "fingerprint", "app", "build", "platform", "device_id", "job_id", "mission_id", "check", "severity", "title", "detail",
+      "screen_name", "steps", "replay", "replay_label", "artifacts", "seen_count", "builds_seen", "verdict", "status",
+      "first_seen", "last_seen", "regression",
+    ],
+  ),
+
+  FindingList: listWith("Finding", {
+    facets: {
+      ...object({
+        apps: strs, checks: strs,
+        counts: object({ open: int, triaged: int, total: int }),
+      }),
+      description: "apps and checks over every finding, so a filter never empties its own menu; counts over the app, check and since filters, before state and verdict.",
+    },
+  }),
+
+  FindingDetail: {
+    allOf: [
+      ref("Finding"),
+      object(
+        {
+          duplicates: arr(object({ id: int, title: str, seen_count: int })),
+          duplicate_of_title: nstr,
+          counts: object({ seen: int, builds: int, replay_attempts: nint, replay_reproduced: nint, regression_runs: int }),
+          evidence: arr(object({
+            role: { enum: ["shot", "sheet", "trajectory", "log", "replay"] }, label: str, sha256: str,
+            url: { ...str, description: "The bytes, relative to the collector." }, in_store: bool,
+          })),
+          replay_flow: {
+            oneOf: [
+              { type: "null" },
+              object({
+                kind: str, sha256: str, url: str, in_store: bool,
+                text: { ...nstr, description: "The flow itself when it is at most 16 KiB; otherwise fetch url." },
+                truncated: { ...bool, description: "True when the flow was too big to inline." },
+              }),
+            ],
+            description: "The Maestro (or tvloop) flow that replays the finding's steps.",
+          },
+          regression: {
+            oneOf: [
+              { type: "null" },
+              object(
+                {
+                  finding_id: int, app: str, platform: str, check: str,
+                  kind: { enum: ["maestro", "tvloop"] }, state: { enum: ["candidate", "active", "retired"] },
+                  asserts: { enum: ["no_crash", "replays"], description: "no_crash for crash and anr findings; replays (without error) for every other check." },
+                  flow: { ...str, description: "The flow text the nightly runs, copied when the finding was marked real." },
+                  flow_sha256: nstr, created_at: nstr, activated_at: nstr, retired_at: nstr,
+                  runs: int, last_run_at: nstr, last_job_id: nstr,
+                  last_outcome: { enum: ["passed", "reproduced", "failed", "skipped", null] }, last_detail: nstr,
+                },
+                ["finding_id", "state", "kind", "asserts", "flow", "runs"],
+              ),
+            ],
+          },
+          history: arr(object(
+            {
+              at: nstr, event: { enum: ["verdict", "regressed"] },
+              verdict: { enum: ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed", null] },
+              note: nstr, actor: nstr, source: nstr,
+            },
+            ["at", "event", "verdict", "note"],
+          )),
+          links: object({ self: str, verdict: str, dashboard: str }),
+        },
+        ["duplicates", "duplicate_of_title", "counts", "evidence", "replay_flow", "regression", "history", "links"],
+      ),
+    ],
+  },
+
+  FindingVerdictInput: object(
+    {
+      verdict: {
+        enum: ["real", "duplicate", "not_a_bug", "agent_mistake", "fixed", null],
+        description: "fixed only after real, once the fix has merged. null reopens.",
+      },
+      note: { type: ["string", "null"], maxLength: 2000 },
+      duplicate_of: { ...nint, description: "Required with duplicate: the finding this one duplicates." },
+    },
+    ["verdict"],
+    { additionalProperties: false },
+  ),
+
+  FindingVerdictResult: object(
+    {
+      finding: ref("FindingDetail"),
+      change: { ...nstr, description: "What the verdict did to the finding's regression test, in one sentence, or null." },
+    },
+  ),
 
   AuditEntry: object(
     {
@@ -298,8 +486,13 @@ function SCHEMA_ERROR_INNER(): Schema {
 
 /** A paginated list of `item`. Every list in v1 has this envelope. */
 export function listOf(item: string): Schema {
+  return listWith(item, {});
+}
+
+/** The list envelope plus fields of its own, such as the facets a filter menu is built from. */
+function listWith(item: string, extra: Record<string, Schema>): Schema {
   return object(
-    { items: arr(ref(item)), page: int, per_page: int, total: int, pages: int },
+    { items: arr(ref(item)), page: int, per_page: int, total: int, pages: int, ...extra },
   );
 }
 

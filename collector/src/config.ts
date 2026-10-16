@@ -33,7 +33,10 @@ export type Settings = {
   githubApi: string;
   logFile: string;
   dashDist: string;
-  /** Off by default; `fleet up` turns it on. See src/discovery.ts. */
+  /**
+   * Off by default, and `fleet up` leaves it off unless the config says
+   * otherwise (`fleet config set collector.discovery true`). See src/discovery.ts.
+   */
   discovery: boolean;
   /**
    * Other collectors this one knows about, for the dashboard's all-brains view.
@@ -43,6 +46,14 @@ export type Settings = {
    * design rather than a limitation.
    */
   peers: string[];
+  /**
+   * FLEET_PEER_TOKENS: peer URL -> a bearer token that peer issued, sent when
+   * this collector reads it. Only a peer running FLEET_AUTH=tokens needs one;
+   * a `read` token is enough, because nothing proxied writes.
+   */
+  peerTokens: Record<string, string>;
+  /** Why FLEET_PEER_TOKENS was ignored, when it was. */
+  peerTokensError: string | null;
   /** This brain's display name. Null means "read it from the data directory". */
   name: string | null;
   /**
@@ -102,6 +113,67 @@ export function parseFindingsRepos(raw: string | undefined): { repos: Record<str
   return { repos, error: bad.length ? `FLEET_FINDINGS_REPOS: not "owner/repo" for ${bad.join(", ")}` : null };
 }
 
+/** The shortest timer interval an environment variable may set. */
+export const MIN_INTERVAL_MS = 1_000;
+
+/**
+ * A timer interval from the environment, read strictly.
+ *
+ * A bare `Number()` turned a typo into a disaster: `FLEET_SWEEP_MS=15s` is
+ * NaN, and `FLEET_SWEEP_MS=15` (seconds, meant) is a sweep every 15 ms, which
+ * `setInterval` runs as fast as it can. Anything that is not a whole number of
+ * at least MIN_INTERVAL_MS gets the default, and the reason is kept for the
+ * startup log.
+ */
+export function intervalMs(env: NodeJS.ProcessEnv, name: string, fallback: number): { ms: number; warning: string | null } {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") return { ms: fallback, warning: null };
+  const n = Number(raw);
+  if (Number.isInteger(n) && n >= MIN_INTERVAL_MS) return { ms: n, warning: null };
+  return {
+    ms: fallback,
+    warning: `${name}=${raw} is not a whole number of milliseconds of at least ${MIN_INTERVAL_MS}; using ${fallback}`,
+  };
+}
+
+/** The timer intervals and their defaults, so the warnings and the values cannot disagree. */
+const INTERVALS = { FLEET_SWEEP_MS: 15_000, FLEET_SCHEDULER_TICK_MS: 20_000, FLEET_ALERT_TICK_MS: 60_000 } as const;
+
+/** Why an interval variable was ignored, for each one that was. Logged at startup. */
+export function intervalWarnings(env: NodeJS.ProcessEnv = process.env): string[] {
+  return Object.entries(INTERVALS).flatMap(([name, d]) => intervalMs(env, name, d).warning ?? []);
+}
+
+/** FLEET_ALERT_TICK_MS, read the same way as the others. */
+export const alertTickMs = (env: NodeJS.ProcessEnv = process.env) => intervalMs(env, "FLEET_ALERT_TICK_MS", INTERVALS.FLEET_ALERT_TICK_MS).ms;
+
+/** A peer URL as the peer list and the token map both compare it. */
+export const peerKey = (url: string) => url.trim().replace(/\/+$/, "");
+
+/**
+ * FLEET_PEER_TOKENS, read strictly: a JSON object of peer URL -> token. A
+ * malformed value maps nothing and says why, rather than sending one peer's
+ * token to another.
+ */
+export function parsePeerTokens(raw: string | undefined): { tokens: Record<string, string>; error: string | null } {
+  if (!raw || !raw.trim()) return { tokens: {}, error: null };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    return { tokens: {}, error: `FLEET_PEER_TOKENS is not JSON: ${(e as Error).message}` };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return { tokens: {}, error: 'FLEET_PEER_TOKENS must be a JSON object of "peer url" -> "token"' };
+  const tokens: Record<string, string> = {};
+  const bad: string[] = [];
+  for (const [url, token] of Object.entries(parsed as Record<string, unknown>)) {
+    if (typeof token === "string" && /^\S+$/.test(token)) tokens[peerKey(url)] = token;
+    else bad.push(url);
+  }
+  return { tokens, error: bad.length ? `FLEET_PEER_TOKENS: no usable token for ${bad.join(", ")}` : null };
+}
+
 const list = (raw: string | undefined, fallback = "") =>
   (raw ?? fallback)
     .split(",")
@@ -144,8 +216,8 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): Settings {
     dataDir: env.FLEET_DATA_DIR ?? path.resolve("data"),
     artifactDir: env.FLEET_ARTIFACT_DIR ?? path.resolve("artifacts/store"),
     powerConfigPath: env.FLEET_POWER_CONFIG ?? path.resolve("power.json"),
-    sweepMs: Number(env.FLEET_SWEEP_MS ?? 15_000),
-    schedulerTickMs: Number(env.FLEET_SCHEDULER_TICK_MS ?? 20_000),
+    sweepMs: intervalMs(env, "FLEET_SWEEP_MS", INTERVALS.FLEET_SWEEP_MS).ms,
+    schedulerTickMs: intervalMs(env, "FLEET_SCHEDULER_TICK_MS", INTERVALS.FLEET_SCHEDULER_TICK_MS).ms,
     // CI integration is BUILT BUT OFF. Statuses are recorded (posted=0) unless
     // both are set: FLEET_GITHUB_STATUS=1 arms posting, FLEET_GITHUB_TOKEN
     // authenticates it.
@@ -163,6 +235,8 @@ export function fromEnv(env: NodeJS.ProcessEnv = process.env): Settings {
     // not announce itself because somebody upgraded.
     discovery: env.FLEET_DISCOVERY === "1",
     peers: list(env.FLEET_PEERS),
+    peerTokens: parsePeerTokens(env.FLEET_PEER_TOKENS).tokens,
+    peerTokensError: parsePeerTokens(env.FLEET_PEER_TOKENS).error,
     name: env.FLEET_NAME ?? null,
     // The host's own name rather than an address: it is what a phone on the
     // same network can usually resolve, and a link with a raw 192.168 address
@@ -241,6 +315,8 @@ export let LOG_FILE: string;
 export let DASH_DIST: string;
 export let DISCOVERY: boolean;
 export let PEERS: string[];
+export let PEER_TOKENS: Record<string, string>;
+export let PEER_TOKENS_ERROR: string | null;
 export let NAME: string | null;
 export let DASH_URL: string;
 export let FINDINGS_REPOS: Record<string, string>;
@@ -268,6 +344,8 @@ function apply(): void {
   DASH_DIST = settings.dashDist;
   DISCOVERY = settings.discovery;
   PEERS = settings.peers;
+  PEER_TOKENS = settings.peerTokens;
+  PEER_TOKENS_ERROR = settings.peerTokensError;
   NAME = settings.name;
   DASH_URL = settings.dashUrl;
   FINDINGS_REPOS = settings.findingsRepos;

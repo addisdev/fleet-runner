@@ -9,6 +9,7 @@
 // Every screen that prints a device id goes through here instead. One fetch,
 // shared, refreshed when a device changes — not one request per table row.
 import { useEffect, useState } from "preact/hooks";
+import { allDevices } from "./client.js";
 import { onLive } from "./live.js";
 
 type Names = Record<string, string>;
@@ -18,10 +19,9 @@ let inflight: Promise<Names> | null = null;
 const watchers = new Set<(n: Names) => void>();
 
 async function load(): Promise<Names> {
-  const res = await fetch("/api/devices");
-  const body = (await res.json()) as { devices: { device_id: string; name: string | null }[] };
+  const body = await allDevices();
   cache = Object.fromEntries(
-    body.devices.filter((d) => d.name).map((d) => [d.device_id, d.name as string]),
+    body.items.filter((d) => d.name).map((d) => [d.device_id, d.name as string]),
   );
   for (const w of watchers) w(cache);
   return cache;

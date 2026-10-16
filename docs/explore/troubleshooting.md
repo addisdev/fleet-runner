@@ -85,6 +85,47 @@ would then report as the app's bug. Write cards whose typed values are ASCII,
 or test non-ASCII input through a language condition and the app's own
 keyboard.
 
+## A night is "skipped: no … build for tonight"
+
+The night ran with `--fresh-build` and the brain's newest build of the app was
+published before noon of the night's date. The reason says which: `did not
+run, or could not fetch develop` (the app's checkout under `~/explore/builds`
+was not fetched tonight), `fetched develop but uploaded no build` (look at
+`fleet-explore-builds` in `~/night/log/<date>/`: usually a compile error), or
+`did not run or did not upload it` when there is no checkout to look at. Most
+often the night queue skipped `fleet-explore-builds` because a CI job held the
+machine; its line in `~/night/night.log` says so. Nothing is wrong with the
+explore job itself, which is why it exits 0.
+
+## A night is "skipped: the model would not load, no room on this host"
+
+The shelf refused to load the model for memory, and kept refusing for
+`--warm-wait` minutes (default 10). The night queue admits a job on free
+memory as `vm_stat` counts it (`needs_gb` in the manifest); the shelf decides
+on `memory_pressure`'s free percentage (65% for an on-demand model by
+default; explore's warm-up asks for 45% with `WARM_MIN_FREE_PCT`). They can
+disagree by a point, which is how 10-14's Apple night died, and on 10-15 the
+resident models alone held ultra at 56% free, under the old 65%. Check what else
+was loaded with `~/.lmstudio/bin/lms ps`. Any other warm-up failure is a
+failure, not a skip, and its last line is the job's error.
+
+## A night says "short night: ran 3 of 7 cards"
+
+The night had less time left than the spec asked for, so `minutes` was cut to
+fit and the highest-priority cards ran in that time. It is `ok: true`. The
+explore-night log in `~/night/log/<date>/` has a line saying what ended the
+night (`the 07:30 stop` or `the job's 150-minute max_minutes`) and how the
+minutes were shared. A night that would get under 15 minutes is skipped
+instead (`--min-minutes`).
+
+## A tvOS job skips with "no device matches this job"
+
+Before the fix in this release, the executor described a tvOS simulator as
+`os: ios`, so a spec matching `os ~ 'tvos'` found nothing and the job was a
+skip that read as `done`. If it happens on an executor that has the fix, check
+the simulator's runtime with `xcrun simctl list devices` and that its name
+starts with `fleet-`.
+
 ## FleetDriver never answers `/health`
 
 - The first start of a runner on a simulator can take a minute; the actuator

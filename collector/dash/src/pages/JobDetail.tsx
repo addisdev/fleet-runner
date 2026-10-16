@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { useApi, type JobDetail as Detail, type ResultRow } from "../api.js";
+import { useLoad, type JobDetail as Detail, type ResultRow } from "../api.js";
+import { change, fleet, read } from "../client.js";
 import { Workload } from "../icons.js";
 import { mutate, useMutation } from "../mutate.js";
 import { navigate } from "../router.js";
@@ -7,10 +8,8 @@ import { useDeviceNames } from "../names.js";
 import { Actions, Button, ConfirmButton, CopyId, DeviceName, ErrorBox, Json, Link, Loaded, Panel, Pill, Stat, bytes, clock, duration, num } from "../ui.js";
 import { JobRows, LeaseCell } from "./Jobs.js";
 
-// The collector gained a 'waiting' status with dependency chains. `Job` in
-// api.ts still describes the older set, and that type is shared with every
-// other page, so the status is read as a plain string here rather than
-// pretending the union is complete.
+// Read as a plain string so a status the client does not know yet still
+// falls through to the generic wording rather than failing to compile.
 const statusOf = (job: { status: string }) => job.status as string;
 
 /** One line that says what a result row actually reported, per workload. */
@@ -87,7 +86,7 @@ function DependsOn({ job }: { job: Detail }) {
       .{" "}
       <span class="faint">
         {statusOf(job) === "waiting"
-          ? "It is queued the moment the last of them is done, with any ${jobs.…} references in its spec filled in from their final rows. If one fails or is cancelled, this job fails with it rather than waiting forever."
+          ? "It is queued the moment the last of them is done, with any ${jobs.…} references in its spec filled in from their final rows. If one fails or is cancelled, this job fails with it rather than waiting forever; if one skips, this job skips too, since there is nothing for it to run on."
           : "The chain has already resolved; this is what it hung off."}
       </span>
     </p>
@@ -111,12 +110,13 @@ function Preemptible({ job }: { job: Detail }) {
 
 function JobActions({ job, onDone }: { job: Detail; onDone: () => void }) {
   const cancel = useMutation(async () => {
-    const r = await mutate<{ note: string }>("POST", `/api/jobs/${encodeURIComponent(job.job_id)}/cancel`, {});
+    // The reason is the one the unversioned route wrote, so last_error reads as it always has.
+    const r = await change(fleet.cancelJob(job.job_id, { reason: "cancelled from the dashboard" }));
     onDone();
     return r;
   });
   const retry = useMutation(async () => {
-    const r = await mutate<{ job_id: string }>("POST", `/api/jobs/${encodeURIComponent(job.job_id)}/retry`, {});
+    const r = await change(fleet.retryJob(job.job_id, {}));
     navigate(`/jobs/${encodeURIComponent(r.job_id)}`);
     return r;
   });
@@ -172,13 +172,13 @@ function JobActions({ job, onDone }: { job: Detail; onDone: () => void }) {
         )}
       </Actions>
       {[cancel, retry, raise, lower].map((m, i) => (m.error ? <ErrorBox key={i} error={m.error} /> : null))}
-      {cancel.result && <p class="empty">{(cancel.result as { note: string }).note}</p>}
+      {cancel.result && <p class="empty">{cancel.result.note}</p>}
     </>
   );
 }
 
 export function JobDetail({ id }: { id: string }) {
-  const state = useApi<Detail>(`/api/jobs/${encodeURIComponent(id)}`, ["job", "result", "beacon", "lock"], 15_000);
+  const state = useLoad<Detail>(`job ${id}`, () => read(fleet.getJob(id)), ["job", "result", "beacon", "lock"], 15_000);
   const names = useDeviceNames();
 
   return (

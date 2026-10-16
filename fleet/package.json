@@ -1,13 +1,16 @@
 {
   "name": "fleet-cli",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "Fleet Runner's front door: one command that runs a brain, a runner, or both.",
   "bin": {
-    "fleet": "./dist/cli.mjs",
-    "fleetr": "./dist/cli.mjs"
+    "fleet": "./dist/bin/fleet.mjs",
+    "fleetr": "./dist/bin/fleet.mjs"
   },
+  "files": [
+    "dist/"
+  ],
   "engines": {
     "node": ">=22.13"
   },

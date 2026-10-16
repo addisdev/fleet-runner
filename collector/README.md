@@ -1,8 +1,9 @@
 # collector
 
 *Part of [Fleet Runner](../README.md), alongside the
-[Android](../runner-android), [iOS](../runner-ios) and
-[desktop](../runner-machine) runners.*
+[Android](../runner-android), [iOS](../runner-ios),
+[desktop](../runner-machine), [Roku](../runner-roku) and
+[web](runner-web) runners.*
 
 The brain of **Fleet Runner**: a personal device lab that turns a shelf of old
 phones into something you can send work to. It holds the device registry, the
@@ -12,10 +13,12 @@ One queued job can install a build on every attached device, run a Maestro or
 XCUITest suite across them, benchmark llama.cpp on real silicon, classify a
 few hundred images through Core ML and LiteRT, screenshot a website on two
 real phones and diff it against a baseline, or drain a battery on purpose and
-plot the curve. The runners are separate apps —
-[iOS](../runner-ios) and
-[Android](../runner-android) — that speak a
-shared JSON protocol, not shared code.
+plot the curve. The runners are separate programs —
+[iOS](../runner-ios) (with a tvOS target),
+[Android](../runner-android), the [machine](../runner-machine) agent for
+laptops and desktops, a [web](runner-web) runner this collector serves at
+`/runner`, and a [Roku](../runner-roku) channel — that speak a shared JSON
+protocol, not shared code.
 
 Node + Fastify + SQLite in WAL mode. No build step for the server, no broker,
 no cloud.
@@ -33,7 +36,7 @@ APK or tapping through a UI test is not something an app can do to itself.
 
 ## Run it
 
-Needs Node 22 or newer. Nothing else.
+Needs Node 22.13 or newer. Nothing else.
 
 ```bash
 npm install
@@ -45,13 +48,17 @@ build a runner from one of the app repos, point it at this address, and enqueue
 a job:
 
 ```bash
-curl -X POST http://127.0.0.1:8788/jobs -H 'content-type: application/json' -d '{
+curl -X POST http://127.0.0.1:8788/api/v1/jobs -H 'content-type: application/json' -d '{
   "schema": 1, "job_id": "bench-1", "workload": "benchmark",
   "executor": "device", "backend": "synthetic",
   "params": { "prompt_tokens": 256, "gen_tokens": 64, "measure_iters": 3 },
   "targets": { "pool": "ml-capable" }
 }'
 ```
+
+Or, with the `fleet` CLI installed, `fleetr run benchmark --backend synthetic
+--pool ml-capable --param prompt_tokens=256 ...`, which validates, queues,
+waits, and exits with the verdict.
 
 ```bash
 npm test                 # typecheck, build the dashboard, run the suite
@@ -86,12 +93,31 @@ so it never touches a real fleet's history.
 | `llm-eval` | machine | Scores what a device generated against an eval set — exact, regex, JSON-shape and model-judged rules — so a quantisation is measured for whether it is still RIGHT, not only how fast it is wrong |
 | `self-check` | host, machine | The fleet inspects its own hosts: disk, tool versions, clock drift, agents actually loaded |
 | `archive` / `digest` | host | Pull store reviews and Search Console data; then have the shelf summarize its own reviews using its own models |
+| `enrol` | host | Point every attached device's runner at a collector, without anybody typing |
+| `explore` | host | A vision model explores a build and files reproduced crashes, hangs, dead controls and accessibility defects as findings |
+| `tvloop` | host | tvloop's hardware suite on a Roku the fleet has locked: doctor, sideload, contract tests, a JUnit replay of its flows |
+| `model-convert` / `dataset-prep` | machine | A checkpoint into GGUF, Core ML or TFLite; an eval set that carries its licence and source |
+| `serve` / `shell` | machine | Host a model for the length of a lease; run a script whose hash the machine's owner pinned by hand |
+
+That is all <!-- count:workloads -->34 shipped workloads. `GET /api/v1/workloads` (or `fleetr
+workloads`) lists them with their params and an example spec, plus anything a
+registered agent declares that the collector does not know.
 
 Full reference, including every parameter and the failure modes worth
 knowing: **[the documentation](https://addisdev.github.io/fleet-runner/)**.
 Start at [Concepts](https://addisdev.github.io/fleet-runner/concepts/) for how
 the queue thinks, or [Workloads](https://addisdev.github.io/fleet-runner/workloads/)
 for what it can be asked to do.
+
+## Control API
+
+Scripts, CI, the `fleet` CLI and AI agents use the versioned API under
+`/api/v1`: devices, workloads, jobs (enqueue, validate, wait, cancel, retry),
+results and artifacts. `GET /api/v1/openapi.json` describes it, and
+`GET /metrics` serves the fleet in Prometheus text format. The older
+unversioned routes still work and answer with a `Deprecation` header. Runners
+speak the separate runner protocol. See
+[the HTTP API](https://addisdev.github.io/fleet-runner/api/).
 
 ## Status and threat model
 
@@ -101,13 +127,20 @@ an [on-device plant-ID evaluation](evals/greenfolio-plant-id.md) across both
 platforms — 77% top-1 at 7 ms per image on a phone, which answered a product
 question that had been guesswork.
 
-**There is no authentication, by design.** The collector is reachable on a home
-LAN and is meant to stay that way; anyone who can reach it can enqueue a job.
-`FLEET_DASH_TOKEN` guards the dashboard's mutations, but that is a speed bump
-against a stray browser tab, not an access control — `POST /jobs` stays open so
-`curl` and CI keep working. Do not put this on the internet. If you want to,
-the honest starting point is that every endpoint would need to be re-thought,
-not that a token would need to be added.
+**There is no authentication by default.** The collector is reachable on a
+home LAN and is meant to stay that way; anyone who can reach it can enqueue a
+job. `FLEET_DASH_TOKEN` guards the dashboard's mutations, but that is a speed
+bump against a stray browser tab, not an access control — `POST /jobs` stays
+open so `curl` and CI keep working.
+
+Scoped bearer tokens are opt-in: `FLEET_AUTH=tokens` requires one on the
+control API, and `FLEET_AUTH_PROTOCOL=token` also on the runner protocol, for
+fleets whose runners can send one (the phone, TV and browser runners cannot).
+See [Authentication](https://addisdev.github.io/fleet-runner/deploy/auth/).
+With tokens on, still serve the collector over TLS or keep it on a private
+network: tokens are bearer secrets with no proof of possession, and unless
+`FLEET_AUTH_PROTOCOL=token` is set the runner protocol answers anyone who can
+reach it.
 
 That posture depends on every agent being on the same LAN, which stops being
 true the moment one of them is a laptop that leaves the house. `FLEET_BIND`

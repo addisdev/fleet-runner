@@ -223,6 +223,29 @@ fn on_menu(app: &AppHandle, event: MenuEvent) {
     }
 }
 
+/// SIGTERM, SIGINT and SIGHUP do what the Quit item does: drain `fleet up`,
+/// then exit.
+///
+/// A `kill`, a `killall Fleet`, a Ctrl-C in the terminal that launched it, a
+/// closed session: none of them goes through the menu, and with no handler the
+/// default action ends this process on the spot. The sidecar is a separate
+/// process with nothing tying its life to ours, so it kept running -- a
+/// collector on the port with no app in front of it, which the next launch then
+/// refused to fight. The first launch of this app, in CI, showed exactly that.
+#[cfg(unix)]
+fn quit_on_signal(app: &AppHandle) -> std::io::Result<()> {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+    let mut signals = signal_hook::iterator::Signals::new([SIGTERM, SIGINT, SIGHUP])?;
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if signals.forever().next().is_some() {
+            sidecar::stop(&app);
+            app.exit(0);
+        }
+    });
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -258,6 +281,9 @@ fn main() {
             // any particular Menu.
             app.on_menu_event(|app, event| on_menu(app, event));
 
+            #[cfg(unix)]
+            quit_on_signal(&handle)?;
+
             autostart(&handle);
             Ok(())
         })
@@ -279,15 +305,17 @@ fn main() {
         .expect("Fleet could not start")
         .run(|app, event| match event {
             // With no windows visible the app would otherwise exit the moment
-            // the settings window is hidden, taking the fleet with it.
-            RunEvent::ExitRequested { api, .. } => api.prevent_exit(),
+            // the settings window is hidden, taking the fleet with it. Only that
+            // implicit exit is refused: `code` is None for it and Some for an
+            // `app.exit()`, which is how the Quit item and a SIGTERM leave. This
+            // used to refuse every exit, so Quit stopped the fleet and then
+            // could not quit.
+            RunEvent::ExitRequested { api, code, .. } if code.is_none() => api.prevent_exit(),
 
-            // The last chance to be polite. Anything that gets here has skipped
-            // the Quit item -- a `killall Fleet`, or a logout -- so there is no
-            // time to wait for a drain; the SIGTERM is sent and the supervisor
-            // gets whatever the OS gives it. The Quit item is the path that
-            // actually waits, which is why it exists rather than relying on
-            // this.
+            // The last chance to be polite, for whatever reached here without
+            // going through `stop` first. The Quit item and the signal handler
+            // both drain before exiting, so for them the child is already gone
+            // and this does nothing.
             RunEvent::Exit => sidecar::terminate_now(app),
 
             _ => {}

@@ -1,10 +1,14 @@
 // Alerts: what the collector thinks is wrong right now, and what it thought
 // was wrong earlier.
-import { useApi } from "../api.js";
+import { useApi, useLoad } from "../api.js";
+import { fleet, read } from "../client.js";
 import { mutate, useMutation } from "../mutate.js";
 import { useQuery } from "../router.js";
 import { Actions, Button, ErrorBox, Link, Loaded, Panel, Pill, Stat, agoFrom, clock, duration } from "../ui.js";
 
+// This screen reads /api/alerts, not /api/v1/alerts: it shows the counts per
+// state, whether a webhook is set and the thresholds, which v1 does not return.
+// The banner below needs only the list, and reads it from v1.
 export type Alert = {
   id: number;
   rule: string;
@@ -147,8 +151,8 @@ export function Alerts() {
 
 /** The banner every screen carries. Silent unless something is actually open. */
 export function AlertBanner() {
-  const state = useApi<AlertList>("/api/alerts?state=open", ["alert", "job", "device"], 60_000);
-  const open = state.data?.alerts ?? [];
+  const state = useLoad("alerts open", () => read(fleet.listAlerts({ state: "open" })), ["alert", "job", "device"], 60_000);
+  const open = state.data?.items ?? [];
   if (open.length === 0) return null;
   const worst = open.some((a) => a.severity === "critical") ? "critical" : "warning";
   return (

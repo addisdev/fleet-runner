@@ -16,6 +16,11 @@ to agree with itself.
   as `<tool_call>{...}</tool_call>`, or as a bare JSON object with `name` and
   `arguments`, are accepted too, so a model is not marked down for where its
   chat template puts them.
+- **`tool_choice: "required"`.** The loop sends it on every turn. Holo4 under
+  `auto` sometimes answered its second turn in prose; a server that ignores the
+  field gets the same failure.
+- **For the judge, `response_format` of type `json_schema`.** The judge asks
+  for a schema, not `json_object`, because LM Studio refuses `json_object`.
 - **About 16k tokens of context** by the middle of a mission, more with
   `keep_shots` raised.
 
@@ -156,7 +161,7 @@ On a laptop that cannot hold Holo4, these were used:
 
 | Model | Size (Q4 + projector) | Licence | Notes |
 |---|---|---|---|
-| Qwen3.5-2B | 1.3 GB + 0.7 GB | Apache-2.0 | Drove every real-device run so far. Needs `tree_hints` |
+| Qwen3.5-2B | 1.3 GB + 0.7 GB | Apache-2.0 | Drove the laptop runs. Needs `tree_hints` |
 | Holo2-4B | 2.7 GB + 0.5 GB | Apache-2.0 | H Company's earlier GUI model; a reasoning model, so slow |
 | GUI-Owl-1.5-2B | 1.1 GB + 0.4 GB | MIT | A GUI-specialised small model |
 

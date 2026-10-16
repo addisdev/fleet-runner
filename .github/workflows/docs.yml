@@ -41,6 +41,16 @@ jobs:
 
       - run: pip install -r requirements-docs.txt
 
+      # Diagrams are hand-placed figures in docs/figures/, rendered to PNG
+      # (docs/brand.md says why). mkdocs.yml no longer has a mermaid fence, so
+      # one would build as a plain code block rather than fail; this makes it fail.
+      - name: No mermaid
+        run: |
+          if grep -rn --include='*.md' '^ *```mermaid' docs/; then
+            echo "::error::mermaid diagram under docs/: draw it as a figure in docs/figures/ instead (docs/brand.md)"
+            exit 1
+          fi
+
       # The cookbook includes collector/examples/jobs/*.json verbatim via the
       # snippets extension, so a missing or renamed example fails the build
       # here as well as failing the collector's own suite.

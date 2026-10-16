@@ -14,8 +14,8 @@ a Mac collector reachable at all.
     `collector/deploy/install-agent.sh` and
     `runner-machine/deploy/install-agent.sh` are superseded by
     [`fleet service install`](index.md#keeping-it-up-fleet-service), which writes
-    one unit running `fleet up` instead of one unit per component. They ship one
-    more release and are then removed.
+    one unit running `fleet up` instead of one unit per component. Deprecated
+    since 0.5.0, they still ship in 0.8.0 and no removal date is set.
 
     They are documented here rather than deleted because they have more
     mileage: `fleet service install` now runs a real fleet's brain under launchd
@@ -133,7 +133,8 @@ in [networking](networking.md#macos-gates-local-network-access-and-launchd-canno
 
     Either way it is irrelevant to this page. A headless host has nobody to click
     the dialog, so **the tunnel stays** for exactly the machines this page is
-    about. None of the Rust has ever been compiled, either.
+    about. CI compiles it on macOS and launches it on Linux; it has never run
+    on a Mac.
 
 ## Rebuilding one over SSH
 

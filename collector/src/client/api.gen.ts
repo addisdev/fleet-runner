@@ -33,6 +33,8 @@ export type Artifact = {
   created_at?: string | null;
   published_at?: string | null;
   pinned?: boolean;
+  /** pr: uploaded from a pull request (x-artifact-channel: pr); `"sha256": "latest"` never resolves to it. main: everything else. */
+  channel: "main" | "pr";
   in_store: boolean;
   url: string;
 };
@@ -71,11 +73,19 @@ export type AuditEntryList = {
 };
 
 export type Beacon = {
-  battery_pct?: number | null;
-  charging?: boolean | null;
-  thermal?: string | null;
-  mem_mb?: number | null;
-  job_id?: string | null;
+  battery_pct: number | null;
+  charging: boolean | null;
+  thermal: string | null;
+  mem_mb: number | null;
+  /** How mem_mb was measured: iOS phys_footprint and Android PSS are different quantities. */
+  mem_method: string | null;
+  process_alive: boolean | null;
+  job_id: string | null;
+  /** Set when the device is running a job for a different collector. */
+  busy: (null | {
+    job_id: string | null;
+    collector: string | null;
+  });
 } | null;
 
 export type CancelInput = {
@@ -100,35 +110,55 @@ export type CandidateDevice = {
 export type Device = {
   device_id: string;
   name: string | null;
-  notes?: string | null;
+  notes: string | null;
   descriptor: Record<string, unknown>;
   /** Effective pools: the override when set, otherwise what the runner reported. */
   pools: string[];
-  pools_reported?: string[];
-  pools_override?: string[] | null;
+  pools_reported: string[];
+  pools_override: string[] | null;
   /** null: an agent that predates capabilities, offered everything. */
   capabilities: string[] | null;
-  last_net?: string | null;
-  ttl_s?: number | null;
-  expired?: boolean;
+  last_net: string | null;
+  ttl_s: number | null;
+  expired: boolean;
   platform: string;
   kind: string | null;
   simulator: boolean;
   status: "online" | "stale" | "offline";
-  age_s?: number | null;
+  age_s: number | null;
   last_seen: string | null;
-  beacon?: Beacon;
-  current_job?: string | null;
-  lock?: (null | {
+  beacon: Beacon;
+  current_job: string | null;
+  lock: (null | {
     job_id: string;
     acquired_at: string | null;
   });
 };
 
 export type DeviceDetail = Device & {
-  counts?: Record<string, unknown>;
-  jobs: (Record<string, unknown>)[];
-  benchmarks?: (Record<string, unknown>)[];
+  counts: {
+    results: number;
+    beacons: number;
+  };
+  jobs: {
+    job_id: string;
+    workload: string;
+    executor: string;
+    status: string;
+    created_at: string | null;
+    finished_at: string | null;
+    attempts: number;
+    max_attempts: number;
+    last_error: string | null;
+  }[];
+  benchmarks: {
+    job_id: string;
+    at: string | null;
+    model: string;
+    quant: string | null;
+    backend: string;
+    metrics: Record<string, unknown> | null;
+  }[];
 };
 
 export type DeviceList = {
@@ -137,12 +167,18 @@ export type DeviceList = {
   per_page: number;
   total: number;
   pages: number;
+  /** Over every device, not the filtered set, so choosing a filter never empties its own menu. */
+  facets: {
+    pools: string[];
+    platforms: string[];
+    kinds: string[];
+  };
 };
 
 export type DeviceOutcome = {
   device_id: string;
   job_id: string;
-  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled";
+  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled" | "skipped";
   ok: boolean | null;
   /** Nothing ran (no matching device, or a host refusing work). Not a pass. */
   skipped: boolean;
@@ -165,6 +201,178 @@ export type Error = {
     hint?: string;
     required_scope?: string;
   };
+};
+
+export type Finding = {
+  id: number;
+  fingerprint: string;
+  /** The explore app key the finding was filed under. */
+  app: string;
+  /** The build it was first seen on. */
+  build: string;
+  platform: string;
+  device_id: string;
+  /** The job that first found it. */
+  job_id: string;
+  last_job_id?: string | null;
+  mission_id: string;
+  /** crash, anr, frozen, blank, left_app, a11y, visual, goal, dead_control. */
+  check: string;
+  severity: "high" | "medium" | "low";
+  title: string;
+  detail: string;
+  screen?: string;
+  screen_name: string;
+  /** What to do to see it, in words, one step per entry. */
+  steps: string[];
+  /** The replay on a clean install: how many of `attempts` reproduced it. null only for a crash, whose crash log is the evidence. */
+  replay: (null | {
+    kind: "maestro" | "tvloop" | "none";
+    sha256: string | null;
+    attempts: number;
+    reproduced: number;
+  });
+  /** reproduced 2/2, flaky 1/2, crash log. */
+  replay_label: string;
+  /** Artifact sha256s by role: shot, sheet, trajectory, log, replay. Absent roles were not posted. */
+  artifacts: {
+    shot?: string;
+    sheet?: string;
+    trajectory?: string;
+    log?: string;
+    replay?: string;
+  };
+  first_seen: string | null;
+  last_seen: string | null;
+  seen_count: number;
+  builds_seen: string[];
+  /** null: nobody has judged it, or a regression test reopened it. agent_mistake is NOT a bug in the app. */
+  verdict: "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed" | null;
+  verdict_note?: string | null;
+  verdict_at?: string | null;
+  duplicate_of?: number | null;
+  /** The GitHub issue it would file, or did. Fleet Runner only ever creates issues; it never reads them back. */
+  issue?: (null | {
+    state: "dry_run" | "pending" | "filed" | "failed" | "capped" | "no_repo";
+    /** True means nothing was sent to GitHub. */
+    dry_run: boolean;
+    repo: string | null;
+    title: string;
+    body: string;
+    labels: string[];
+    url: string | null;
+    number: number | null;
+    detail: string;
+    at: string;
+  });
+  status: "open" | "triaged";
+  /** The regression test it became: candidate once real, active (in the nightly) once fixed. */
+  regression: (null | {
+    state: "candidate" | "active" | "retired";
+    kind: "maestro" | "tvloop";
+    last_outcome: string | null;
+  });
+};
+
+export type FindingDetail = Finding & {
+  duplicates: {
+    id: number;
+    title: string;
+    seen_count: number;
+  }[];
+  duplicate_of_title: string | null;
+  counts: {
+    seen: number;
+    builds: number;
+    replay_attempts: number | null;
+    replay_reproduced: number | null;
+    regression_runs: number;
+  };
+  evidence: {
+    role: "shot" | "sheet" | "trajectory" | "log" | "replay";
+    label: string;
+    sha256: string;
+    /** The bytes, relative to the collector. */
+    url: string;
+    in_store: boolean;
+  }[];
+  /** The Maestro (or tvloop) flow that replays the finding's steps. */
+  replay_flow: (null | {
+    kind: string;
+    sha256: string;
+    url: string;
+    in_store: boolean;
+    /** The flow itself when it is at most 16 KiB; otherwise fetch url. */
+    text: string | null;
+    /** True when the flow was too big to inline. */
+    truncated: boolean;
+  });
+  regression: (null | {
+    finding_id: number;
+    app?: string;
+    platform?: string;
+    check?: string;
+    kind: "maestro" | "tvloop";
+    state: "candidate" | "active" | "retired";
+    /** no_crash for crash and anr findings; replays (without error) for every other check. */
+    asserts: "no_crash" | "replays";
+    /** The flow text the nightly runs, copied when the finding was marked real. */
+    flow: string;
+    flow_sha256?: string | null;
+    created_at?: string | null;
+    activated_at?: string | null;
+    retired_at?: string | null;
+    runs: number;
+    last_run_at?: string | null;
+    last_job_id?: string | null;
+    last_outcome?: "passed" | "reproduced" | "failed" | "skipped" | null;
+    last_detail?: string | null;
+  });
+  history: {
+    at: string | null;
+    event: "verdict" | "regressed";
+    verdict: "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed" | null;
+    note: string | null;
+    actor?: string | null;
+    source?: string | null;
+  }[];
+  links: {
+    self: string;
+    verdict: string;
+    dashboard: string;
+  };
+};
+
+export type FindingList = {
+  items: Finding[];
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
+  /** apps and checks over every finding, so a filter never empties its own menu; counts over the app, check and since filters, before state and verdict. */
+  facets: {
+    apps: string[];
+    checks: string[];
+    counts: {
+      open: number;
+      triaged: number;
+      total: number;
+    };
+  };
+};
+
+export type FindingVerdictInput = {
+  /** fixed only after real, once the fix has merged. null reopens. */
+  verdict: "real" | "duplicate" | "not_a_bug" | "agent_mistake" | "fixed" | null;
+  note?: string | null;
+  /** Required with duplicate: the finding this one duplicates. */
+  duplicate_of?: number | null;
+};
+
+export type FindingVerdictResult = {
+  finding: FindingDetail;
+  /** What the verdict did to the finding's regression test, in one sentence, or null. */
+  change: string | null;
 };
 
 export type FlakyCell = {
@@ -211,31 +419,31 @@ export type Job = {
   job_id: string;
   workload: string;
   executor: "device" | "host";
-  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled";
-  claimed_by?: string | null;
+  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled" | "skipped";
+  claimed_by: string | null;
   attempts: number;
   max_attempts: number;
-  priority?: number;
-  template_id?: string | null;
-  depends_on?: string[];
-  lease_ttl_s?: number;
-  lease_deadline?: string | null;
-  lease_remaining_s?: number | null;
-  duration_s?: number | null;
-  last_error?: string | null;
+  priority: number;
+  template_id: string | null;
+  depends_on: string[];
+  lease_ttl_s: number;
+  lease_deadline: string | null;
+  lease_remaining_s: number | null;
+  duration_s: number | null;
+  last_error: string | null;
   created_at: string | null;
-  claimed_at?: string | null;
-  finished_at?: string | null;
-  pool?: string | null;
-  match?: string | null;
-  device_id?: string | null;
-  wants_executor?: string | null;
-  exclusive?: boolean;
-  preemptible?: boolean;
-  backend?: string | null;
-  model?: string | null;
-  app?: string | null;
-  report_to?: Record<string, unknown> | null;
+  claimed_at: string | null;
+  finished_at: string | null;
+  pool: string | null;
+  match: string | null;
+  device_id: string | null;
+  wants_executor: string | null;
+  exclusive: boolean;
+  preemptible: boolean;
+  backend: string | null;
+  model: string | null;
+  app: string | null;
+  report_to: Record<string, unknown> | null;
   /** Verified only when the collector runs with FLEET_AUTH=tokens. */
   requested_by: string | null;
   /** Which front door: mcp, cli, ci, dash, schedule, api. */
@@ -256,16 +464,16 @@ export type JobCreated = {
 
 export type JobDetail = Job & {
   spec: Record<string, unknown>;
-  parent?: string | null;
-  children?: Job[];
-  siblings?: Job[];
+  parent: string | null;
+  children: Job[];
+  siblings: Job[];
   results: {
     device_id: string;
     iter: number;
     created_at: string | null;
     payload: Record<string, unknown>;
   }[];
-  beacons?: (Record<string, unknown>)[];
+  beacons: (Record<string, unknown>)[];
   artifacts: {
     sha256: string;
     name: string | null;
@@ -274,9 +482,18 @@ export type JobDetail = Job & {
     in_store: boolean;
     role: "input" | "output";
   }[];
-  locks?: (Record<string, unknown>)[];
-  status_report?: Record<string, unknown> | null;
-  derived_timeline?: {
+  locks: {
+    device_id: string;
+    acquired_at: string | null;
+  }[];
+  status_report: (null | {
+    target: string;
+    state: string;
+    posted: boolean;
+    detail: string | null;
+    created_at: string | null;
+  });
+  derived_timeline: {
     at: string | null;
     what: string;
   }[];
@@ -288,6 +505,20 @@ export type JobList = {
   per_page: number;
   total: number;
   pages: number;
+  /** Over the whole table, not this page: jobs per status, and every workload and pool a job has named. */
+  facets: {
+    status_counts: {
+      waiting?: number;
+      queued?: number;
+      claimed?: number;
+      done?: number;
+      failed?: number;
+      cancelled?: number;
+      skipped?: number;
+    };
+    workloads: string[];
+    pools: string[];
+  };
 };
 
 /** A Fleet Runner job spec (schema 1). `schema` and `job_id` may be omitted; the API fills in 1 and a generated id. A caller that sets job_id is choosing an idempotency key: a second POST with the same id is refused with duplicate_job. GET /api/v1/workloads/{name} returns a complete example for each workload. */
@@ -323,7 +554,7 @@ export type JobSpecInput = {
     kind?: "maestro" | "xcuitest" | "playwright";
     flows?: string;
   };
-  /** Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; any host job network and network_to; a preempted job resume_from. */
+  /** Workload-specific. Deliberately open, but the fields the shipped workloads read are listed here so they are discoverable: benchmark/thermal prompt_tokens, gen_tokens, warmup_iters, measure_iters, duration_s; batch/vision/speech/embed input_sha256, max_items, max_tokens; cold-start app_id, launches, states; locale-shots locales; app-soak flow, duration_s, interval_s; a11y-audit steps, variants, min_target_pt, font_scale, tree_source; build repo, ref, kind, task, scheme; vantage urls, repeats; ui-test regressions (true, or the app its findings are filed under: run its fixed findings' replay flows too); any host job network and network_to; a preempted job resume_from. */
   params?: Record<string, unknown>;
   /** Job ids this one waits for. The job is enqueued as 'waiting' and becomes 'queued' when the last of them finishes; if any of them fails or is cancelled, this one fails with last_error naming it. While waiting, a spec may reference a dependency's output: "${jobs.<id>.artifact}" resolves to the first sha256 in that job's final row, and "${jobs.<id>.metrics.<key>}" to one of its metrics. A whole-string reference keeps the value's type, so a metric stays a number. Referencing a job not listed here is refused at enqueue. */
   depends_on?: string[];
@@ -455,8 +686,20 @@ export type Schedule = {
   id: string;
   cron: string;
   enabled: boolean;
-  last_run?: string | null;
-  next_run?: string | null;
+  last_run: string | null;
+  next_run: string | null;
+  next_run_in_s: number | null;
+  /** When it should last have fired. */
+  prev_expected: string | null;
+  /** Enabled, has fired before, and its last expected firing did not happen. */
+  missed: boolean;
+  late_by_s: number | null;
+  workload: string | null;
+  executor: string | null;
+  fanout: boolean;
+  pool: string | null;
+  /** The job spec each firing enqueues. */
+  template: Record<string, unknown>;
 };
 
 export type ScheduleList = {
@@ -486,7 +729,7 @@ export type TemplateList = {
 export type Validation = {
   valid: boolean;
   job_id?: string;
-  /** What the job would be on enqueue: queued, waiting or failed. */
+  /** What the job would be on enqueue: queued, waiting, failed (a dependency failed) or skipped (a dependency skipped). */
   status?: string;
   fanout?: string[];
   /** The spec as it would be stored: `latest` resolved, lease filled in. */
@@ -629,7 +872,7 @@ export class FleetClient extends Transport {
    *
    * `GET /api/v1/jobs` · scope: read
    */
-  listJobs(query?: { status?: string; workload?: string; executor?: "device" | "host"; device?: string; pool?: string; requested_by?: string; mine?: boolean; source?: string; q?: string; from?: string; to?: string; page?: number; per_page?: number }, opts?: CallOptions): Promise<JobList> {
+  listJobs(query?: { status?: string; workload?: string; executor?: "device" | "host"; device?: string; pool?: string; requested_by?: string; mine?: boolean; source?: string; q?: string; from?: string; to?: string; has_error?: boolean; page?: number; per_page?: number }, opts?: CallOptions): Promise<JobList> {
     return this.request<JobList>("GET", `/api/v1/jobs`, { ...opts, query });
   }
 
@@ -745,6 +988,42 @@ export class FleetClient extends Transport {
    */
   getArtifactContent(sha256: string, query?: { download?: boolean }, opts?: CallOptions): Promise<Response> {
     return this.request<Response>("GET", `/api/v1/artifacts/${enc(sha256)}/content`, { ...opts, query, raw: true });
+  }
+
+  /**
+   * What night QA (the explore workload) found, newest sighting first.
+   *
+   * Each finding was replayed on a clean install before it was filed; `replay_label` says how often it
+   * reproduced. verdict agent_mistake means the model misread the app, not a bug in it. since=24h is the
+   * morning brief.
+   *
+   * `GET /api/v1/findings` · scope: read
+   */
+  listFindings(query?: { app?: string; state?: "open" | "triaged" | "all"; verdict?: string; check?: string; since?: string; page?: number; per_page?: number }, opts?: CallOptions): Promise<FindingList> {
+    return this.request<FindingList>("GET", `/api/v1/findings`, { ...opts, query });
+  }
+
+  /**
+   * One finding: the steps in words, its evidence as links, the replay flow (inline when small), its regression test and verdict history.
+   *
+   * `GET /api/v1/findings/{id}` · scope: read
+   */
+  getFinding(id: string, opts?: CallOptions): Promise<FindingDetail> {
+    return this.request<FindingDetail>("GET", `/api/v1/findings/${enc(id)}`, { ...opts });
+  }
+
+  /**
+   * Judge a finding: real, duplicate, not_a_bug, agent_mistake, or fixed (only after real). null reopens.
+   *
+   * real keeps the finding's replay flow as a candidate regression test; fixed makes it active, so the
+   * app's nightly ui-test (with params.regressions) runs it. duplicate, not_a_bug and agent_mistake
+   * retire it. Mark fixed only once a fix has merged. Each verdict counts towards the check's precision,
+   * which decides what night QA runs tomorrow.
+   *
+   * `POST /api/v1/findings/{id}/verdict` · scope: run
+   */
+  setFindingVerdict(id: string, body: FindingVerdictInput, opts?: CallOptions): Promise<FindingVerdictResult> {
+    return this.request<FindingVerdictResult>("POST", `/api/v1/findings/${enc(id)}/verdict`, { ...opts, body });
   }
 
   /**

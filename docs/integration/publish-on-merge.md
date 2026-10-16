@@ -33,6 +33,50 @@ curl -X POST http://fleet-host.local:8788/artifacts \
 Those headers are what stamp the publish ordering that `latest` reads. There is
 no `/artifacts/:sha/publish` endpoint and none is needed.
 
+`POST /artifacts` is a runner-protocol route, so it stays open even with
+`FLEET_AUTH=tokens` unless the collector also sets `FLEET_AUTH_PROTOCOL=token`
+(see [Authentication](../deploy/auth.md)). Then it needs a token with the
+`agent` scope (or `admin`; `run` is not enough): send
+`-H "authorization: Bearer <token>"` with curl. `ci-upload` sends
+`FLEET_RUNNER_TOKEN` (or `FLEET_TOKEN`) as that bearer token, and still sends
+`FLEET_DASH_TOKEN` as `x-fleet-token` for a collector guarded only by that.
+The collector's test suite runs `ci-upload` against a protocol-gated collector,
+with and without a token.
+
+## Pull request builds never move `latest`
+
+A pull request's build is a branch, not what was merged, and the nightly that
+asks for `latest` should keep testing what was merged. So an upload can say it
+came from a pull request:
+
+```bash
+curl -X POST http://fleet-host.local:8788/artifacts \
+  -H 'x-artifact-app: your-app-android' -H 'x-artifact-build: pr-42' \
+  -H 'x-artifact-channel: pr' \
+  --data-binary @app/build/outputs/apk/debug/app-debug.apk
+```
+
+- **`latest` skips `pr` builds.** `"sha256": "latest"` resolves to the newest
+  build for the app *without* the `pr` channel. If only pull requests have ever
+  uploaded for an app, a nightly asking for `latest` is skipped, and the
+  reason says so.
+- **The pull request's own job names the hash.** `ci-enqueue --artifact`
+  writes the uploaded hash into the spec, so it tests exactly that build
+  whatever its channel.
+- **`ci-upload` and `ci-enqueue` set it for you** when `GITHUB_EVENT_NAME` is
+  `pull_request` or `pull_request_target`. `--channel pr` or `--channel main`
+  says it explicitly, for any other CI.
+- **The same bytes published from main come off the channel.** A merge whose
+  build is byte-identical to the pull request's republishes it without the
+  header, and it becomes `latest`. The reverse does not happen: a pull
+  request's upload of bytes main already published leaves that build as it
+  was, neither moved to the front nor marked `pr`.
+- The channel is `pr` or nothing; any other value is refused with a 400, so a
+  typo cannot publish a branch to the nightly. Builds uploaded before the
+  channel existed count as merged builds.
+- `GET /api/artifacts` lists each build's `channel`. The `/api/v1` artifact
+  document does not carry it yet.
+
 !!! note "An app with no published build is skipped, not failed"
 
     If nothing has ever been published for an app name, its nightly is
@@ -67,6 +111,10 @@ jobs:
         run: ./gradlew :app:assembleDebug
 
       - name: Publish to the fleet
+        env:
+          # Only needed when the collector sets FLEET_AUTH_PROTOCOL=token; then
+          # the token needs the agent scope. Empty is fine otherwise.
+          FLEET_RUNNER_TOKEN: ${{ secrets.FLEET_RUNNER_TOKEN }}
         run: |
           npx --yes tsx scripts/ci-upload.ts \
             --collector "${{ secrets.FLEET_COLLECTOR_URL }}" \
@@ -89,15 +137,20 @@ names.
 ```json
 {
   "schema": 1,
-  "job_id": "nightly-ui",
   "workload": "ui-test",
   "executor": "host",
-  "app": { "name": "your-app-android", "sha256": "latest" },
+  "app": { "name": "your-app-android", "build": "latest", "sha256": "latest" },
   "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" },
   "targets": { "match": "os ~ 'android'", "exclusive": true },
   "lease": { "ttl_s": 1800 }
 }
 ```
+
+This is the schedule's template. It needs no `job_id`: each firing is enqueued
+as `<schedule id>-<minute>`. A template that carries one is refused, or, if it
+is empty, dropped with a `warnings` entry in the reply.
+`"build": "latest"` is there because the schema requires `app.build`; the
+collector records the build string the published artifact carries.
 
 Put it in
 [`scripts/seed-schedules.ts`](https://github.com/addisdev/fleet-runner/blob/main/collector/scripts/seed-schedules.ts)
@@ -109,27 +162,41 @@ watched it run once by hand.
 
 ## Chaining a build to its own test
 
-If a machine agent does your building, the whole thing can be one enqueue —
-[job chains](../concepts.md#job-chains) do the waiting:
+If a machine agent does your building, [job chains](../concepts.md#job-chains)
+do the waiting. Nothing accepts a list of jobs in one request, so enqueue them
+one at a time, in dependency order, and let `depends_on` hold the later ones in
+`waiting`:
 
-```json
-[
-  { "job_id": "build-903", "workload": "build", "executor": "device",
-    "params": { "repo": "git@github.com:you/app.git", "ref": "main",
-                "kind": "gradle", "task": "assembleDebug", "app": "your-app-android" } },
-
-  { "job_id": "install-903", "workload": "install", "executor": "host",
-    "depends_on": ["build-903"],
-    "app": { "name": "your-app-android", "build": "903",
-             "sha256": "${jobs.build-903.artifact}" } },
-
-  { "job_id": "ui-903", "workload": "ui-test", "executor": "host",
-    "depends_on": ["install-903"],
-    "app": { "name": "your-app-android", "build": "903",
-             "sha256": "${jobs.build-903.artifact}" },
-    "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" } }
-]
+```json title="build-903.json"
+{ "job_id": "build-903", "workload": "build", "executor": "device",
+  "params": { "repo": "git@github.com:you/app.git", "ref": "main",
+              "kind": "gradle", "task": "assembleDebug", "app": "your-app-android" } }
 ```
 
-A broken build fails the install and the UI test with it, naming the cause,
-rather than leaving them in `waiting` until somebody notices next week.
+```json title="install-903.json"
+{ "job_id": "install-903", "workload": "install", "executor": "host",
+  "depends_on": ["build-903"],
+  "app": { "name": "your-app-android", "build": "903",
+           "sha256": "${jobs.build-903.artifact}" } }
+```
+
+```json title="ui-903.json"
+{ "job_id": "ui-903", "workload": "ui-test", "executor": "host",
+  "depends_on": ["build-903", "install-903"],
+  "app": { "name": "your-app-android", "build": "903",
+           "sha256": "${jobs.build-903.artifact}" },
+  "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" } }
+```
+
+```bash
+fleetr run --spec build-903.json --no-wait
+fleetr run --spec install-903.json --no-wait
+fleetr run --spec ui-903.json --no-wait
+fleetr wait ui-903          # exits with the UI test's verdict
+```
+
+The ids are fixed here because the later specs name the earlier ones. A
+dependency has to exist when its dependent is enqueued, which is why the order
+matters, and a `${jobs.<id>.artifact}` reference may only name a job listed in
+`depends_on`, which is why `ui-903` lists the build as well as the install. A broken build fails the install and the UI test with it, naming the
+cause, rather than leaving them in `waiting` until somebody notices next week.

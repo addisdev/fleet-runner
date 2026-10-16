@@ -28,7 +28,7 @@ can type it.
 | **[macOS](macos.md)** | `curl -fsSL …/install.sh \| sh` | Installed from a real release on **arm64 and Intel**, checksum verified, and upgraded in place from 0.5.0 to 0.6.0. **A real fleet's brain runs here under `fleet service`** — one launchd unit, three components, on macOS 12 |
 | **[Windows](windows.md)** | `irm …/install.ps1 \| iex` | `install.ps1` has never been parsed by PowerShell. The CLI's own suite -- supervisor, config, `fleet up` end to end -- passes on `windows-latest` in CI, but **nobody has stood a fleet up on a Windows machine**, and the service backend is untested |
 | **[Linux](linux.md)** | `curl -fsSL …/install.sh \| sh` | The installer is the same script macOS runs against the real release; it has not been run on Linux. The collector's and the CLI's suites pass on x64 and arm64 Linux in CI. **Nobody has stood a fleet up on one.** The systemd service backend is installed, started and uninstalled by a CI smoke test on Ubuntu, and has not been watched survive a reboot |
-| **[Docker](docker.md)** | `docker run ghcr.io/addisdev/fleet` | Published for linux/amd64 and linux/arm64 with every release. CI starts the amd64 image on every pull request and waits for its agent to register; the arm64 image has not been started |
+| **[Docker](docker.md)** | `docker run ghcr.io/addisdev/fleet` | Published for linux/amd64 and linux/arm64 with every release. CI starts both on every pull request that touches them and waits for each one's agent to register |
 | **[Devices](devices.md)** | -- | How a phone, a television, a Roku or a browser joins a fleet that is already up |
 
 ## What the installers do, and what they refuse to do
@@ -50,7 +50,7 @@ written into both files:
    `SHASUMS256.txt` cannot be fetched at all.** There is no `--force` past this.
 4. Unpack into `~/.fleet` (`FLEET_INSTALL_DIR` moves it), replacing only the
    entries a release owns -- `bin`, `runner-web`, `dash`, `examples`,
-   `schemas`. It never removes the directory itself, because
+   `schemas`, `skills`. It never removes the directory itself, because
    `~/.fleet` is also where `config.json`, `data/`, `artifacts/` and `logs/`
    live, and an upgrade that deletes your results is worse than one that fails.
 5. Run `fleet version` from the thing it just installed. If the bundle is
@@ -69,7 +69,7 @@ something is wrong; stop and read it.
 ```
 ~/.fleet/
   config.json      what fleet up reads; `fleet config set` writes it
-  bin/             fleet.mjs, and a `fleet` symlink (a fleet.cmd shim on Windows)
+  bin/             fleet.mjs, with `fleet` and `fleetr` symlinks (fleet.cmd and fleetr.cmd on Windows)
   data/            fleet.db, and collector.json -- this brain's name and id
   artifacts/       build products, screenshots, everything a job published
   logs/            one per supervised component
@@ -107,3 +107,5 @@ to.
   browser to a fleet that is already running.
 - **[Deploy](../deploy/index.md)** -- keeping it up, and the network gotcha
   that costs an evening.
+- **[AI agents and automation](../agents.md)** -- `fleet skill install` and
+  `fleet mcp`, so a coding agent can run jobs on the fleet.

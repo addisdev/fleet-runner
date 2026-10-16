@@ -94,8 +94,9 @@ file an issue, or change a check; those are your verdicts.
 - **Debug builds and test accounts only.** A card whose build talks to
   production blocks anything that writes; see
   [production data](missions.md#production-data).
-- **Budgets.** Steps and minutes per card, minutes per night, and at most five
-  new findings per app per night.
+- **Budgets.** Steps and minutes per card, minutes per night, and a cap on new
+  findings per app per night: five by default, raised to 25 for the bug garden,
+  whose whole point is to be found.
 - **It files and never closes.** Even with GitHub issues armed, the collector
   only ever creates issues.
 - **No cloud fallback for the driver.** The `pilot` gateway name has none, so

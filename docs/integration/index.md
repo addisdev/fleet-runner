@@ -6,10 +6,13 @@ a verdict that can block a pull request.
 
 !!! warning "What is proven, and what is not"
 
-    `ci-enqueue` and `ci-upload` are **verified standalone**: they upload, they
-    enqueue, they poll to a verdict and they exit 0 or 1, and the artifact and
-    `"latest"` resolution behind them are covered end to end by the collector's
-    test suite.
+    `ci-enqueue` and `ci-upload` are **verified standalone**: the collector's
+    test suite runs both against a collector with tokens on, and checks every
+    exit code `ci-enqueue` gives (0 passed, 1 failed, 2 invalid, 3 still
+    running, 4 skipped, 5 refused), along with the artifact, `"latest"` and
+    pull-request-channel resolution behind them. `ci-enqueue` uses `/api/v1`
+    and the same exit codes as `fleetr run`, so a skip fails the step rather
+    than passing it.
 
     **The GitHub Actions path has never run on a real GitHub runner.** The
     workflow templates below document a contract that is implemented on the
@@ -21,7 +24,7 @@ a verdict that can block a pull request.
 
 | | |
 |---|---|
-| **[Your first job](first-job.md)** | `curl`, then the CI script standalone, then the dashboard. No CI involved. |
+| **[Your first job](first-job.md)** | `fleetr` (or `curl`), then a build and a suite, then the dashboard. No CI involved. |
 | **[Publish on merge](publish-on-merge.md)** | Every merge publishes a build the nightly can ask for by name. |
 | **[Add your app](add-your-app.md)** | Flows, suites, visual baselines, and targeting the right devices. |
 | **[Add a workload](add-a-workload.md)** | Teach the fleet something new without a collector release. |
@@ -64,13 +67,21 @@ Arming it makes a red nightly block a pull request. That is the point, and it is
 also a decision with consequences for everyone who pushes, so it stays off until
 somebody chooses it deliberately.
 
-Note that `ci-enqueue` already exits non-zero on a red suite, so the check fails
-whether or not statuses are armed. Arming adds the status on the *nightly's*
+Note that `ci-enqueue` and `fleetr run` already exit non-zero on a red or skipped suite,
+so the check fails whether or not statuses are armed. Arming adds the status on the *nightly's*
 commit, which is the part a scheduled run cannot get any other way.
 
 ## What the runner needs to reach
 
-The collector is LAN or tailnet only and has no authentication, so a
+The collector is LAN or tailnet only and has no authentication by default
+(tokens are opt-in; see [Authentication](../deploy/auth.md)), so a
 GitHub-hosted runner cannot reach it and should not be able to. The workflows
 below assume a **self-hosted runner on the same tailnet**, with the collector's
 address in a `FLEET_COLLECTOR_URL` secret.
+
+If the collector runs with `FLEET_AUTH=tokens`, give CI a token with the `run`
+scope (`fleet token create ci --scope run`) in another secret and pass it as
+`FLEET_RUNNER_TOKEN`; `fleetr`, `ci-enqueue` and `ci-upload` all read it (or
+`FLEET_TOKEN`) and send it as a bearer token. An upload is the runner protocol,
+so with `FLEET_AUTH_PROTOCOL=token` as well the token needs `agent` too
+(`--scope run --scope agent`).

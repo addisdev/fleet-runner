@@ -32,6 +32,7 @@ import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlit
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DATA_DIR } from "./config.js";
+import { closingStatus } from "./skip.js";
 
 /**
  * What may be bound to a `?` placeholder.
@@ -199,6 +200,49 @@ export const db = {
  * because the collector is one SQLite file that a person owns and the
  * alternative is a version number somebody has to remember to bump.
  */
+/**
+ * Re-label the jobs that skipped before 'skipped' was a status.
+ *
+ * Candidates are the `done` jobs with any result row carrying a `"skipped:`
+ * string -- one pass over results with `instr`, no JSON parsing -- and each is
+ * then judged by the same `closingStatus` the queue uses when a job closes, so
+ * history and new jobs follow one rule. Result rows are not touched; the job's
+ * `last_error` gets the skip reason, which is where the job list, the alert and
+ * the digest read it from.
+ *
+ * Idempotent: a job it re-labels is no longer `done`, so a second pass finds
+ * nothing to do. Exported for the test, which runs it twice.
+ */
+export function backfillSkipped(h: DatabaseSync): number {
+  const candidates = h
+    .prepare(
+      `SELECT j.job_id FROM jobs j
+        WHERE j.status = 'done'
+          AND EXISTS (SELECT 1 FROM results r WHERE r.job_id = j.job_id AND instr(r.payload, '"skipped:') > 0)`,
+    )
+    .all() as { job_id: string }[];
+  const rowsOf = h.prepare("SELECT device_id, payload FROM results WHERE job_id = ? ORDER BY iter, rowid");
+  const relabel = h.prepare("UPDATE jobs SET status = 'skipped', last_error = ? WHERE job_id = ? AND status = 'done'");
+  let n = 0;
+  for (const { job_id } of candidates) {
+    const rows = (rowsOf.all(job_id) as { device_id: string; payload: string }[]).map((r) => {
+      let payload: Record<string, unknown> = {};
+      try {
+        payload = JSON.parse(r.payload) as Record<string, unknown>;
+      } catch {
+        /* a row that is not JSON says nothing about a skip */
+      }
+      return { device_id: r.device_id, payload };
+    });
+    const final = [...rows].reverse().find((r) => r.payload.final)?.payload;
+    if (!final) continue;
+    const closing = closingStatus(rows, final);
+    if (closing.status !== "skipped") continue;
+    n += Number(relabel.run(closing.reason, job_id).changes);
+  }
+  return n;
+}
+
 function migrate(db: DatabaseSync): void {
 db.exec(`
 CREATE TABLE IF NOT EXISTS devices (
@@ -234,8 +278,11 @@ CREATE TABLE IF NOT EXISTS jobs (
   -- 'waiting' is a job whose dependencies have not finished. It is distinct
   -- from 'queued' because a queued job is one the claim loop should be looking
   -- at, and a waiting one is not eligible for anything yet.
+  -- 'skipped' is not 'done': the runner claimed it and could not run it (no
+  -- device matched, the app was not installed, no Roku password). Counting it
+  -- as done is how two nightlies "passed" for two weeks while testing nothing.
   status      TEXT NOT NULL DEFAULT 'queued'
-              CHECK (status IN ('waiting','queued','claimed','done','failed','cancelled')),
+              CHECK (status IN ('waiting','queued','claimed','done','failed','cancelled','skipped')),
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   claimed_by  TEXT,
   claimed_at  TEXT,
@@ -256,7 +303,8 @@ CREATE TABLE IF NOT EXISTS jobs (
   parent_job_id  TEXT,
   template_id    TEXT,
   -- JSON array of job_ids this one waits for. Resolved to 'queued' when the
-  -- last of them closes; failed when any of them fails or is cancelled.
+  -- last of them closes; failed when any of them fails or is cancelled,
+  -- skipped when one of them skipped.
   depends_on     TEXT
 );
 
@@ -444,6 +492,11 @@ for (const [column, ddl] of [
   // months to diff against. Once build and model-convert start producing
   // artifacts nightly, GC stops being hypothetical and that blind spot becomes
   // a deleted baseline and a visual suite with nothing to compare to.
+  // `pr` for a pull request's build, NULL for everything else. `latest` skips
+  // `pr` rows, so a branch's test build never becomes what the nightly tests.
+  // Rows from before the column are NULL: they count as merged builds, which
+  // is what `latest` already took them to be.
+  ["channel", "channel TEXT"],
   ["pinned", "pinned INTEGER NOT NULL DEFAULT 0"],
   ["pin_reason", "pin_reason TEXT"],
 ] as const) {
@@ -623,7 +676,7 @@ CREATE TABLE IF NOT EXISTS findings (
   last_seen    TEXT NOT NULL DEFAULT (datetime('now')),
   seen_count   INTEGER NOT NULL DEFAULT 1,
   builds_seen  TEXT NOT NULL DEFAULT '[]',   -- JSON array of distinct builds
-  verdict      TEXT CHECK (verdict IS NULL OR verdict IN ('real','duplicate','not_a_bug','agent_mistake')),
+  verdict      TEXT CHECK (verdict IS NULL OR verdict IN ('real','duplicate','not_a_bug','agent_mistake','fixed')),
   verdict_note TEXT,
   verdict_at   TEXT,
   duplicate_of INTEGER,
@@ -648,7 +701,83 @@ CREATE TABLE IF NOT EXISTS findings_digests (
   posted   INTEGER NOT NULL DEFAULT 0,
   detail   TEXT
 );
+
+-- Every verdict a finding has had, and every night a regression test brought
+-- it back. The findings row holds only the current verdict; this is how a
+-- reader learns that "open" means "regressed on build 1.4 (12)" rather than
+-- "nobody has looked".
+CREATE TABLE IF NOT EXISTS finding_verdicts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  finding_id  INTEGER NOT NULL,
+  at          TEXT NOT NULL DEFAULT (datetime('now')),
+  event       TEXT NOT NULL CHECK (event IN ('verdict','regressed')),
+  verdict     TEXT,                    -- NULL: reopened
+  note        TEXT,
+  actor       TEXT,
+  source      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_finding_verdicts ON finding_verdicts (finding_id, id);
+
+-- A finding's replay flow, kept as a regression test (src/findings.ts).
+-- In the database rather than as files because the lab's flows directory is
+-- outside git and outside any backup this repository controls: the flow text
+-- is copied here when the finding is marked real, so it survives the artifact
+-- store's GC as well.
+CREATE TABLE IF NOT EXISTS regressions (
+  finding_id    INTEGER PRIMARY KEY,
+  app           TEXT NOT NULL,
+  platform      TEXT NOT NULL,
+  check_name    TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('maestro','tvloop')),
+  flow          TEXT NOT NULL,
+  flow_sha256   TEXT,
+  state         TEXT NOT NULL CHECK (state IN ('candidate','active','retired')),
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  activated_at  TEXT,
+  retired_at    TEXT,
+  runs          INTEGER NOT NULL DEFAULT 0,
+  last_run_at   TEXT,
+  last_job_id   TEXT,
+  last_outcome  TEXT,
+  last_detail   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_regressions_app ON regressions (app, state);
 `);
+
+// 'fixed' as a verdict. The findings table's CHECK predates it, and SQLite
+// cannot alter a constraint, so the table is rebuilt once, the same way the
+// jobs table was for 'skipped'. Every existing verdict also gets one history
+// row, so a finding judged before history existed does not read as never
+// judged.
+{
+  const ddl = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='findings'").get() as
+    | { sql: string }
+    | undefined)?.sql;
+  if (ddl && !ddl.includes("'fixed'")) {
+    const widened = ddl
+      .replace(/^CREATE TABLE\s+("?)findings\1/i, "CREATE TABLE findings_migrating")
+      .replace(/verdict IN \(([^)]*)\)/i, (_m, list: string) => `verdict IN (${list.trim()},'fixed')`);
+    if (!widened.includes("'fixed'") || !widened.startsWith("CREATE TABLE findings_migrating"))
+      throw new Error("cannot widen the findings verdict constraint: the table's DDL is not the shape this migration knows");
+    const columns = (db.prepare("PRAGMA table_info(findings)").all() as { name: string }[]).map((c) => `"${c.name}"`).join(", ");
+    withTransaction(db, () => {
+      db.exec(widened);
+      db.exec(`INSERT INTO findings_migrating (${columns}) SELECT ${columns} FROM findings`);
+      db.exec("DROP TABLE findings");
+      db.exec("ALTER TABLE findings_migrating RENAME TO findings");
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_findings_last_seen ON findings (last_seen DESC);
+        CREATE INDEX IF NOT EXISTS idx_findings_app_check ON findings (app, check_name);
+        CREATE INDEX IF NOT EXISTS idx_findings_issue ON findings (app, issue_state, issue_at);
+      `);
+    })();
+  }
+  db.exec(`
+    INSERT INTO finding_verdicts (finding_id, at, event, verdict, note)
+    SELECT f.id, COALESCE(f.verdict_at, f.last_seen), 'verdict', f.verdict, f.verdict_note FROM findings f
+    WHERE f.verdict IS NOT NULL AND NOT EXISTS (SELECT 1 FROM finding_verdicts v WHERE v.finding_id = f.id)
+  `);
+}
 
 // Who asked for a job, and through which front door. After the rebuild for the
 // same reason depends_on is. `requested_by` is a verified identity only when
@@ -666,6 +795,36 @@ CREATE TABLE IF NOT EXISTS findings_digests (
   // Recorded at upload so a reader can be told what the bytes are, rather than
   // every client sniffing magic numbers.
   if (!artifactCols.has("media_type")) db.exec("ALTER TABLE artifacts ADD COLUMN media_type TEXT");
+}
+
+// 'skipped' as a job status, and the two weeks of skips that closed as 'done'
+// before it existed. After every ALTER above, so the rebuild can copy whatever
+// columns this database has by name instead of a fixed list that the next
+// added column would silently drop.
+{
+  const ddl = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").get() as
+    | { sql: string }
+    | undefined)?.sql;
+  if (ddl && !ddl.includes("'skipped'")) {
+    const widened = ddl
+      .replace(/^CREATE TABLE\s+("?)jobs\1/i, "CREATE TABLE jobs_migrating")
+      .replace(/CHECK\s*\(\s*status\s+IN\s*\(([^)]*)\)\s*\)/i, (_m, list: string) => `CHECK (status IN (${list.trim()},'skipped'))`);
+    if (!widened.includes("'skipped'") || !widened.startsWith("CREATE TABLE jobs_migrating"))
+      throw new Error("cannot widen the jobs status constraint: the table's DDL is not the shape this migration knows");
+    const columns = (db.prepare("PRAGMA table_info(jobs)").all() as { name: string }[]).map((c) => `"${c.name}"`).join(", ");
+    db.exec("PRAGMA foreign_keys = off");
+    withTransaction(db, () => {
+      db.exec(widened);
+      db.exec(`INSERT INTO jobs_migrating (${columns}) SELECT ${columns} FROM jobs`);
+      db.exec("DROP TABLE jobs");
+      db.exec("ALTER TABLE jobs_migrating RENAME TO jobs");
+      // Inside the same transaction as the rebuild, and only with it: the
+      // rebuild runs once per database, and a backfill that runs only then
+      // costs one scan of the results table, once, instead of one per start.
+      backfillSkipped(db);
+    })();
+    db.exec("PRAGMA foreign_keys = on");
+  }
 }
 
 // Every mutation that went through the control API, with who made it. Kept
@@ -687,6 +846,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_at ON audit_log (at DESC);
 CREATE INDEX IF NOT EXISTS idx_jobs_requested_by ON jobs (requested_by);
+-- Again, because the 'skipped' rebuild above drops every index on jobs.
+CREATE INDEX IF NOT EXISTS idx_jobs_lease ON jobs (status, lease_deadline);
+CREATE INDEX IF NOT EXISTS idx_jobs_claim ON jobs (status, executor, priority DESC, created_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_parent ON jobs (parent_job_id);
 `);
 
 // Jobs claimed before leases existed have no deadline and would never be swept.

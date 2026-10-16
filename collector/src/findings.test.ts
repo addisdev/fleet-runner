@@ -8,7 +8,8 @@
  * loopback port -- nothing here ever reaches the real one), and the digest
  * timer's once-a-day rule, which depends on the wall clock.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -16,6 +17,14 @@ import { closeDb, db, openDb } from "./db.js";
 import {
   ISSUE_CAP_PER_DAY,
   buildDigest,
+  findingDetail,
+  getRegression,
+  listFindings,
+  listRegressions,
+  parseRegressionRun,
+  parseSince,
+  parseVerdictBody,
+  recordRegressionRun,
   digestDue,
   digestTick,
   fileIssue,
@@ -108,8 +117,9 @@ export async function runFindingsChecks(check: Check) {
     check("findings: ...including for a crash that sent one", !zeroCrash.ok && zeroCrash.status === 422);
     const unknown = validateFinding({ ...sample(), check: "vibes" });
     check("findings: an unknown check name is 400", !unknown.ok && unknown.status === 400 && /vibes/.test(unknown.error));
-    check("findings: the newer check names are accepted",
-      validateFinding(sample({ check: "dead_control" })).ok && validateFinding(sample({ check: "leash" })).ok);
+    check("findings: dead_control is accepted", validateFinding(sample({ check: "dead_control" })).ok);
+    check("findings: names nothing raises are refused (regression, agent_stuck, leash)",
+      ["regression", "agent_stuck", "leash"].every((c) => { const v = validateFinding(sample({ check: c as never })); return !v.ok && v.status === 400; }));
     const noFp = validateFinding({ ...sample(), fingerprint: "" });
     check("findings: a missing fingerprint is 400", !noFp.ok && noFp.status === 400 && /fingerprint/.test(noFp.error));
     const big = validateFinding(sample({ detail: "x".repeat(9000) }));
@@ -264,6 +274,25 @@ export async function runFindingsChecks(check: Check) {
     check("digest: high severity first", d.apps[1].top[0].id === a.finding.id);
     check("digest: judged-not-a-bug is left out", !d.text.includes("Not actually a bug"));
 
+    // A skip is a job that ran nothing: its own count and its own line, with
+    // the schedule and the reason, never folded into done.
+    const job = (id: string, status: string, err: string | null) =>
+      db.prepare(
+        "INSERT INTO jobs (job_id, executor, workload, spec, status, last_error, finished_at) VALUES (?, 'host', 'tvloop', '{}', ?, ?, datetime('now'))",
+      ).run(id, status, err);
+    job("nightly-ok-202610150230", "done", null);
+    job("nightly-ui-smoke-202610150230", "failed", 'smoke: Assertion is false: "Fleet Runner" is visible');
+    job("nightly-tvloop-hardware-202610150630", "skipped", "skipped: no Roku developer password on this host");
+    job("explore-tv-202610150300--sim-a", "skipped", "skipped: no device matches this job on ultra");
+    job("explore-tv-202610150300--sim-b", "skipped", "skipped: no device matches this job on ultra");
+    const withJobs = buildDigest(12, "http://fleet.test:8788");
+    check("digest: jobs are counted done, failed and skipped",
+      withJobs.jobs.done === 1 && withJobs.jobs.failed === 1 && withJobs.jobs.skipped === 3, JSON.stringify(withJobs.jobs));
+    check("digest: the skip line says nothing ran", withJobs.text.includes("Jobs, last 12h: 1 done, 1 failed, 3 skipped (nothing ran)."), withJobs.text);
+    check("digest: and names what skipped and why, by schedule",
+      withJobs.text.includes("- skipped: explore-tv x2 (no device matches this job on ultra)") &&
+        withJobs.text.includes("- skipped: nightly-tvloop-hardware (no Roku developer password on this host)"), withJobs.text);
+
     // The timer.
     const at7 = new Date(2026, 9, 3, 7, 0);
     check("digest timer: not before HH:MM", !digestDue(new Date(2026, 9, 3, 6, 59), "07:00", null));
@@ -335,4 +364,132 @@ export async function runFindingsChecks(check: Check) {
       await down.close();
     }
   });
+
+  // --- fixed, the verdict history, and a finding becoming a regression test ---
+  await inTempDb(() => {
+    const FLOW = "appId: com.example.plants\nname: \"Save does nothing\"\n---\n- launchApp:\n    clearState: true\n- tapOn:\n    point: \"50%,90%\"\n";
+    const store = new Map<string, string>([[SHA("a"), FLOW]]);
+    const read = (sha: string) => store.get(sha) ?? null;
+    const who = { actor: "taylor", source: "test" };
+
+    const crash = storeFinding(sample({ fingerprint: "r-crash", check: "crash" }), DRY).finding;
+    const early = setVerdict(crash.id, "fixed", "too soon", null, { who, readArtifact: read });
+    check("regressions: fixed before real is refused with 409", !early.ok && early.status === 409 && /after real/.test(early.error), JSON.stringify(early));
+
+    const real = setVerdict(crash.id, "real", "seen it", null, { who, readArtifact: read });
+    check("regressions: real keeps the replay flow as a candidate",
+      real.ok && real.regression?.state === "candidate" && real.regression.flow === FLOW && real.regression.kind === "maestro"
+        && real.regression.asserts === "no_crash" && /candidate/.test(real.change ?? ""), JSON.stringify(real));
+    check("regressions: a candidate is not in the active list", listRegressions({ app: "plants" }).ok &&
+      (listRegressions({ app: "plants" }) as { items: unknown[] }).items.length === 0);
+    const fixed = setVerdict(crash.id, "fixed", "PR #12", null, { who, readArtifact: read });
+    check("regressions: fixed after real makes it active",
+      fixed.ok && fixed.finding.verdict === "fixed" && fixed.regression?.state === "active" && fixed.regression.activated_at !== null);
+    const active = listRegressions({ app: "plants", platform: "android" });
+    check("regressions: the nightly's pull lists it with its flow",
+      active.ok && active.items.length === 1 && active.items[0].finding_id === crash.id && active.items[0].flow === FLOW);
+    check("regressions: listing refuses a state it does not know", !listRegressions({ state: "sideways" }).ok);
+    check("regressions: fixed counts as real in precision", precision({ app: "plants" }).classes.find((c) => c.check === "crash")?.real === 1);
+
+    const job = { job_id: "nightly-ui-1", device_id: "pixel", build: "1.1 (5)", detail: "" };
+    const passed = recordRegressionRun(crash.id, { ...job, outcome: "passed", detail: "no crash" });
+    check("regressions: a pass is recorded and changes nothing else",
+      passed.ok && !passed.reopened && passed.finding.verdict === "fixed" && passed.regression.runs === 1 && passed.regression.last_outcome === "passed");
+    const back = recordRegressionRun(crash.id, { ...job, job_id: "nightly-ui-2", outcome: "reproduced", detail: "the app crashed again during the flow: NPE" });
+    check("regressions: reproduced reopens the finding, counts it and adds the build",
+      back.ok && back.reopened && back.finding.verdict === null && back.finding.status === "open" && back.finding.seen_count === crash.seen_count + 1
+        && back.finding.builds_seen.includes("1.1 (5)") && back.regression.state === "active", JSON.stringify(back));
+    const twice = recordRegressionRun(crash.id, { ...job, job_id: "nightly-ui-2", device_id: "galaxy", outcome: "reproduced", detail: "again" });
+    check("regressions: a second device in the same job does not reopen it twice", twice.ok && !twice.reopened && twice.finding.seen_count === crash.seen_count + 1);
+    check("regressions: a run for a finding with no test is 404", (() => {
+      const r = recordRegressionRun(99999, { ...job, outcome: "passed" }); return !r.ok && r.status === 404;
+    })());
+
+    const detail = findingDetail(crash.id, read)!;
+    const events = detail.history.map((h) => `${h.event}:${h.verdict ?? "-"}`).join(",");
+    check("history: every verdict and the regression, in order", events === "verdict:real,verdict:fixed,regressed:-", events);
+    check("history: says which build it regressed on and who judged it",
+      /regressed on build 1\.1 \(5\)/.test(detail.history[2].note ?? "") && detail.history[0].actor === "taylor", JSON.stringify(detail.history));
+    check("detail: the replay flow is inline, and the evidence links to /api/v1",
+      detail.replay_flow?.text === FLOW && detail.evidence.some((e) => e.role === "shot" && e.url === `/api/v1/artifacts/${SHA("b")}/content`),
+      JSON.stringify(detail.replay_flow));
+    check("detail: counts", detail.counts.seen === crash.seen_count + 1 && detail.counts.regression_runs === 3, JSON.stringify(detail.counts));
+
+    const refixed = setVerdict(crash.id, "fixed", "PR #13", null, { readArtifact: read });
+    check("regressions: a regressed finding may be marked fixed again directly", refixed.ok && refixed.regression?.state === "active");
+    const retired = setVerdict(crash.id, "not_a_bug", null, null, { readArtifact: read });
+    check("regressions: not_a_bug retires an active test", retired.ok && retired.regression?.state === "retired" && /retired/.test(retired.change ?? ""));
+    const again = setVerdict(crash.id, "real", null, null, { readArtifact: read });
+    check("regressions: real brings a retired test back as a candidate", again.ok && again.regression?.state === "candidate");
+
+    const gone = storeFinding(sample({ fingerprint: "r-gone", replay: { kind: "maestro", sha256: SHA("9"), attempts: 2, reproduced: 2 }, artifacts: {} }), DRY).finding;
+    const noFlow = setVerdict(gone.id, "real", null, null, { readArtifact: read });
+    check("regressions: real with no stored flow says why and keeps no test",
+      noFlow.ok && noFlow.regression === null && /not in the artifact store/.test(noFlow.change ?? ""), JSON.stringify(noFlow));
+    const fixedNoFlow = setVerdict(gone.id, "fixed", null, null, { readArtifact: read });
+    check("regressions: fixed with no flow is still recorded", fixedNoFlow.ok && fixedNoFlow.finding.verdict === "fixed" && getRegression(gone.id) === null);
+
+    // A finding marked real before regressions existed goes straight to active on fixed.
+    const legacy = storeFinding(sample({ fingerprint: "r-legacy", check: "frozen" }), DRY).finding;
+    db.prepare("UPDATE findings SET verdict = 'real' WHERE id = ?").run(legacy.id);
+    const lf = setVerdict(legacy.id, "fixed", null, null, { readArtifact: read });
+    check("regressions: fixed on a pre-regression real finding makes an active test", lf.ok && lf.regression?.state === "active" && lf.regression.asserts === "replays");
+
+    // Filters.
+    const fixedOnly = listFindings({ verdict: "fixed" });
+    check("list: the verdict filter", fixedOnly.ok && fixedOnly.body.findings.every((f) => f.verdict === "fixed") && fixedOnly.body.total === 2,
+      JSON.stringify(fixedOnly.ok && fixedOnly.body.total));
+    check("list: a bad verdict filter is refused", !listFindings({ verdict: "meh" }).ok);
+    const page2 = listFindings({ limit: 1, offset: 1 });
+    check("list: offset pages, total counts every match", page2.ok && page2.body.findings.length === 1 && page2.body.total === 3);
+    check("list: rows carry their regression state", fixedOnly.ok && fixedOnly.body.findings.some((f) => f.regression?.state === "active"));
+    check("list: since accepts a span", listFindings({ since: "24h" }).ok && !listFindings({ since: "yesterday-ish" }).ok);
+  });
+
+  // --- small parsers ---
+  {
+    const now = new Date("2026-10-15T12:00:00Z");
+    check("since: 24h is a day back", parseSince("24h", now)?.toISOString() === "2026-10-14T12:00:00.000Z");
+    check("since: 7d and 90m", parseSince("7d", now)?.toISOString() === "2026-10-08T12:00:00.000Z" && parseSince("90m", now)?.toISOString() === "2026-10-15T10:30:00.000Z");
+    check("since: ISO passes through, nonsense is null", parseSince("2026-10-01", now) !== null && parseSince("soon", now) === null);
+    const vb = parseVerdictBody({ verdict: "fixed", note: "  PR #9 " });
+    check("verdict body: fixed and a trimmed note", vb.ok && vb.verdict === "fixed" && vb.note === "PR #9");
+    check("verdict body: missing verdict, bad verdict, bad duplicate_of are refused",
+      !parseVerdictBody({}).ok && !parseVerdictBody({ verdict: "meh" }).ok && !parseVerdictBody({ verdict: "duplicate", duplicate_of: "x" }).ok);
+    const run = parseRegressionRun({ job_id: "j", device_id: "d", outcome: "reproduced" });
+    check("regression run: build defaults to installed", run.ok && run.run.build === "installed");
+    check("regression run: an unknown outcome is refused", !parseRegressionRun({ job_id: "j", device_id: "d", outcome: "meh" }).ok);
+  }
+
+  // --- the migration: a database whose findings table predates `fixed` ---
+  {
+    closeDb();
+    const dir = mkdtempSync(path.join(tmpdir(), "fleet-findings-migrate-"));
+    try {
+      mkdirSync(dir, { recursive: true });
+      const seed = new DatabaseSync(path.join(dir, "fleet.db"));
+      seed.exec(`CREATE TABLE findings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, fingerprint TEXT NOT NULL UNIQUE, app TEXT NOT NULL, build TEXT NOT NULL,
+        platform TEXT NOT NULL, device_id TEXT NOT NULL, job_id TEXT NOT NULL, last_job_id TEXT, mission_id TEXT NOT NULL,
+        check_name TEXT NOT NULL, subclass TEXT, severity TEXT NOT NULL CHECK (severity IN ('high','medium','low')),
+        title TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', screen TEXT NOT NULL DEFAULT '', screen_name TEXT NOT NULL DEFAULT '',
+        steps TEXT NOT NULL DEFAULT '[]', replay TEXT, artifacts TEXT NOT NULL DEFAULT '{}',
+        first_seen TEXT NOT NULL DEFAULT (datetime('now')), last_seen TEXT NOT NULL DEFAULT (datetime('now')),
+        seen_count INTEGER NOT NULL DEFAULT 1, builds_seen TEXT NOT NULL DEFAULT '[]',
+        verdict TEXT CHECK (verdict IS NULL OR verdict IN ('real','duplicate','not_a_bug','agent_mistake')),
+        verdict_note TEXT, verdict_at TEXT, duplicate_of INTEGER, issue TEXT, issue_state TEXT, issue_at TEXT)`);
+      seed.exec(`INSERT INTO findings (fingerprint, app, build, platform, device_id, job_id, mission_id, check_name, severity, title, verdict, verdict_note, verdict_at)
+                 VALUES ('old-1', 'plants', '1', 'android', 'd', 'j', 'm', 'crash', 'high', 'Old crash', 'real', 'from before', '2026-10-01 08:00:00')`);
+      seed.close();
+      openDb(dir);
+      const r = setVerdict(1, "fixed", null, null, { readArtifact: () => null });
+      check("migration: an old database accepts fixed", r.ok && r.finding.verdict === "fixed", JSON.stringify(r));
+      const h = findingDetail(1, () => null)!.history;
+      check("migration: the verdict given before history existed is in the history",
+        h.length === 2 && h[0].verdict === "real" && h[0].note === "from before" && h[0].at === "2026-10-01T08:00:00Z", JSON.stringify(h));
+    } finally {
+      closeDb();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
 }

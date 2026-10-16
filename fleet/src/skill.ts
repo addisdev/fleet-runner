@@ -15,7 +15,8 @@ const EXIT_MEANING: Record<keyof typeof EXIT, string> = {
   failed: "failed, mixed or cancelled: read `failing_step` and `error` before doing anything else",
   usage: "usage error or invalid spec: fix the flags or the spec; `--validate` names each problem",
   pending: "still running when `--timeout` ran out: `fleetr wait ID` picks it up again",
-  skipped: "skipped: nothing ran (no build for the device, no matching device). Never report this as a pass",
+  skipped:
+    "skipped: the job was claimed but reported `skipped:` instead of running (the app is not installed, the device was locked by another job, no attached device matched a host job, the host was under memory pressure, no Roku password on the host). Never report this as a pass. A spec nothing can run is refused before it runs instead: exit 2 from validation, or 5 when the collector refuses it at enqueue",
   error: "refused or unreachable: no permission, unknown workload or job, or no collector. Report it; do not work around it",
 };
 

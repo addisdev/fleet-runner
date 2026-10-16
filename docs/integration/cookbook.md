@@ -3,15 +3,28 @@
 One complete job spec per workload. **Every file on this page is included
 verbatim from
 [`collector/examples/jobs/`](https://github.com/addisdev/fleet-runner/tree/main/collector/examples/jobs)
-and validated against
-[`job.schema.json`](https://github.com/addisdev/fleet-runner/blob/main/collector/schemas/job.schema.json)
-by `npm test`.** If one stops validating, CI fails — so what you copy from here
-is what the collector accepts.
+and validated by `npm test`** (`scripts/check-examples.ts`) with the same
+check `POST /api/v1/jobs`, and so `fleetr run`, makes: the strict job schema,
+which refuses unknown top-level fields, and the workload's params manifest
+where there is one. The script imports the API's own compiled schemas rather
+than a copy. If an example stops validating, CI fails. Whether a device can run
+it is not checked; that depends on what is attached.
 
-Post any of them to `POST /jobs`:
+Run any of them with `fleetr`:
 
 ```bash
-curl -X POST http://fleet-host.local:8788/jobs \
+fleetr run --spec collector/examples/jobs/benchmark.json --validate   # where it would land
+fleetr run --spec collector/examples/jobs/benchmark.json --id bench-$(date +%s)
+```
+
+The examples carry fixed `job_id`s, so the second run of the same file is
+refused with `duplicate_job` unless `--id` gives it a new one. `--spec` takes
+one job; a chain is several files, enqueued in dependency order (see
+[the chain below](#a-chain-build-install-test)). Without `fleetr`, post the same
+file to `POST /api/v1/jobs`:
+
+```bash
+curl -X POST http://fleet-host.local:8788/api/v1/jobs \
   -H 'content-type: application/json' \
   --data-binary @collector/examples/jobs/benchmark.json
 ```
@@ -182,8 +195,11 @@ shrinking the matrix.
 ```
 
 `account` names a Keychain item on the executor host. The secret itself is never
-in the spec — `POST /jobs` is unauthenticated, so a spec is not a place a
-credential could safely live.
+in the spec: a spec is stored, served by the API and shown on the dashboard to
+anyone who can read jobs, and the collector has no authentication by default
+(see [Authentication](../deploy/auth.md)). Enqueue enforces it, refusing with
+`secret_in_spec` any spec in which `password`, `passwd`, `secret`, `token`,
+`api_key` or `apikey` appears as a key (or as a whole string value).
 
 ### `digest`
 
@@ -208,9 +224,14 @@ idle five minutes, rather than starting an Xcode build while somebody is typing.
 --8<-- "collector/examples/jobs/chain-build-install-test.json"
 ```
 
-Post `build.json`, `install.json` and this, and the last two arrive as
-`waiting`. `${jobs.build-903.artifact}` is substituted at promotion with the
-real hash the build uploaded. A failed build fails both waiters, naming the
+This is the last link of three. Post `build.json`, then an `install` job with
+`"job_id": "install-903"` and `"depends_on": ["build-903"]`, then this, in that
+order, because a dependency must exist before the job that names it. The
+`install.json` example above is a standalone nightly install
+(`install-nightly`), not that middle link; [Publish on
+merge](publish-on-merge.md#chaining-a-build-to-its-own-test) has all three
+specs. The last two arrive as `waiting`. `${jobs.build-903.artifact}` is
+substituted at promotion with the real hash the build uploaded. A failed build fails both waiters, naming the
 cause, rather than leaving them parked forever.
 
 ### `model-convert`

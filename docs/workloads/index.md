@@ -4,7 +4,13 @@ What the fleet can be asked to do. A workload is the `workload` field of a job
 spec, and which agent claims it is decided by
 [capabilities](../concepts.md#capabilities) rather than by anything hardcoded.
 
-![Twenty-eight workloads in three columns by who claims them: on the device, on a host, and on a machine](../img/workloads.png)
+![Thirty-four workloads in three columns by who claims them: on the device, on a host, and on a machine](../img/workloads.png)
+
+The collector ships <!-- count:workloads -->34 workloads. `GET /api/v1/workloads` (or
+`fleetr workloads`) lists the same set with each one's params and an example
+spec, and marks three more names as reserved: `push-latency`, `camera-eval` and
+`desktop-ui-test` are accepted, but no runner in this repository implements
+them yet.
 
 | Workload | Runs on | What it measures |
 |---|---|---|
@@ -24,6 +30,9 @@ spec, and which agent claims it is decided by
 | [`a11y-audit`](host.md#a11y-audit) | host | The accessibility tree diffed against a baseline at the largest dynamic type |
 | [`locale-shots`](host.md#locale-shots) | host | A screenshot flow under every locale, including RTL, as a contact sheet |
 | [`explore`](host.md#explore) | host | A vision model explores tonight's build; reproduced crashes, hangs, dead controls, accessibility and visual defects, filed as findings |
+| [`upgrade-test`](host.md#upgrade-test) | host | Install the version users have, seed it, upgrade in place, and check the data survived |
+| [`size-report`](host.md#size-report) | host | Download, installed and archive size of a published build, with native libraries per ABI |
+| [`tvloop`](host.md#tvloop) | host | tvloop's hardware suite on a Roku the fleet has locked; Fire TV and Android TV replay its flows too when asked |
 | [`web-test`](host.md#web-test) | host | Playwright suites, including on real phone screens |
 | [`web-shots`](host.md#web-shots) | host | Visual regression captures diffed against an accepted baseline |
 | [`web-audit`](host.md#web-audit) | host | Crawl-and-audit with a real browser |
@@ -37,6 +46,7 @@ spec, and which agent claims it is decided by
 | [`dataset-prep`](machine.md#dataset-prep) | machine | An eval set, carrying its licence and source on the row |
 | [`serve`](machine.md#serve) | machine | Host a model for the length of a lease and announce its endpoint |
 | [`shell`](machine.md#shell) | machine | A pinned script, behind an allowlist the owner controls |
+| [`llm-eval`](machine.md#llm-eval) | machine | Scores what a device generated against an eval set, so a fast quantised model is also shown to be right |
 | [`self-check`](machine.md#self-check) | host, machine | The fleet inspecting its own hosts: disk, tool versions, clock drift |
 
 ## How to read these pages

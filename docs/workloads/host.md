@@ -179,6 +179,79 @@ Native libraries group **per ABI** rather than as one `lib/`. `lib/` being huge
 tells you nothing you did not know; `lib/arm64-v8a` being 18 MB of it tells you
 what to split.
 
+## `tvloop`
+
+Runs [tvloop](../explore/surfaces.md#roku-through-tvloop)'s hardware suite
+against a Roku on the executor host's network. tvloop is the Roku development
+CLI and already has a hardware nightly, aimed at a self-hosted Actions runner
+nobody carries; this workload runs the same steps on the fleet instead.
+**tvloop drives, the fleet lends**: tvloop knows how to talk to a Roku, and the
+fleet's part is the device lock, the address, the password and filing what came
+back.
+
+```json
+{ "schema": 1, "job_id": "tvloop-1", "workload": "tvloop", "executor": "host",
+  "targets": { "match": "os ~ 'roku'", "exclusive": true },
+  "params": { "steps": ["doctor", "install", "hardware", "replay"] } }
+```
+
+| Step | What runs | |
+|---|---|---|
+| `doctor` | `tvloop doctor --json` | A failure stops the run |
+| `install` | `tvloop install --force` | Sideloads the checkout's channel into the Roku's one dev slot, **replacing whatever is there**. A failure stops the run |
+| `spike` | `tools/m0-spike.mjs --full` | Opt-in, not in the default: ten sideloads, slow |
+| `hardware` | tvloop's vitest suite with `--testNamePattern hardware` | |
+| `replay` | `tvloop replay --reporter junit` | The JUnit counts become the row's test counts |
+
+The default is doctor, install, hardware, replay. `params.flows` picks which
+flows to replay (default: all of the checkout's `tests/flows`), and
+`params.dir` the checkout, which must be built: `FLEET_TVLOOP_DIR`, then
+`~/tvloop`. A host with no built checkout **fails** the job and says how to
+build one, because that is misconfiguration.
+
+**`exclusive` matters more here than anywhere.** A Roku holds exactly one dev
+channel, so two jobs sideloading onto it at once is a corrupted run, and the
+lock is held around the whole suite.
+
+**The developer password is a Keychain item on the executor host**: service
+`fleet-roku-dev` (`FLEET_ROKU_KEYCHAIN_SERVICE` to change), account `rokudev`.
+
+```bash
+security add-generic-password -s fleet-roku-dev -a rokudev -w
+```
+
+Without it a job of only Rokus is **skipped, not failed**: its row reads
+"skipped: no Roku developer password on this host" with that command, because
+it is a setup step nobody has done yet rather than a broken build. A Keychain
+that refuses access fails the job. The password is passed to tvloop in its
+environment and scrubbed from every log and report before upload, since the
+artifact store is readable by anyone who can open the dashboard.
+
+Only one executor should report the Rokus as its own devices: the host started
+with `FLEET_ROKU=1`.
+
+### Fire TV and Android TV
+
+With `params.androidtv: { "package": "com.example.app.debug" }`, adb devices
+that declare leanback run alongside the Rokus, each through a generated
+`tvloop.toml`. Only `doctor` and `replay` run on them (install, spike and
+hardware are the Roku adapter's), and they need no Roku password.
+`params.androidtv.flows` replays a different set on the TVs.
+
+A green TV row says less than a Roku row. tvloop's Android TV adapter reads no
+logcat, so `assert noErrors` cannot fail there; its launch is `monkey` with
+one random event, so a replay can start with a stray key; and a flow that
+asserts focus or visibility always fails, because it has no Android UI tree.
+
+### What is not proven
+
+The fleet's Roku has never run this suite: its developer password is not in
+the host's Keychain, so no run from the fleet has got past the skip. The step
+sequencing, the skip, the scrubbing and the Android TV path are covered by
+unit tests that fake each step's exit code; the Android TV adapter's caveats
+above were seen driving an Android TV emulator through tvloop, not from this
+workload on a real TV.
+
 ## `ui-test`
 
 Maestro flows or an XCUITest bundle, per device, with the JUnit report parsed
@@ -192,9 +265,63 @@ back into results and uploaded as an artifact.
   "lease": { "ttl_s": 1200 } }
 ```
 
-Flows resolve relative to `flows/` (`FLEET_FLOWS_DIR` to change). `exclusive`
+Flows resolve relative to `examples/flows/` in the executor's working
+directory (`FLEET_FLOWS_DIR` to change). `exclusive`
 takes a device lock for the run, because two suites tapping the same phone is
 not a test.
+
+**A failing Maestro run says which step broke.** The device row's `error` is
+the first failing flow and its assertion, read from the JUnit report
+(`smoke: Assertion is false: "Fleet Runner" is visible`), `test.failing_flow`
+names the flow, and the report itself is the row's artifact
+(`GET /api/v1/artifacts/<sha>/content`). When Maestro produced no report at
+all, the error is its exit code and the last line it printed to stderr, never
+its command line, which carries the test account's password. Until 0.9 the
+reason was in the uploaded report and nowhere else.
+
+### Regression tests from fixed findings
+
+`params.regressions` adds the app's fixed night-QA findings to the run. Set it
+to the app key the findings are filed under (what `fleetr findings` shows in
+the APP column), or `true` to use `app.name`:
+
+```json
+{ "workload": "ui-test", "executor": "host",
+  "app": { "name": "greenfolio-android", "build": "nightly", "sha256": "latest" },
+  "suite": { "kind": "maestro", "flows": "greenfolio/smoke.yaml", "app_id": "com.taylab.greenfolio.smoke" },
+  "params": { "regressions": "greenfolio" },
+  "targets": { "match": "os ~ 'android'", "exclusive": true } }
+```
+
+At run time the executor asks the collector for the app's **active**
+regression flows (`GET /findings/regressions`), and after the suite's own flow
+runs each one whose finding was on the same platform as the device. A finding
+joins by being marked Real and then Fixed; nobody edits the schedule. `flows`
+may be left out to run only the regression flows; a device with none to run is
+then skipped, not passed.
+
+Each stored flow is adapted before it runs: its `appId` becomes the job's
+`suite.app_id` when the job sets one (night QA often explores `.debug`; the
+nightly may test `.smoke`), and a relative `runFlow` (the mission's sign-in
+flow) is resolved under the flows directory. The suite's sign-in variables
+reach the flow as they reach the suite's.
+
+What a run asserts depends on the finding's check:
+
+| Finding | On Android | Elsewhere |
+|---|---|---|
+| `crash`, `anr` | No new crash or ANR of the package in `logcat -b crash` / `am_anr` during the flow. A new one is `reproduced` and **reopens the finding** | Replays without error; the crash is not checked, and the detail says so |
+| Any other check | Replays without error | Replays without error |
+
+"Replays without error" is all a replay can claim for a check whose oracle was
+a model or a heuristic: the flow repeats the steps, not the judgement. A flow
+that fails is `failed` and fails the row, without reopening the finding,
+because a step that no longer replays may be a redesigned screen. tvloop flows
+are skipped (ui-test drives Maestro). Each regression counts as one test in
+the row's `passed`/`failed`, is listed in `test.regressions` with its outcome,
+and a failing one is named in the row's `error`. The regressions run outside
+`params.network` shaping. Not yet run on the lab; see [Regression
+tests](../explore/findings.md#regression-tests).
 
 **iOS UI tests need a Mac with full Xcode.** `simctl` and `devicectl` ship with
 Xcode, not the Command Line Tools, so they run on a different executor from the
@@ -342,8 +469,11 @@ is kept forever.
 review pulls must run daily.** A lazy cadence loses data permanently.
 
 Credentials are Keychain items on the executor host. The job spec names the
-account only, never the secret — `POST /jobs` is unauthenticated, so a spec is
-not a place a credential could safely live. Until the Keychain item exists the
+account only, never the secret: a spec is stored and shown to anyone who can
+read jobs, and the collector has no authentication by default (see
+[Authentication](../deploy/auth.md)), so a spec is not a place a credential
+could safely live. Enqueue refuses a spec carrying a `password`, `token` or
+similar key as `secret_in_spec`. Until the Keychain item exists the
 job fails with instructions rather than silently producing nothing.
 
 ## `digest`

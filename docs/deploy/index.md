@@ -65,9 +65,9 @@ depends on the machine:
     Also run, on macOS, are the older per-component plists in
     `collector/deploy/` and `runner-machine/deploy/`. Those are what the
     reference deployment actually uses today, and they are documented in
-    [headless hosts](headless.md). They are deprecated -- they ship one more
-    release and are then removed in favour of `fleet service` -- but they are
-    the ones with mileage on them.
+    [headless hosts](headless.md). They have been deprecated in favour of
+    `fleet service` since 0.5.0 and still ship in 0.8.0, with no removal date
+    set, because they are the ones with mileage on them.
 
 **One unit, not five.** The old deployment had a plist each for the collector,
 the executor, the iOS executor, the tunnel and the agent. One unit is the
@@ -100,10 +100,11 @@ supervisor, which is the right division of labour.
 
 ## Binding and exposure
 
-**There is no authentication, by design.** Anyone who can reach the collector
+**There is no authentication by default.** Anyone who can reach the collector
 can enqueue a job. `FLEET_DASH_TOKEN` guards the dashboard's mutations but
-`POST /jobs` stays open so `curl` and CI keep working. **Do not put this on the
-internet.**
+`POST /jobs` stays open so `curl` and CI keep working. Scoped tokens are opt-in
+(`FLEET_AUTH=tokens`, and `FLEET_AUTH_PROTOCOL=token` for the runners): see
+[Authentication](auth.md). With auth off, **do not put this on the internet.**
 
 The network is the access control, and `FLEET_BIND` is what decides which
 network that is. It takes a comma-separated list of addresses to answer on and
@@ -120,6 +121,43 @@ wifi, no guest network.
 
 That matters more than it looks, because the LAN-only assumption stops being
 true the moment one of your agents is a laptop that leaves the house.
+
+### The other collector settings
+
+`fleet up` sets the paths below from `~/.fleet`; started by hand, the
+collector resolves the relative defaults against its working directory. The
+port, bind list, tailnet allowlist, data and artifact directories and
+`FLEET_NAME` are covered above and in [Install](../install/index.md).
+
+| Variable | Default | |
+|---|---|---|
+| `FLEET_DISCOVERY` | off (`fleet up` passes `collector.discovery`) | `1` advertises the collector over mDNS, below |
+| `FLEET_PEERS` | none | Comma-separated base URLs of other collectors, for [more than one brain](#more-than-one-brain) |
+| `FLEET_PEER_TOKENS` | none | JSON object of peer URL to a `read` token that peer issued, for a peer with tokens on. See [more than one brain](#more-than-one-brain) |
+| `FLEET_POWER_CONFIG` | `power.json` | The pool-to-smart-plug map, see [Energy](#energy) |
+| `FLEET_SWEEP_MS` | 15000 | How often expired leases are swept |
+| `FLEET_SIMULATOR_TTL_DAYS` | 7 | The same sweep forgets a simulator row (descriptor `kind` or `soc` is `simulator`) offline longer than this. Simulators are recreated under new UUIDs and never come back. Real devices and Android emulators are never forgotten; results and beacons stay either way |
+| `FLEET_SCHEDULER_TICK_MS` | 20000 | How often schedules are evaluated |
+| `FLEET_DASH_DIST` | `dash/dist` | The built dashboard. Missing, the collector serves a placeholder rather than failing |
+| `FLEET_LOG` | `info` | Log level |
+| `FLEET_LOG_FILE` | `~/Library/Logs/fleet-collector.log`; `~/.fleet/logs/collector.log` under `fleet up` | Where the service manager sends the collector's output. The collector does not write it; it reports its size and alerts on it (`log-size`) |
+| `FLEET_TOKENS_FILE` | `$FLEET_DATA_DIR/tokens.json` | See [Authentication](auth.md) |
+
+The intervals (`FLEET_SWEEP_MS`, `FLEET_SCHEDULER_TICK_MS` and
+`FLEET_ALERT_TICK_MS`) must be whole milliseconds, at least 1000. Anything else
+(`15s`, or `15` meaning seconds) is ignored for the default, with a warning in
+the startup log, rather than becoming a timer that fires every few
+milliseconds.
+
+Alert thresholds are `FLEET_ALERT_*`, listed in [Alerts](alerts.md).
+
+Three more belong to the machine agent, not the collector:
+
+| Variable | Default | |
+|---|---|---|
+| `FLEET_DEVICE_TTL_S` | unset: a permanent shelf device | Registers with `ttl_s`, for an agent whose absence is normal. See [the protocol](../protocol.md#ttl_s-if-you-are-temporary). `fleet up` passes `agent.ttlS` |
+| `FLEET_SHELL_ALLOWLIST` | `$FLEET_CACHE_DIR/shell-allowlist.txt` (`~/.fleet/cache/` under `fleet up`) | The sha256 list of scripts the `shell` workload may run. No file, no `shell` capability |
+| `FLEET_SERVE_BIND` | `loopback` | Where the `serve` workload's model server listens when the job does not say: `loopback`, `tailnet`, or this machine's tailnet address. Never a wildcard or a LAN address |
 
 ### mDNS advertising is off by default
 
@@ -189,12 +227,30 @@ brain A is A's job and lands in A's database, whatever device ran it.
 
 `GET /api/peers` lists other brains and `/api/peers/:id/*` proxies one peer's
 read API server to server, which the dashboard's brain switcher uses. The proxy
-rather than CORS is a security decision: there is no authentication, so opening
-the read API cross-origin would let any website in the operator's browser read
-the whole fleet from any tab. Peers are addressed by stable id rather than URL,
+rather than CORS is a security decision: there is no authentication by default
+(see [Authentication](auth.md)), so opening the read API cross-origin would let
+any website in the operator's browser read the whole fleet from any tab. Peers are addressed by stable id rather than URL,
 so a link cannot be turned into a request to an arbitrary host by editing the
 address bar; only an allow-list of endpoints is proxied; and nothing that mutates
 is proxied at all.
+
+**A peer with tokens on** answers the proxy 401 unless this collector sends it
+a token, and each brain issues its own (a token is a hash in that brain's
+`tokens.json`), so the token is per peer. On the peer, create a `read` token
+(`fleet token create brain-a --scope read`); on this collector, map the peer's
+URL, spelled as in `FLEET_PEERS`, to it:
+
+```bash
+FLEET_PEERS=http://fleet-host.local:8788
+FLEET_PEER_TOKENS='{"http://fleet-host.local:8788": "fr_..."}'
+```
+
+It is sent as a bearer token on every request to that peer and never to any
+other. The token of whoever is reading this dashboard is not passed on: it is
+a token for this brain, not that one. A value that is not a JSON object of
+strings maps nothing and says why at startup. Under `fleet up`, set it in the
+environment or in the `env` object of `~/.fleet/config.json`, as for
+`FLEET_AUTH`.
 
 The rule the device side enforces is the one that matters for numbers: **a
 device runs one job at a time, whoever asked.** Two benchmarks at once produce
@@ -294,5 +350,8 @@ Three things are deliberate and worth knowing before you trust a figure:
 - **[Networking](networking.md)** -- the SSH tunnel, why it exists, and network
   shaping.
 - **[The iOS executor](ios-executor.md)** -- standing one up on a Mac with Xcode.
+- **[Exploratory QA on ultra](explore-on-ultra.md)** -- the executor, emulator,
+  simulators and model gateway behind the overnight explore jobs. Listed under
+  Exploratory QA in the navigation.
 - **[Alerts](alerts.md)** -- the rules, and getting a notification somewhere you
   will see it.

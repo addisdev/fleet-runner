@@ -10,8 +10,9 @@
 // is switched off for that app (the precision table at the top), so a wrong
 // verdict costs tomorrow night something, and the buttons say what they mean.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { useApi, type Finding, type FindingDetail as Detail, type FindingList, type FindingPrecision, type FindingVerdict } from "../api.js";
-import { mutate, useMutation } from "../mutate.js";
+import { useApi, useLoad, type Finding, type FindingDetail as Detail, type FindingPrecision, type FindingVerdict } from "../api.js";
+import { change, fleet, read } from "../client.js";
+import { useMutation } from "../mutate.js";
 import { useDeviceNames } from "../names.js";
 import { navigate, useQuery } from "../router.js";
 import {
@@ -28,6 +29,7 @@ export const VERDICT_LABEL: Record<FindingVerdict, string> = {
   duplicate: "Duplicate",
   not_a_bug: "Not a bug",
   agent_mistake: "Agent's mistake",
+  fixed: "Fixed",
 };
 
 const VERDICT_PILL: Record<FindingVerdict, string> = {
@@ -35,6 +37,7 @@ const VERDICT_PILL: Record<FindingVerdict, string> = {
   duplicate: "queued",
   not_a_bug: "cancelled",
   agent_mistake: "cancelled",
+  fixed: "done",
 };
 
 /** reproduced N/N is solid, flaky is a warning, a crash log is its own evidence. */
@@ -166,10 +169,12 @@ export function Findings() {
   const app = q.get("app") ?? "";
   const check = q.get("check") ?? "";
   const status = (STATUSES as readonly string[]).includes(q.get("status") ?? "") ? (q.get("status") as string) : "open";
-  const params = new URLSearchParams({ status });
-  if (app) params.set("app", app);
-  if (check) params.set("check", check);
-  const state = useApi<FindingList>(`/api/findings?${params}`, ["finding"], 60_000);
+  const state = useLoad(
+    `findings ${status} ${app} ${check}`,
+    () => read(fleet.listFindings({ state: status as "open" | "triaged" | "all", app: app || undefined, check: check || undefined, per_page: 100 })),
+    ["finding"],
+    60_000,
+  );
 
   return (
     <>
@@ -178,7 +183,7 @@ export function Findings() {
       <Loaded state={state} what="findings">
         {(d) => (
           <Panel
-            title={`${d.counts.open} open · ${d.counts.triaged} triaged`}
+            title={`${d.facets.counts.open} open · ${d.facets.counts.triaged} triaged`}
             aside={
               <span class="windows">
                 {STATUSES.map((s) => (
@@ -191,19 +196,19 @@ export function Findings() {
             }
           >
             <Filters active={!!(app || check)} onClear={() => setQuery({ app: null, check: null })}>
-              <Select label="app" value={app} options={d.apps} onChange={(v) => setQuery({ app: v })} />
-              <Select label="check" value={check} options={d.checks} onChange={(v) => setQuery({ check: v })} />
+              <Select label="app" value={app} options={d.facets.apps} onChange={(v) => setQuery({ app: v })} />
+              <Select label="check" value={check} options={d.facets.checks} onChange={(v) => setQuery({ check: v })} />
             </Filters>
-            {d.findings.length === 0 ? (
+            {d.items.length === 0 ? (
               <p class="empty">
-                {d.counts.total === 0
+                {d.facets.counts.total === 0
                   ? "Nothing found yet. Night QA posts here after it has replayed a finding on a clean install."
                   : status === "open"
                     ? "Nothing waiting for a verdict."
                     : "No findings match."}
               </p>
             ) : (
-              <FindingRows findings={d.findings} />
+              <FindingRows findings={d.items} />
             )}
           </Panel>
         )}
@@ -231,7 +236,9 @@ const typing = (t: EventTarget | null) => {
 /**
  * The four buttons, the note, and the duplicate picker.
  *
- * r / d / n / a do the same as the buttons. They are ignored straight after a
+ * r / d / n / a / f do the same as the buttons. Fixed is offered only once a
+ * finding is real (the collector refuses it otherwise): it makes the finding's
+ * replay flow a regression test in the app's nightly. They are ignored straight after a
  * `g`, because "g r" is already "go to Results" and a shortcut that filed a
  * verdict on the way out of the page would be a nasty surprise.
  */
@@ -240,19 +247,21 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
   const [picking, setPicking] = useState(false);
   const [dupOf, setDupOf] = useState("");
   const pickRef = useRef<HTMLSelectElement>(null);
-  const others = useApi<FindingList>(picking ? `/api/findings?app=${encodeURIComponent(f.app)}&status=all&limit=200` : null);
+  const others = useLoad(picking ? `findings of ${f.app}` : null, () => read(fleet.listFindings({ app: f.app, state: "all", per_page: 200 })));
 
   const [pending, setPending] = useState<FindingVerdict | null>(null);
+  // Fixed follows real, or a regression test that brought the finding back.
+  const canFix = f.verdict === "real" || f.verdict === "fixed" || f.regression?.state === "active";
   const send = useMutation(async () => {
     const body: Record<string, unknown> = { verdict: pending, note: note.trim() || null };
     if (pending === "duplicate") body.duplicate_of = Number(dupOf);
-    const r = await mutate("POST", `/api/findings/${f.id}/verdict`, body);
+    const r = await change(fleet.setFindingVerdict(String(f.id), body as Parameters<typeof fleet.setFindingVerdict>[1]));
     setPicking(false);
     onDone();
     return r;
   });
   const reopen = useMutation(async () => {
-    const r = await mutate("POST", `/api/findings/${f.id}/verdict`, { verdict: null });
+    const r = await change(fleet.setFindingVerdict(String(f.id), { verdict: null }));
     onDone();
     return r;
   });
@@ -288,7 +297,8 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
         afterG = false;
         return;
       }
-      const v = ({ r: "real", d: "duplicate", n: "not_a_bug", a: "agent_mistake" } as Record<string, FindingVerdict>)[e.key];
+      const v = ({ r: "real", d: "duplicate", n: "not_a_bug", a: "agent_mistake", f: "fixed" } as Record<string, FindingVerdict>)[e.key];
+      if (v === "fixed" && !canFix) return;
       if (v) {
         e.preventDefault();
         judge(v);
@@ -299,9 +309,9 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
       removeEventListener("keydown", onKey);
       clearTimeout(timer);
     };
-  }, [f.id, note]);
+  }, [f.id, note, canFix]);
 
-  const candidates = (others.data?.findings ?? []).filter((o) => o.id !== f.id);
+  const candidates = (others.data?.items ?? []).filter((o) => o.id !== f.id);
   return (
     <Panel
       title="Verdict"
@@ -310,7 +320,7 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
           {VERDICT_LABEL[f.verdict]} · {clock(f.verdict_at)}{" "}
           <button type="button" class="linkish" onClick={() => void reopen.go()}>reopen</button>
         </span>
-      ) : <span class="faint">keys: r d n a</span>}
+      ) : <span class="faint">keys: r d n a f</span>}
     >
       <div class="verdicts">
         {(Object.keys(VERDICT_LABEL) as FindingVerdict[]).map((v) => (
@@ -318,12 +328,14 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
             key={v}
             tone={f.verdict === v ? "primary" : undefined}
             busy={send.busy && pending === v}
+            disabled={v === "fixed" && !canFix}
             onClick={() => judge(v)}
             title={{
               real: "A bug in the app. Counts towards this check's precision.",
               duplicate: "The same problem as another finding. Left out of precision.",
               not_a_bug: "The app is fine; the check was wrong. Counts against this check.",
               agent_mistake: "The model did something silly and the app reacted correctly. Counts against this check.",
+              fixed: "Real, and a fix has merged. Its replay flow joins the app's nightly ui-test as a regression test. Only after Real.",
             }[v]}
           >
             <kbd>{v === "not_a_bug" ? "n" : v[0]}</kbd> {VERDICT_LABEL[v]}
@@ -361,8 +373,8 @@ function VerdictBox({ f, onDone }: { f: Detail; onDone: () => void }) {
 
 /** The next finding still waiting for a verdict, so a morning's triage is a run of keystrokes. */
 function NextOpen({ f }: { f: Detail }) {
-  const list = useApi<FindingList>(`/api/findings?status=open&limit=200`, ["finding"]);
-  const next = list.data?.findings.find((o) => o.id !== f.id);
+  const list = useLoad("findings open", () => read(fleet.listFindings({ state: "open", per_page: 200 })), ["finding"]);
+  const next = list.data?.items.find((o) => o.id !== f.id);
   if (!list.data) return null;
   return next ? (
     <Link to={`/findings/${next.id}`} class="next-open">next open: {next.title} →</Link>
@@ -398,8 +410,44 @@ function IssuePanel({ issue }: { issue: NonNullable<Finding["issue"]> }) {
   );
 }
 
+const REGRESSION_LABEL: Record<NonNullable<Detail["regression"]>["state"], string> = {
+  candidate: "candidate — joins the nightly when marked fixed",
+  active: "active — in the nightly",
+  retired: "retired",
+};
+
+/** The regression test a real finding became, and the verdict history that moved it. */
+function RegressionPanel({ r, history }: { r: NonNullable<Detail["regression"]>; history: Detail["history"] }) {
+  return (
+    <Panel
+      title="Regression test"
+      aside={<Pill kind={r.state === "active" ? "done" : r.state === "candidate" ? "queued" : "cancelled"}>{REGRESSION_LABEL[r.state]}</Pill>}
+    >
+      <p class="empty">
+        {r.kind} flow · {r.asserts === "no_crash" ? "asserts the app does not crash during it" : "asserts only that it replays without error"}
+        {" "}· run {r.runs}×
+        {r.last_outcome && <> · last {r.last_outcome}{r.last_run_at ? ` ${agoFrom(r.last_run_at)}` : ""}</>}
+        {r.last_job_id && <> in <Link to={`/jobs/${encodeURIComponent(r.last_job_id)}`}>{r.last_job_id}</Link></>}
+      </p>
+      {r.last_detail && <p class="stub">{r.last_detail}</p>}
+      {history.length > 0 && (
+        <ul class="dup-list">
+          {history.map((h, i) => (
+            <li key={i}>
+              <span class="faint">{clock(h.at)}</span>{" "}
+              {h.event === "regressed" ? "regressed" : h.verdict ? VERDICT_LABEL[h.verdict] : "reopened"}
+              {h.actor && <span class="faint"> · {h.actor}</span>}
+              {h.note && <> — {h.note}</>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
 export function FindingPage({ id }: { id: string }) {
-  const state = useApi<Detail>(`/api/findings/${encodeURIComponent(id)}`, ["finding"]);
+  const state = useLoad(`finding ${id}`, () => read(fleet.getFinding(id)), ["finding"]);
   const names = useDeviceNames();
 
   return (
@@ -493,6 +541,8 @@ export function FindingPage({ id }: { id: string }) {
                 </ul>
               </Panel>
             )}
+
+            {f.regression && <RegressionPanel r={f.regression} history={f.history} />}
 
             {f.issue && <IssuePanel issue={f.issue} />}
 

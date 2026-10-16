@@ -6,11 +6,16 @@ SQLite file. One thing to keep alive, one URL, no CORS.
 | | |
 |---|---|
 | ![Overview](img/overview.png) | ![Devices](img/devices.png) |
-| **Overview** — the fleet and the queue at a glance, and what is running now | **Devices** — every phone on the shelf with battery, thermal state and what it is doing |
+| **Overview** — the fleet and the queue at a glance, and what is running now | **Devices** — every device on the shelf with battery, thermal state and what it is doing |
 | ![Jobs](img/jobs.png) | ![Results](img/results.png) |
 | **Jobs** — the queue, with a composer and cancel/retry | **Results** — benchmark trends, eval accuracy, UI-test matrices, drain curves |
 | ![Visual](img/visual.png) | ![Alerts](img/alerts.png) |
 | **Visual** — every page across every profile, diffed against its accepted baseline | **Alerts** — one row per condition for as long as it holds, with acknowledge and snooze |
+| ![Findings](img/findings.png) | |
+| **Findings** — what an [`explore`](explore/index.md) night reproduced, with a verdict for each | |
+
+These screenshots are from 2026-09-05. They predate the device drawings
+described below, and there is none of the Findings screen.
 
 ## Building it
 
@@ -36,14 +41,53 @@ button for each one. Device detail has a 24 h
 battery and thermal chart; job detail has per-device results, beacons and
 artifacts.
 
+**The Devices screen draws each device as the object it is**: one of 22
+drawings, from phones and tablets through Roku boxes and sticks, an Apple TV,
+laptops, watches and a headset to a board and a browser. The drawing is chosen
+from the model string first, because agents that predate the `platform` field
+are reported as `ios` or `android`: an Apple TV or Apple Watch arrives as
+`ios`, and a Roku registered by an executor older than 0.9 as `android`.
+
+**A skipped job has a grey chip**, neither green nor red: it was claimed and
+nothing ran. The Jobs status filter has a `skipped` option with its count, and
+the Overview's queue panel shows **skipped 24h** beside done and failed rather
+than inside done. See [Skipped is not done](concepts.md#skipped-is-not-done).
+
 **Filters live in the URL**, so a filtered view is a link you can send. Jobs can
 be composed, enqueued, cancelled, retried and reprioritised; devices can be
 renamed, annotated and re-pooled; schedules enabled, fired now and deleted;
 artifacts uploaded and garbage-collected.
 
+**The composer enqueues through `POST /api/v1/jobs`**, so the spec is checked
+strictly: an unknown top-level field, or params the workload's manifest does
+not allow, is refused with each problem named by path, where the older
+`POST /api/jobs` took the spec and let the job fail later. The curl it shows
+is the same request. Jobs it enqueues record `source: dash`.
+
+**Findings read and judge through `/api/v1/findings`**, so a verdict from the
+dashboard is the same call, with the same refusals, as `fleetr verdict` and
+`fleet_verdict`. The precision table still reads `/api/findings/precision`,
+which has no `/api/v1` counterpart.
+
 Alerts appear as a banner on every screen. The layout works on a phone, and `?`
 lists the keyboard shortcuts — `g j` jobs, `g d` devices, `g f` findings, `g n` new job,
-`/` search.
+`/` search, and on a finding `r`, `d`, `n`, `a` or `f` for its verdict (real,
+duplicate, not a bug, the agent's mistake, fixed). Fixed is offered only once a
+finding is real, and a finding with a regression test shows its state, last
+run and verdict history in a panel of its own.
+
+## When the collector wants a token
+
+If the collector runs with `FLEET_AUTH=tokens`, or has `FLEET_DASH_TOKEN` set,
+and this browser holds no token, every screen shows a banner with a field to
+paste one. With `FLEET_AUTH=tokens` nothing can be seen or changed without it;
+`fleet token create NAME --scope read` on the collector's host makes one, and
+`run` or `admin` lets you change things too. With only `FLEET_DASH_TOKEN`,
+reads work and the banner asks for that value before anything can be changed.
+The token is kept in the browser's local storage and sent as `X-Fleet-Token`.
+With tokens on it is also exchanged for an HttpOnly session cookie that the
+collector honours for reads only, so images and the live stream work. See
+[Authentication](deploy/auth.md).
 
 ## Naming devices
 

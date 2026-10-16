@@ -2,27 +2,11 @@
 // D4 — but the legacy dashboard listed every schedule including the disabled
 // ones, and the overview only shows the next few enabled, so without this page
 // a disabled nightly run is invisible in the SPA.
-import { useApi } from "../api.js";
+import { useLoad } from "../api.js";
+import { fleet, read, type Schedule } from "../client.js";
 import { mutate, useMutation } from "../mutate.js";
 import { navigate } from "../router.js";
 import { Actions, Button, ConfirmButton, ErrorBox, Json, Loaded, Panel, Pill, Stat, clock, duration } from "../ui.js";
-
-type Schedule = {
-  id: string;
-  cron: string;
-  enabled: boolean;
-  last_run: string | null;
-  next_run: string | null;
-  next_run_in_s: number | null;
-  prev_expected: string | null;
-  missed: boolean;
-  late_by_s: number | null;
-  workload: string | null;
-  executor: string | null;
-  fanout: boolean;
-  pool: string | null;
-  template: Record<string, unknown>;
-};
 
 function ScheduleActions({ s, onDone }: { s: Schedule; onDone: () => void }) {
   const toggle = useMutation(async () => {
@@ -62,7 +46,12 @@ function ScheduleActions({ s, onDone }: { s: Schedule; onDone: () => void }) {
 }
 
 export function Schedules() {
-  const state = useApi<{ schedules: Schedule[] }>("/api/schedules", ["schedule", "job"], 30_000);
+  const state = useLoad(
+    "schedules",
+    () => read(fleet.listSchedules()).then((l) => ({ schedules: l.items })),
+    ["schedule", "job"],
+    30_000,
+  );
 
   return (
     <>

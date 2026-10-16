@@ -32,7 +32,7 @@ export function metricsText(): string {
   for (const d of devices) if (!isExpired(d, d.age_s)) byStatus[deviceStatus(d.age_s)]++;
 
   const jobs = db.prepare("SELECT status, COUNT(*) AS n FROM jobs GROUP BY status").all() as { status: string; n: number }[];
-  const jobCounts: Record<string, number> = { waiting: 0, queued: 0, claimed: 0, done: 0, failed: 0, cancelled: 0 };
+  const jobCounts: Record<string, number> = { waiting: 0, queued: 0, claimed: 0, done: 0, failed: 0, cancelled: 0, skipped: 0 };
   for (const j of jobs) jobCounts[j.status] = j.n;
 
   const oldest = db.prepare(`SELECT MAX(${AGE("created_at")}) AS s FROM jobs WHERE status = 'queued'`).get() as { s: number | null };
@@ -57,7 +57,7 @@ export function metricsText(): string {
     family("fleet_queue_oldest_seconds", "gauge", "Age of the oldest queued job; 0 when nothing is queued.", [[{}, oldest.s ?? 0]]),
     family("fleet_jobs_finished_24h", "gauge", "Jobs that finished in the last 24 hours, by workload and status.", finished.map((f) => [{ workload: f.workload, status: f.status }, f.n])),
     family("fleet_executors_live", "gauge", "Host executors that polled in the last two minutes.", [[{}, executors.n]]),
-    family("fleet_device_success_ratio_24h", "gauge", "done / (done + failed) per device over the last 24 hours.", success.map((s) => [{ device_id: s.device }, s.n ? s.ok / s.n : 0])),
+    family("fleet_device_success_ratio_24h", "gauge", "done / (done + failed) per device over the last 24 hours. Skipped jobs count as neither: nothing ran.", success.map((s) => [{ device_id: s.device }, s.n ? s.ok / s.n : 0])),
     family("fleet_alerts_open", "gauge", "Open alerts by severity.", alerts.map((a) => [{ severity: a.severity }, a.n])),
     family("fleet_artifacts", "gauge", "Artifacts recorded.", [[{}, artifacts.n]]),
     family("fleet_artifact_bytes", "gauge", "Total size of recorded artifacts.", [[{}, artifacts.bytes]]),

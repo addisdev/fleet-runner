@@ -10,18 +10,7 @@ in Spanish. A model reads each screenshot and picks the next action; the
 harness checks that action, performs it, and looks for trouble after every
 step. Nothing it sees is believed until it happens again on a clean install.
 
-```mermaid
-flowchart TD
-  A[Tonight's build] --> B[Mission cards]
-  B --> C{{"Look, decide, act<br/>(the model)"}}
-  C --> D[Checks after every step]
-  D -->|candidate| E[Replay twice on a clean install]
-  E -->|reproduced| F[Finding]
-  E -->|not reproduced| X[Dropped]
-  F --> G[Findings page, digest, optional issue]
-  G -->|your verdict| H[Precision per check]
-  H -->|under 30%| D
-```
+![One night of exploratory QA: tonight's build and the mission cards go to the model, which looks, decides and acts while checks look for trouble after every step; a candidate is replayed twice on a clean install and becomes a finding only if it reproduces at least once or was a crash with a log, otherwise it is dropped; findings go to the Findings page, the digest and optionally an issue, and your verdicts give each check a precision that switches it off for that app under 30% once ten are judged](../img/explore-night.png)
 
 ## What you get in the morning
 
@@ -138,9 +127,15 @@ a second report. Your verdicts decide which checks keep running.
 
 ## Honest status
 
-Built and tested on 2 October 2026, before the Mac Studio it is meant to run on
-had arrived. Every real-device run so far used **Qwen3.5-2B** as a stand-in
-model on a laptop, so those runs say the harness works and say nothing about how
-good the intended model is. The intended driver is **Holo4 35B-A3B** (Apache
-2.0); every Holo4 number in these pages is the vendor's own until
-[the measurements](measuring.md) are taken on ultra.
+Built and tested on 2 October 2026 on a laptop, with **Qwen3.5-2B** standing in
+for the real model. Those runs say the harness works and nothing about how good
+the intended model is.
+
+On 8 October the intended driver, **Holo4 35B-A3B** (Apache 2.0), was
+[measured on ultra](../deploy/explore-on-ultra.md#measured-on-8-october-2026):
+100 of 100 pointing targets, a median whole step of 6.8 s, and a tool call on
+all 40 steps of a mission once `tool_choice` was `required`. Its first
+bug-garden mission filed BG-01 and BG-03, and a night through the brain filed
+BG-16, each reproduced 2/2. That is one model on one fixture app. No
+model-driven night has run on an Apple surface yet, and the phase exits in the
+[ultra runbook](../deploy/explore-on-ultra.md) are still the bar.
