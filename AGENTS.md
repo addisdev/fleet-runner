@@ -11,7 +11,7 @@ from an agent, see [`skills/fleet-runner/SKILL.md`](skills/fleet-runner/SKILL.md
 | `collector/` | The brain: Fastify + `node:sqlite`, the queue, the dashboard (`dash/`), the host executor |
 | `collector/src/workloads/explore/` | Exploratory QA: a vision model drives an app from mission cards (`collector/examples/missions/`); see `docs/explore/internals.md` |
 | `collector/src/api/v1/` | The control API. `routes.ts` is the single route table: it registers the routes, generates `openapi.json` and the typed client |
-| `collector/src/client/` | The generated client (`api.gen.ts`) and its transport. The CLI and the MCP server use nothing else |
+| `collector/src/client/` | The generated client (`api.gen.ts`) and its transport. The CLI and the MCP server use nothing else; the dashboard (`dash/src/client.ts`) uses it for everything `/api/v1` offers, and `scripts/check-dash-requests.ts` fails the suite if it calls a deprecated route |
 | `fleet/` | The `fleet` / `fleetr` command: runs a brain or a runner, plus the work commands, `fleet mcp` and the remote gateway |
 | `desktop/` | A Tauri menu-bar app around `fleet`. A front door, not a runner; compiled in CI on macOS and launched in CI on Linux (`desktop/ci/launch-smoke.sh`), never run on a Mac |
 | `runner-machine/`, `runner-android/`, `runner-ios/`, `runner-roku/`, `collector/runner-web/` | Runners. They speak the runner protocol (`/devices/register`, `/devices/:id/next-job`, `/results`), not `/api/v1` |

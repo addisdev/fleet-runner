@@ -1,4 +1,5 @@
-import { useApi, type Job, type JobList } from "../api.js";
+import { useLoad, type Job } from "../api.js";
+import { fleet, read } from "../client.js";
 import { useQuery } from "../router.js";
 import { Workload } from "../icons.js";
 import { useDeviceNames } from "../names.js";
@@ -92,20 +93,19 @@ export function Jobs() {
   const hasError = q.get("has_error") === "true";
   const page = Number(q.get("page") ?? 1) || 1;
 
-  const params = new URLSearchParams();
-  for (const [k, v] of [
-    ["status", status],
-    ["workload", workload],
-    ["executor", executor],
-    ["pool", pool],
-    ["device", device],
-    ["q", search],
-    ["has_error", hasError ? "true" : ""],
-    ["page", page > 1 ? String(page) : ""],
-  ] as const)
-    if (v) params.set(k, v);
+  const query = {
+    status: status || undefined,
+    workload: workload || undefined,
+    // The URL is typed by people; anything but the two executors is no filter, as before.
+    executor: executor === "device" || executor === "host" ? (executor as "device" | "host") : undefined,
+    pool: pool || undefined,
+    device: device || undefined,
+    q: search || undefined,
+    has_error: hasError || undefined,
+    page: page > 1 ? page : undefined,
+  };
 
-  const state = useApi<JobList>(`/api/jobs${params.toString() ? `?${params}` : ""}`, ["job", "result"], 30_000);
+  const state = useLoad(`jobs ${JSON.stringify(query)}`, () => read(fleet.listJobs(query)), ["job", "result"], 30_000);
   const active = !!(status || workload || executor || pool || device || search || hasError);
 
   return (
@@ -132,16 +132,16 @@ export function Jobs() {
                   // 'waiting' leads because it is the one status a person goes
                   // looking for: a chain that has not started is invisible in
                   // every other view, including the overview's queue depth.
-                  options={["waiting", "queued", "claimed", "done", "failed", "skipped", "cancelled"].map((s) => ({
+                  options={(["waiting", "queued", "claimed", "done", "failed", "skipped", "cancelled"] as const).map((s) => ({
                     value: s,
-                    label: `${s} (${d.status_counts[s] ?? 0})`,
+                    label: `${s} (${d.facets.status_counts[s] ?? 0})`,
                   }))}
                   onChange={(v) => setQuery({ status: v })}
                 />
 
-                <Select label="workload" value={workload} options={d.workloads} onChange={(v) => setQuery({ workload: v })} />
+                <Select label="workload" value={workload} options={d.facets.workloads} onChange={(v) => setQuery({ workload: v })} />
                 <Select label="executor" value={executor} options={["device", "host"]} onChange={(v) => setQuery({ executor: v })} />
-                <Select label="pool" value={pool} options={d.pools} onChange={(v) => setQuery({ pool: v })} />
+                <Select label="pool" value={pool} options={d.facets.pools} onChange={(v) => setQuery({ pool: v })} />
                 <Search label="find" value={search} placeholder="job id" onChange={(v) => setQuery({ q: v })} />
                 <label class="field checkbox">
                   <input type="checkbox" checked={hasError} onChange={(e) => setQuery({ has_error: (e.target as HTMLInputElement).checked ? "true" : null })} />
@@ -159,12 +159,12 @@ export function Jobs() {
             </Panel>
 
             <Panel title={`${d.total} job${d.total === 1 ? "" : "s"}`}>
-              {d.jobs.length === 0 ? (
+              {d.items.length === 0 ? (
                 <p class="empty">No job matches these filters.</p>
               ) : (
                 <>
                   <div class="scroll">
-                    <JobRows jobs={d.jobs} />
+                    <JobRows jobs={d.items} />
                   </div>
                   <Pager page={d.page} pages={d.pages} total={d.total} onPage={(p) => setQuery({ page: String(p) })} />
                 </>

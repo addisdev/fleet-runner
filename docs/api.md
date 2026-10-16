@@ -2,8 +2,12 @@
 
 Three audiences. **Scripts, CI, the CLI and AI agents** use the control API
 under `/api/v1`. **Runners** use [the protocol](protocol.md), and that is the
-only part a runner needs. **The dashboard** uses the unversioned `/api/*`
-routes described further down, which predate `/api/v1`.
+only part a runner needs. **The dashboard** reads devices, jobs, templates,
+schedules and its alert banner through `/api/v1`, with the generated client,
+and uses the unversioned `/api/*` routes described further down for what
+`/api/v1` does not offer yet: the Overview, results, findings, evals, visual
+diffs, system, events, the live stream, and every change other than enqueue,
+cancel and retry.
 
 ## Control API (`/api/v1`)
 
@@ -17,10 +21,10 @@ disagree: the test suite fails if they do.
 |---|---|---|
 | `GET /api/v1/health` | none | Version, auth mode, `api: "v1"` |
 | `GET /api/v1/whoami` | none | Who the collector thinks you are, and your scopes |
-| `GET /api/v1/devices` · `/devices/{id}` | read | The shelf, with status (`online`, `stale`, `offline`) and current job |
+| `GET /api/v1/devices` · `/devices/{id}` | read | The shelf, with status (`online`, `stale`, `offline`) and current job. The list carries `facets` (`pools`, `platforms`, `kinds`) over every device, not only the filtered ones |
 | `GET /api/v1/workloads` · `/workloads/{name}` | read | What the fleet can run: executor, params schema, a valid example spec, how many live agents can take it |
 | `GET /api/v1/templates` | read | Saved job templates |
-| `GET /api/v1/jobs` | read | Jobs; filter by `status` (`waiting`, `queued`, `claimed`, `done`, `failed`, `cancelled`, `skipped`), `workload`, `executor` (`device` or `host`), `device`, `pool`, `source`, `requested_by`, `mine=true`, `q` (substring of the job id), `from`/`to` |
+| `GET /api/v1/jobs` | read | Jobs; filter by `status` (`waiting`, `queued`, `claimed`, `done`, `failed`, `cancelled`, `skipped`), `workload`, `executor` (`device` or `host`), `device`, `pool`, `source`, `requested_by`, `mine=true`, `q` (substring of the job id), `from`/`to`, `has_error=true`. The list carries `facets` over the whole table: `status_counts`, `workloads`, `pools` |
 | `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs. 422 `no_capable_agent` when no live agent declares the workload (or backend); 400 `no_matching_devices` for a fan-out that matches nothing, and 400 `no_build` when `latest` names no published build |
 | `POST /api/v1/jobs/validate` | run | Dry run: schema errors by path, the devices it would land on, warnings. Always 200 |
 | `GET /api/v1/jobs/{id}` | read | One job, with its spec |
@@ -46,7 +50,7 @@ disagree: the test suite fails if they do.
 **Job specs are validated strictly** against `job.schema.json`: an unknown
 top-level field is refused rather than ignored, so a typo is an error and not
 a setting that silently did nothing. A workload's params are checked against
-its manifest. This is `/api/v1/jobs` (and so `fleetr run`) only: the legacy
+its manifest. This is `/api/v1/jobs` (and so `fleetr run` and the dashboard's composer) only: the legacy
 `POST /jobs` and `POST /api/jobs` do not refuse unknown fields. They do make
 the same two auth checks `/api/v1` makes with tokens on (the `shell` workload
 needs `admin`; cancel and retry are for the job's owner or `admin`); see
@@ -263,6 +267,11 @@ report; both stay visible in `GET /api/devices`.
 send `X-Fleet-Token`. With `FLEET_AUTH=tokens` it steps aside: the scoped token
 has already been checked, and every mutation needs `run` or `admin` (see
 [Authentication](deploy/auth.md)).
+
+The dashboard's composer enqueues through `POST /api/v1/jobs`, which the guard
+does not cover, as it does not cover `POST /jobs`. `/api/v1` cancel and retry
+do carry it: they hand the request to the guarded routes above, `X-Fleet-Token`
+included.
 
 **It is deliberately unset on the reference deployment.** The collector is LAN
 and tailnet only with auth off, `POST /jobs` is open then anyway so `curl` and

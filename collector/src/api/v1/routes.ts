@@ -125,7 +125,9 @@ async function inner<T>(app: FastifyInstance, req: FastifyRequest, method: "GET"
   const body = res.body ? (JSON.parse(res.body) as Record<string, unknown>) : {};
   if (res.statusCode >= 400) {
     const message = typeof body.error === "string" ? body.error : `upstream ${res.statusCode}`;
-    const code: ErrorCode = res.statusCode === 404 ? "not_found" : res.statusCode === 409 ? "conflict" : res.statusCode === 400 ? "bad_request" : "internal";
+    const code: ErrorCode =
+      res.statusCode === 404 ? "not_found" : res.statusCode === 409 ? "conflict" : res.statusCode === 400 ? "bad_request"
+        : res.statusCode === 401 ? "unauthorized" : res.statusCode === 403 ? "forbidden" : "internal";
     throw new ApiError(res.statusCode, code, message);
   }
   return body as T;
@@ -537,10 +539,12 @@ export const ROUTES: Route[] = [
       { name: "expired", in: "query", type: "boolean", description: "Include expired ephemeral agents." },
       ...PAGE,
     ],
-    responses: [{ status: 200, description: "Devices.", schema: "list:Device" }],
+    responses: [{ status: 200, description: "Devices, and the facets a filter menu is built from.", schema: "DeviceList" }],
     handler: async ({ app, req, q }) => {
-      const body = await inner<{ devices: unknown[] }>(app, req, "GET", `/api/devices${qs(q, ["status", "pool", "platform", "kind", "simulator", "q", "expired"])}`);
-      return pageOf(body.devices, q);
+      const body = await inner<{ devices: unknown[]; pools: string[]; platforms: string[]; kinds: string[] }>(
+        app, req, "GET", `/api/devices${qs(q, ["status", "pool", "platform", "kind", "simulator", "q", "expired"])}`,
+      );
+      return { ...pageOf(body.devices, q), facets: { pools: body.pools, platforms: body.platforms, kinds: body.kinds } };
     },
   },
   {
@@ -609,17 +613,24 @@ export const ROUTES: Route[] = [
       { name: "q", in: "query", type: "string", description: "Substring of the job id." },
       { name: "from", in: "query", type: "string", description: "Created at or after (ISO 8601)." },
       { name: "to", in: "query", type: "string", description: "Created at or before (ISO 8601)." },
+      { name: "has_error", in: "query", type: "boolean", description: "true: only jobs with a last_error." },
       ...PAGE,
     ],
-    responses: [{ status: 200, description: "Jobs.", schema: "list:Job" }],
+    responses: [{ status: 200, description: "Jobs, and the facets a filter menu is built from.", schema: "JobList" }],
     handler: async ({ app, req, q }) => {
       const query: Query = { ...q };
       if (q.mine === true) query.requested_by = authOf(req).actor ?? "\u0000nobody";
-      const body = await inner<{ jobs: unknown[]; page: number; per_page: number; total: number }>(
+      const body = await inner<{
+        jobs: unknown[]; page: number; per_page: number; total: number;
+        status_counts: Record<string, number>; workloads: string[]; pools: string[];
+      }>(
         app, req, "GET",
-        `/api/jobs${qs(query, ["status", "workload", "executor", "device", "pool", "requested_by", "source", "q", "from", "to", "page", "per_page"])}`,
+        `/api/jobs${qs(query, ["status", "workload", "executor", "device", "pool", "requested_by", "source", "q", "from", "to", "has_error", "page", "per_page"])}`,
       );
-      return list(body.jobs, body.page, body.per_page, body.total);
+      return {
+        ...list(body.jobs, body.page, body.per_page, body.total),
+        facets: { status_counts: body.status_counts, workloads: body.workloads, pools: body.pools },
+      };
     },
   },
   {
