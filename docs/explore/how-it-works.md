@@ -4,32 +4,7 @@ One `explore` job is one night on one or more devices. For each device it runs
 mission cards in order until the night's budget is spent, then confirms what it
 found and files what holds up.
 
-```mermaid
-sequenceDiagram
-  participant E as Executor (explore)
-  participant D as Device (actuator)
-  participant M as Model (driver)
-  participant J as Judge
-  participant C as Collector
-  E->>D: reset (install, clear data, launch, sign in)
-  loop each step, until answer, budget, time or stuck
-    E->>D: observe (screenshot, tree, foreground, focus)
-    E->>E: screen map, oracle checks
-    E-->>J: new screen? judge it (once per screen)
-    E->>M: screenshot + harness notes
-    M-->>E: tool calls
-    E->>E: snap and leash each action
-    E->>D: act, settle
-    E->>D: crashes since last step
-    E-->>C: beacon (renews the lease)
-  end
-  E->>J: goal met? (cards with a success line)
-  loop each candidate, worst first
-    E->>D: reset, replay the steps, ask the check again (x2)
-  end
-  E->>C: POST /findings (reproduced, or a crash)
-  E->>C: result row with metrics
-```
+![One mission as a sequence between the executor, the device, the model, the judge and the collector: reset the device; then each step observe, place the screen and run the checks, have the judge look at a new screen, send the model the screenshot and get tool calls back, snap and leash the actions, act, read the crashes and beacon the collector; after the mission ask the judge whether the goal was met, replay each candidate twice, and post the findings and the result row](../img/explore-step.png)
 
 ## Before the first step
 

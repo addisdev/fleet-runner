@@ -10,18 +10,7 @@ in Spanish. A model reads each screenshot and picks the next action; the
 harness checks that action, performs it, and looks for trouble after every
 step. Nothing it sees is believed until it happens again on a clean install.
 
-```mermaid
-flowchart TD
-  A[Tonight's build] --> B[Mission cards]
-  B --> C{{"Look, decide, act<br/>(the model)"}}
-  C --> D[Checks after every step]
-  D -->|candidate| E[Replay twice on a clean install]
-  E -->|reproduced| F[Finding]
-  E -->|not reproduced| X[Dropped]
-  F --> G[Findings page, digest, optional issue]
-  G -->|your verdict| H[Precision per check]
-  H -->|under 30%| D
-```
+![One night of exploratory QA: tonight's build and the mission cards go to the model, which looks, decides and acts while checks look for trouble after every step; a candidate is replayed twice on a clean install and becomes a finding only if it reproduces at least once or was a crash with a log, otherwise it is dropped; findings go to the Findings page, the digest and optionally an issue, and your verdicts give each check a precision that switches it off for that app under 30% once ten are judged](../img/explore-night.png)
 
 ## What you get in the morning
 

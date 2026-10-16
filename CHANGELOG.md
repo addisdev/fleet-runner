@@ -60,6 +60,17 @@ a CI job fails when they disagree.
 - **The desktop app is versioned with everything else.** `scripts/version.mjs`
   now writes `desktop/src-tauri/Cargo.toml` and `tauri.conf.json` (they said
   0.5.0), so the CI version check covers them. Both say 0.8.0.
+- **The explore docs' three diagrams are drawn, not generated.** The night,
+  one mission's sequence and the code map were mermaid blocks; they are now
+  figures in `docs/figures/` rendered to PNG like the rest
+  (`explore-night`, `explore-step`, `explore-code`). The docs workflow fails on
+  a mermaid fence under `docs/`, and `mkdocs.yml` no longer configures one.
+- **The workloads figure shows all 34 shipped workloads.** It had 28; `enrol`,
+  `explore`, `upgrade-test`, `size-report`, `tvloop` and `llm-eval` are added.
+- **`devices.png` is the new device drawings, and there is a `findings.png`.**
+  Both are captured read-only from a running brain by the new
+  `npm run shoot:live`, filtered to what was online and to the `bug-garden`
+  fixture app; docs/brand.md says why a throwaway collector cannot make them.
 
 ### Fixed
 
