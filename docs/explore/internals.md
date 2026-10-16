@@ -47,22 +47,7 @@ The model speaks 0–1000; `convertCall` maps to pixels; each actuator maps
 pixels to its own input units (device pixels on Android, points on Apple
 devices).
 
-```mermaid
-flowchart TB
-  subgraph Executor
-    IDX[index.ts<br/>per device, per mission] --> LOOP[loop.ts<br/>runMission / confirm]
-    LOOP --> MODEL[model.ts<br/>Conversation]
-    LOOP --> JUDGE[judge.ts]
-    LOOP --> LEASH[leash.ts]
-    LOOP --> MAP[screenmap.ts]
-    LOOP --> ACT{{actuators/}}
-    IDX --> REP[report.ts, replay.ts]
-  end
-  ACT --> ADB[adb] & FD[FleetDriver over HTTP] & TV[tvloop adapter]
-  MODEL & JUDGE --> GW[(gateway<br/>pilot / vision)]
-  IDX -->|POST /findings, /results, /artifacts| COL[(Collector)]
-  COL --> DASH[Findings page]
-```
+![The explorer's code map: index.ts calls loop.ts and report.ts and replay.ts; loop.ts uses model.ts, judge.ts, leash.ts and screenmap.ts each step and actuators/ to reach the device over adb, FleetDriver or tvloop; model.ts and judge.ts call the gateway's pilot and vision models; index.ts posts findings, results and artifacts to the collector and its Findings page](../img/explore-code.png)
 
 ## Tests
 
