@@ -138,11 +138,10 @@ something a runner can do without the collector shipping a release.
 
 ## What it can run
 
-![Twenty-eight workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
+![Thirty-four workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
 
-<!-- count:workloads -->Thirty-four workloads (the figure predates six of them, `explore` and `tvloop`
-among them), and the column a workload sits in is the answer to "who can
-physically do this". A benchmark runs inside the app on the phone. An
+<!-- count:workloads -->Thirty-four workloads, and the column a workload sits in is the answer to
+"who can physically do this". A benchmark runs inside the app on the phone. An
 install needs a cable and a Mac. A build needs a checkout and a toolchain.
 Each has [its own page](https://addisdev.github.io/fleet-runner/workloads/),
 saying what it measures and what it refuses to guess.

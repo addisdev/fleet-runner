@@ -34,6 +34,22 @@ a CI job fails when they disagree.
   the shipped entries in `collector/src/workloads/catalog.ts`. The collector's
   suite checks that reading against the real `CATALOG`. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
 
+### Changed
+
+- **The explore docs' three diagrams are drawn, not generated.** The night,
+  one mission's sequence and the code map were mermaid blocks; they are now
+  figures in `docs/figures/` rendered to PNG like the rest
+  (`explore-night`, `explore-step`, `explore-code`). The docs workflow fails on
+  a mermaid fence under `docs/`, and `mkdocs.yml` no longer configures one.
+  ([#90](https://github.com/addisdev/fleet-runner/pull/90))
+- **The workloads figure shows all 34 shipped workloads.** It had 28; `enrol`,
+  `explore`, `upgrade-test`, `size-report`, `tvloop` and `llm-eval` are added. ([#90](https://github.com/addisdev/fleet-runner/pull/90))
+- **`devices.png` is the new device drawings, and there is a `findings.png`.**
+  Both are captured read-only from a running brain by the new
+  `npm run shoot:live`, filtered to what was online and to the `bug-garden`
+  fixture app; docs/brand.md says why a throwaway collector cannot make them.
+  ([#90](https://github.com/addisdev/fleet-runner/pull/90))
+
 ### Fixed
 
 - **`fleet service install` on Windows had never started anything.** The

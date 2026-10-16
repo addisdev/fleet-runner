@@ -4,7 +4,7 @@ What the fleet can be asked to do. A workload is the `workload` field of a job
 spec, and which agent claims it is decided by
 [capabilities](../concepts.md#capabilities) rather than by anything hardcoded.
 
-![The workloads in three columns by who claims them: on the device, on a host, and on a machine](../img/workloads.png)
+![Thirty-four workloads in three columns by who claims them: on the device, on a host, and on a machine](../img/workloads.png)
 
 The collector ships <!-- count:workloads -->34 workloads. `GET /api/v1/workloads` (or
 `fleetr workloads`) lists the same set with each one's params and an example
