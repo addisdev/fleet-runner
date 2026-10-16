@@ -28,6 +28,10 @@ serde_json = "1"
 # collector dies with the database mid-write, which is the exact failure the
 # supervisor's SIGTERM draining exists to prevent. See sidecar.rs.
 libc = "0.2"
+# SIGTERM, SIGINT and SIGHUP, turned into the Quit menu item. Without a handler
+# the default action kills this process outright and `fleet up` is orphaned,
+# still holding the collector's port -- which the first launch in CI showed.
+signal-hook = "0.3"
 
 [features]
 # Kept because `cargo tauri build` sets it; nothing here reads it.

@@ -122,17 +122,27 @@ health || fail "the sidecar stopped answering within ${settle}s of launch"
 echo "app still running after ${settle}s, sidecar still answering"
 import -window root "$out/screen-after-launch.png" || echo "warning: import could not capture the screen"
 
-# What happens to the sidecar when the app is SIGTERMed (a logout, a `kill`).
-# Recorded, not asserted: see the README's Status section for what was seen.
+# SIGTERM is what a `kill`, a `killall Fleet` or the end of a session sends,
+# and the app treats it as the Quit item: stop `fleet up` (it gets SIGTERM and
+# up to 15s to drain), then exit. The first run of this smoke found the
+# opposite -- the app died on the spot and its sidecar kept the port -- so this
+# is asserted, not just printed.
 spid=$(sidecar_pid)
-kill -TERM "$apppid" || true
-for _ in $(seq 1 30); do kill -0 "$apppid" 2>/dev/null || break; sleep 0.5; done
-sleep 3
-if [ -n "$spid" ] && kill -0 "$spid" 2>/dev/null; then
-  echo "after SIGTERM to the app: its sidecar (pid $spid) is STILL RUNNING" | tee "$out/sigterm.txt"
-else
-  echo "after SIGTERM to the app: its sidecar is gone" | tee "$out/sigterm.txt"
+[ -n "$spid" ] || fail "fleet up did not write its pid to $FLEET_HOME/logs/supervisor.json"
+kill -TERM "$apppid"
+for _ in $(seq 1 60); do kill -0 "$apppid" 2>/dev/null || break; sleep 0.5; done
+if kill -0 "$apppid" 2>/dev/null; then
+  stop_sidecar
+  fail "the app was still running 30s after SIGTERM"
 fi
+if kill -0 "$spid" 2>/dev/null; then
+  stop_sidecar
+  fail "the app exited on SIGTERM and left its sidecar (fleet up, pid $spid) running"
+fi
+for _ in $(seq 1 20); do health || break; sleep 0.5; done
+health && fail "the app and its sidecar are gone but something still answers $base"
+echo "SIGTERM: the app stopped its sidecar and exited"
+grep -E "fleet up (started|exited)|did not stop" "$out/app.log" || true
 stop_sidecar
 
 # --- 2. the window, under tauri-driver ---------------------------------------
