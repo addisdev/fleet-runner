@@ -133,7 +133,7 @@ reboots unattended and is never logged into will otherwise sit there running
 nothing.
 
 **`fleet service install` on systemd is checked by CI, not by a deployment.**
-On macOS it runs a real fleet's brain. On Linux, `systemd smoke` installs the
+On macOS it runs a real fleet's brain, and CI runs it there and on Windows too. On Linux, `systemd smoke` installs the
 user unit on GitHub's Ubuntu runner, checks it with `systemd-analyze verify`,
 waits for the collector it starts to answer, and uninstalls it. What that does
 not cover is a reboot: the job enables lingering and starts the unit, and

@@ -12,9 +12,11 @@ irm https://raw.githubusercontent.com/addisdev/fleet-runner/main/install.ps1 | i
 
     **And nobody has run a fleet on Windows.** CI runs the `fleet` CLI's suite
     on `windows-latest` on every pull request that touches it, including the
-    supervised `fleet up` end to end, and it passes. That is the whole of it:
-    the bundle from an archive, `fleet service install`'s scheduled-task
-    backend, and a fleet left running on a Windows machine are all unwatched.
+    supervised `fleet up` end to end, and `windows task smoke` installs
+    `fleet service`'s scheduled task, waits for its collector to answer and
+    its agent to register, and uninstalls it. That is the whole of it: the
+    bundle from an archive and a fleet left running on a Windows machine are
+    unwatched.
 
     What *has* been exercised on Windows is [the machine
     agent](../platforms.md#what-a-cloud-runner-actually-reports): its own suite
@@ -130,10 +132,16 @@ On Windows the service backend is **`schtasks`**, registering a task that runs
 `fleet up` at logon. It is not a Windows Service: a service would need
 elevation, and nothing else in this project does.
 
-**`fleet service install` has never been run on Windows**, and the scheduled-task
-backend is the least exercised of the three. It has now been run on macOS, where
-it runs a real fleet's brain; that says the command works and nothing about this
-backend. See [headless
+**`fleet service install` on Windows is checked by CI, not by a deployment.**
+`windows task smoke` runs it on GitHub's `windows-latest` runner: the task is
+created and started, its collector answers, its agent registers, `fleet service
+status` reports it, and `fleet service uninstall` leaves nothing answering. Its
+first run found that the task had never worked -- the command it stored kept
+backslashes meant for a `cmd` prompt and failed with "file not found" -- and
+that is fixed. Two things it does not cover: a logon after a reboot, and a
+graceful stop. `fleet service stop` and `uninstall` kill `fleet up`'s process
+tree, because Windows has no signal one process can send another that Node
+turns into SIGTERM, so the collector does not drain. See [headless
 hosts](../deploy/headless.md).
 
 ## What is deliberately absent

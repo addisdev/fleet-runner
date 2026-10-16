@@ -29,7 +29,7 @@ hardware?** It turned out to be yes, and the fleet is how I know.
 | **Problem** | Mobile tests and ML benchmarks are only useful when they run on the hardware, under conditions, and with the exact artifacts a product will ship. |
 | **System** | One collector owns the registry, queue, leases, artifacts, results and dashboard; independently implemented agents claim work through one tested JSON protocol. |
 | **Reach** | Five runner implementations across TypeScript, Swift, Kotlin, JavaScript and BrightScript, plus host-driven iOS and Android workloads. |
-| **Workloads** | 34 workload types spanning UI tests, visual regression, exploratory QA by a vision model, llama.cpp, Core ML, LiteRT, battery experiments, builds and deployment. |
+| **Workloads** | <!-- count:workloads -->34 workload types spanning UI tests, visual regression, exploratory QA by a vision model, llama.cpp, Core ML, LiteRT, battery experiments, builds and deployment. |
 | **Proof** | The first production question found an int8 CPU model faster to load and run than its fp32 GPU alternative while preserving useful accuracy. |
 
 **What this demonstrates:** distributed systems, mobile platforms, protocol
@@ -140,7 +140,7 @@ something a runner can do without the collector shipping a release.
 
 ![Thirty-four workloads in three columns by who claims them: on the device, on a host, and on a machine](docs/img/workloads.png)
 
-Thirty-four workloads, and the column a workload sits in is the answer to
+<!-- count:workloads -->Thirty-four workloads, and the column a workload sits in is the answer to
 "who can physically do this". A benchmark runs inside the app on the phone. An
 install needs a cable and a Mac. A build needs a checkout and a toolchain.
 Each has [its own page](https://addisdev.github.io/fleet-runner/workloads/),
@@ -176,7 +176,7 @@ languages, sharing not one line
 | | What it is |
 |---|---|
 | **[fleet/](fleet)** | The CLI. `fleet up` runs this machine's components under a supervisor that backs off and gives up loudly rather than restarting a broken component forever; `fleet doctor` says what the machine can run and why not; `fleet service install` keeps it up. It wraps the three programs above and reimplements none of them. |
-| **[desktop/](desktop)** | A Tauri menu-bar app around that CLI: a tray menu, role switches, the dashboard in a window, and a notification when a component gives up. It exists to test one hypothesis about macOS local-network permissions, and **it has never been launched**: CI compiles its Rust and that is all -- read its README before believing anything in it. |
+| **[desktop/](desktop)** | A Tauri menu-bar app around that CLI: a tray menu, role switches, the dashboard in a window, and a notification when a component gives up. It exists to test one hypothesis about macOS local-network permissions, and **it has never run on a Mac**: CI compiles it on macOS, and launches it on Linux under a virtual display, where it starts its `fleet` sidecar and its settings window answers over WebDriver. The tray, the Mac and the hypothesis are untested -- read its README before believing anything in it. |
 
 **Alongside them**
 

@@ -49,7 +49,7 @@ fleet on. The answer is macOS; the suites run on all three.
 
     ---
 
-    All 34 of them, what each measures, and what each refuses to guess.
+    All <!-- count:workloads -->34 of them, what each measures, and what each refuses to guess.
 
 -   __[Exploratory QA](explore/index.md)__
 
@@ -137,8 +137,8 @@ And two front doors:
 [`fleet/`](https://github.com/addisdev/fleet-runner/tree/main/fleet), the CLI
 behind `fleet up`, and
 [`desktop/`](https://github.com/addisdev/fleet-runner/tree/main/desktop), a
-menu-bar app around it whose Rust compiles in CI and which has never been
-launched.
+menu-bar app around it that CI compiles on macOS and launches on Linux, and
+that has never run on a Mac.
 
 [The history section](history/index.md) keeps the original architecture plan and
 the design journals as they were written. They are not maintained, and they are

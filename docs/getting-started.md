@@ -382,7 +382,7 @@ it needs on `PATH`.
 
 - **[Concepts](concepts.md)** -- leases, capabilities and targeting, which is
   what you need before writing a job spec that does something interesting.
-- **[Workloads](workloads/index.md)** -- the other thirty-odd things it can run.
+- **[Workloads](workloads/index.md)** -- all <!-- count:workloads -->34 things it can run.
 - **[Exploratory QA](explore/index.md)** -- a vision model using tonight's build
   overnight, and the bugs it reproduces.
 - **[AI agents and automation](agents.md)** -- `fleetr`, the skill and the MCP

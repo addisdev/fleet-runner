@@ -232,21 +232,40 @@ the collector under it. Two things cost an outage each on the way and are fixed 
 `PATH` from the shell that ran the install, which is how an executor ends up unable to find
 `adb`.
 
-Since 0.8.0, two CI smoke jobs in `fleet.yml` run what had only been built:
+Since 0.8.0, CI smoke jobs in `fleet.yml` run what had only been built. Each
+runs on every pull request that touches `fleet/`, `collector/` or
+`runner-machine/`:
 
 - **systemd.** `systemd smoke` installs the built bundle as a systemd user unit on Ubuntu,
   checks it with `systemd-analyze verify`, waits for its collector to answer, and uninstalls
   it.
-- **A container.** `container smoke` builds `fleet/Dockerfile`, starts `fleet up` in it, and
-  waits for its machine agent to register. Its first run found the image could not start on
-  a fresh volume.
+- **launchd.** `launchd smoke` does the same on `macos-latest`: `fleet service install`
+  writes the LaunchAgent and bootstraps it into the runner's `gui/<uid>` domain (GitHub's
+  macOS runners have a logged-in GUI session, and the job prints it first). It waits for the
+  collector to answer and the agent to register, runs `fleet service status`, reinstalls once
+  so the bootout/bootstrap race is hit and retried rather than trusted -- the first run printed
+  "launchd is still letting go of the old job; waiting" and recovered -- then uninstalls and
+  checks nothing answers, the plist is gone and launchd no longer has the label.
+- **The Windows scheduled task.** `windows task smoke` runs the same lifecycle on
+  `windows-latest`. Its first run found that the task had never worked: the command it
+  stored kept the backslashes from a `\"` escaping meant for a `cmd` prompt, so the task
+  ran `\"C:\...\node.exe\"` and failed with "file not found". Fixed, and `fleet service
+  uninstall` (and `stop`) now kill `fleet up`'s process tree by the supervisor's pid before
+  ending the task, because deleting a task does not stop it and Windows does not take a
+  parent's children down with it. With that, a Windows machine agent registered against a
+  real collector for the first time.
+- **A container, on both architectures.** `container smoke` builds `fleet/Dockerfile`,
+  starts `fleet up` in it, and waits for its machine agent to register. Its first run found
+  the image could not start on a fresh volume. `container smoke (arm64)` builds it natively
+  on GitHub's arm64 runner and checks the container reports `aarch64` before doing the same.
 
 What has still not been run:
 
-- **`fleet service install` on Windows**, and the systemd unit surviving a reboot on a real
-  machine.
-- **The arm64 container image.** The release workflow builds and publishes it; nothing has
-  started it.
+- **A service surviving a reboot**, on any of the three. CI installs and starts each unit;
+  nobody has watched one come back at boot or at logon on a real machine.
+- **Windows stopping gracefully.** The task is stopped by killing the process tree, so the
+  collector does not drain; there is no signal Windows lets one process send another that
+  Node turns into SIGTERM.
 - **`install.ps1`.** No PowerShell was available to parse it, let alone run it. `install.sh`
   *has* been run against the real v0.5.0 release on macOS/arm64: checksum verified, binary
   installed and reporting its version.

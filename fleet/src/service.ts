@@ -266,10 +266,7 @@ WantedBy=default.target
  */
 async function installWindows(command: string, args: string[]): Promise<number> {
   const p = paths();
-  // schtasks takes one command string, so the whole thing is quoted here rather
-  // than passed as an argv -- and a path with a space in it is the normal case
-  // on Windows, not the exception.
-  const tr = [command, ...args].map((a) => `\\"${a}\\"`).join(" ");
+  const tr = windowsTaskCommand(command, args);
   try {
     await exec("schtasks", [
       "/Create",
@@ -290,6 +287,64 @@ async function installWindows(command: string, args: string[]): Promise<number> 
   return 0;
 }
 
+/**
+ * The `/TR` string: one command line, each part in plain double quotes.
+ *
+ * schtasks takes the whole command as one argument, so it is quoted here -- a
+ * path with a space in it is the normal case on Windows. The quotes must be
+ * bare. This used to write `\"` around each part, the escaping you would type
+ * at a `cmd` prompt, but execFile is not a prompt: Node quotes the argument
+ * itself and escapes every `"` in it, schtasks undoes exactly that, and the
+ * backslashes typed here survived into the task as part of the path. The task
+ * stored `\"C:\...\node.exe\"`, ran it, and failed with 0x80070002 (file
+ * not found) -- so `fleet service install` on Windows had never started
+ * anything. Found by the first `windows task smoke` run in CI.
+ */
+export function windowsTaskCommand(command: string, args: string[]): string {
+  return [command, ...args].map((a) => `"${a}"`).join(" ");
+}
+
+/**
+ * Stop the running task, and the processes `fleet up` started.
+ *
+ * `schtasks /End` stops the task's own process, which is `fleet up`, and
+ * nothing it started: Windows has no process group that dies with its leader,
+ * so the collector and the agent would outlive it, keep the port, and keep
+ * answering after `fleet service uninstall` said it was removed. So the tree is
+ * killed by the supervisor's pid first, while it is still the parent that ties
+ * the tree together, and each child by its own pid after that.
+ *
+ * Forcefully, because there is no other way: `fleet up`'s graceful shutdown
+ * hangs off SIGTERM, and Windows has no signal a different process can send to
+ * a console program that Node turns into one. The collector does not drain
+ * here; it is killed, as it would be by closing its console window.
+ *
+ * Only while the task reports Running, so that a supervisor.json left behind by
+ * a fleet that has since stopped cannot point taskkill at a pid Windows has
+ * handed to something else.
+ */
+async function endWindowsTask(): Promise<void> {
+  let running = false;
+  try {
+    const { stdout } = await exec("schtasks", ["/Query", "/TN", WINDOWS_TASK, "/FO", "LIST"]);
+    running = /Running/i.test(stdout);
+  } catch {
+    return; // not installed
+  }
+  if (running) {
+    try {
+      const snap = JSON.parse(readFileSync(paths().supervisorStatus, "utf8")) as SupervisorSnapshot;
+      await exec("taskkill", ["/PID", String(snap.pid), "/T", "/F"]).catch(() => {});
+      for (const c of snap.children) {
+        if (c.pid) await exec("taskkill", ["/PID", String(c.pid), "/T", "/F"]).catch(() => {});
+      }
+    } catch {
+      /* no status file: /End below is all there is */
+    }
+  }
+  await exec("schtasks", ["/End", "/TN", WINDOWS_TASK]).catch(() => {});
+}
+
 // --- the rest --------------------------------------------------------------
 
 async function uninstall(): Promise<number> {
@@ -301,6 +356,8 @@ async function uninstall(): Promise<number> {
     return 0;
   }
   if (process.platform === "win32") {
+    // Deleting a task does not stop a running instance of it.
+    await endWindowsTask();
     await exec("schtasks", ["/Delete", "/F", "/TN", WINDOWS_TASK]).catch(() => {});
     console.log(`removed scheduled task ${WINDOWS_TASK}`);
     return 0;
@@ -324,7 +381,8 @@ async function startStop(which: "start" | "stop"): Promise<number> {
       if (which === "start") await bootstrapLaunchd(launchdPlistPath());
       else await exec("launchctl", ["bootout", `gui/${uid}/${LABEL}`]);
     } else if (process.platform === "win32") {
-      await exec("schtasks", [which === "start" ? "/Run" : "/End", "/TN", WINDOWS_TASK]);
+      if (which === "start") await exec("schtasks", ["/Run", "/TN", WINDOWS_TASK]);
+      else await endWindowsTask();
     } else {
       await exec("systemctl", ["--user", which, "fleet.service"]);
     }
