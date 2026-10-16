@@ -247,16 +247,20 @@ export type TrajectoryStep = {
 
 export type CheckName =
   | "crash" | "anr" | "frozen" | "blank" | "left_app" | "a11y"
-  | "visual" | "goal" | "regression" | "agent_stuck"
+  | "visual" | "goal"
   /** A control the tree calls tappable that changed nothing when tapped, twice. */
-  | "dead_control"
-  /** The leash refused something the screen talked the agent into (a planted instruction). */
-  | "leash";
+  | "dead_control";
 
-/** Every CheckName, for validation on the collector side. */
+/**
+ * Every CheckName, for validation on the collector side: `POST /findings`
+ * refuses any other. Only names something raises are here. `regression`,
+ * `agent_stuck` and `leash` were listed once and never raised by anything, so
+ * a finding could not carry them; a refused action is recorded on the step
+ * (`refused`), not as a finding. Reading is not validated, so a row stored
+ * under one of the old names would still be listed and shown.
+ */
 export const CHECK_NAMES: readonly CheckName[] = [
-  "crash", "anr", "frozen", "blank", "left_app", "a11y", "visual", "goal",
-  "regression", "agent_stuck", "dead_control", "leash",
+  "crash", "anr", "frozen", "blank", "left_app", "a11y", "visual", "goal", "dead_control",
 ];
 
 /**

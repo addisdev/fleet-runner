@@ -77,7 +77,12 @@ export async function startCollector(env: Record<string, string> = {}): Promise<
         await Promise.race([exited, new Promise((r) => setTimeout(r, 8_000))]);
         if (child.exitCode === null) child.kill("SIGKILL");
       }
-      rmSync(dir, { recursive: true, force: true });
+      // Windows can hold fleet.db for a moment after the process exits, and the
+      // unlink fails with EBUSY (seen in CI); retry, and never fail a test over
+      // a temp directory.
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+      } catch { /* left for the OS to clear */ }
     },
   };
 }

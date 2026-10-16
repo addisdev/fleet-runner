@@ -133,6 +133,7 @@ port, bind list, tailnet allowlist, data and artifact directories and
 |---|---|---|
 | `FLEET_DISCOVERY` | off (`fleet up` passes `collector.discovery`) | `1` advertises the collector over mDNS, below |
 | `FLEET_PEERS` | none | Comma-separated base URLs of other collectors, for [more than one brain](#more-than-one-brain) |
+| `FLEET_PEER_TOKENS` | none | JSON object of peer URL to a `read` token that peer issued, for a peer with tokens on. See [more than one brain](#more-than-one-brain) |
 | `FLEET_POWER_CONFIG` | `power.json` | The pool-to-smart-plug map, see [Energy](#energy) |
 | `FLEET_SWEEP_MS` | 15000 | How often expired leases are swept |
 | `FLEET_SCHEDULER_TICK_MS` | 20000 | How often schedules are evaluated |
@@ -140,6 +141,12 @@ port, bind list, tailnet allowlist, data and artifact directories and
 | `FLEET_LOG` | `info` | Log level |
 | `FLEET_LOG_FILE` | `~/Library/Logs/fleet-collector.log`; `~/.fleet/logs/collector.log` under `fleet up` | Where the service manager sends the collector's output. The collector does not write it; it reports its size and alerts on it (`log-size`) |
 | `FLEET_TOKENS_FILE` | `$FLEET_DATA_DIR/tokens.json` | See [Authentication](auth.md) |
+
+The intervals (`FLEET_SWEEP_MS`, `FLEET_SCHEDULER_TICK_MS` and
+`FLEET_ALERT_TICK_MS`) must be whole milliseconds, at least 1000. Anything else
+(`15s`, or `15` meaning seconds) is ignored for the default, with a warning in
+the startup log, rather than becoming a timer that fires every few
+milliseconds.
 
 Alert thresholds are `FLEET_ALERT_*`, listed in [Alerts](alerts.md).
 
@@ -225,6 +232,24 @@ any website in the operator's browser read the whole fleet from any tab. Peers a
 so a link cannot be turned into a request to an arbitrary host by editing the
 address bar; only an allow-list of endpoints is proxied; and nothing that mutates
 is proxied at all.
+
+**A peer with tokens on** answers the proxy 401 unless this collector sends it
+a token, and each brain issues its own (a token is a hash in that brain's
+`tokens.json`), so the token is per peer. On the peer, create a `read` token
+(`fleet token create brain-a --scope read`); on this collector, map the peer's
+URL, spelled as in `FLEET_PEERS`, to it:
+
+```bash
+FLEET_PEERS=http://fleet-host.local:8788
+FLEET_PEER_TOKENS='{"http://fleet-host.local:8788": "fr_..."}'
+```
+
+It is sent as a bearer token on every request to that peer and never to any
+other. The token of whoever is reading this dashboard is not passed on: it is
+a token for this brain, not that one. A value that is not a JSON object of
+strings maps nothing and says why at startup. Under `fleet up`, set it in the
+environment or in the `env` object of `~/.fleet/config.json`, as for
+`FLEET_AUTH`.
 
 The rule the device side enforces is the one that matters for numbers: **a
 device runs one job at a time, whoever asked.** Two benchmarks at once produce

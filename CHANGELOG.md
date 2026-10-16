@@ -11,13 +11,27 @@ itself is `"schema": 1` and stays there until something breaks compatibility,
 independently of the version below.
 
 Since 0.5.0 that is enforced rather than asserted: `VERSION` at the repository
-root is the source, `scripts/version.mjs` writes it into all eleven places, and
+root is the source, `scripts/version.mjs` writes it into all thirteen places, and
 a CI job fails when they disagree.
 
 ## [Unreleased]
 
 ### Added
 
+- **A pull request's build no longer becomes the nightly's `latest`.**
+  `ci-upload` always tagged an upload with its app, and `ci-enqueue` did
+  whenever the spec named one, so the next nightly asking for `latest` tested
+  an unmerged branch. An upload can now carry `x-artifact-channel: pr`, which
+  `"sha256": "latest"` never resolves to; both scripts send it when
+  `GITHUB_EVENT_NAME` is `pull_request` (or with `--channel pr`). The pull
+  request's own job still names its build by hash. Builds uploaded before this
+  count as merged builds, and the same bytes republished from main come off the
+  channel. The `/api/v1` artifact document does not show the channel yet;
+  `GET /api/artifacts` does.
+- **`FLEET_PEER_TOKENS`: the brain switcher can read a peer with tokens on.**
+  The peers proxy sent no token, so a peer running `FLEET_AUTH=tokens`
+  answered 401 through it. Each peer's URL now maps to a `read` token that
+  peer issued, sent only to that peer.
 - **An explore night admitted late runs short instead of not at all.**
   `scripts/explore-night.ts` now knows when the night ends: `--until`
   (default 07:30, ultra's night-queue stop) or the job's own `max_minutes`,
@@ -36,6 +50,42 @@ a CI job fails when they disagree.
 
 ### Changed
 
+- **`ci-enqueue` speaks `/api/v1` and exits like `fleetr run`.** It polled the
+  deprecated `GET /jobs/:id` and exited 0 on `done`, which includes a job that
+  skipped and tested nothing, and it sent no token, so it failed against a
+  collector with tokens on. It now enqueues with `POST /api/v1/jobs`, waits
+  with `/wait`, and exits 0 passed, 1 failed, 2 invalid spec, 3 still running,
+  4 skipped, 5 refused or unreachable. A workflow that read exit 1 as "timed
+  out" now sees 3.
+- **`ci-enqueue` and `ci-upload` send `FLEET_RUNNER_TOKEN` (or
+  `FLEET_TOKEN`) as a bearer token.** `ci-upload` read only
+  `FLEET_DASH_TOKEN`, even when the collector needed an `agent` token there.
+  `FLEET_DASH_TOKEN` is still sent as `x-fleet-token`. `ci-upload` exits 5
+  rather than 1 when the upload is refused or the collector is unreachable.
+- **The example jobs are checked the way `/api/v1` checks a spec.**
+  `check-examples.ts` used the loose `job.schema.json`, so an example could
+  pass the check and be refused by the API it documents. It now runs the API's
+  strict schema and each workload's params manifest, imported rather than
+  copied. All 37 pass.
+- **Explore's `CHECK_NAMES` lists only checks something raises.** `regression`,
+  `agent_stuck` and `leash` were accepted by `POST /findings` and raised by
+  nothing; they are refused now. A refused action is on the mission's steps,
+  not a finding. Stored findings are not touched, and reading does not
+  validate the name.
+- **The desktop app is versioned with everything else.** `scripts/version.mjs`
+  now writes `desktop/src-tauri/Cargo.toml` and `tauri.conf.json` (they said
+  0.5.0), so the CI version check covers them. Both say 0.8.0.
+- **The explore docs' three diagrams are drawn, not generated.** The night,
+  one mission's sequence and the code map were mermaid blocks; they are now
+  figures in `docs/figures/` rendered to PNG like the rest
+  (`explore-night`, `explore-step`, `explore-code`). The docs workflow fails on
+  a mermaid fence under `docs/`, and `mkdocs.yml` no longer configures one.
+- **The workloads figure shows all 34 shipped workloads.** It had 28; `enrol`,
+  `explore`, `upgrade-test`, `size-report`, `tvloop` and `llm-eval` are added.
+- **`devices.png` is the new device drawings, and there is a `findings.png`.**
+  Both are captured read-only from a running brain by the new
+  `npm run shoot:live`, filtered to what was online and to the `bug-garden`
+  fixture app; docs/brand.md says why a throwaway collector cannot make them.
 - **Explore nights that need tonight's build skip, not fail, when there is
   none.** With `--fresh-build` (now on `fleet-explore-apple` and
   `fleet-explore-tv`), the night checks through the tunnel that the brain has
@@ -58,35 +108,34 @@ a CI job fails when they disagree.
   `collector/deploy/explore/night/` need copying to `~/night/recurring/` on
   ultra.
 
-### Changed
-
-- **The explore docs' three diagrams are drawn, not generated.** The night,
-  one mission's sequence and the code map were mermaid blocks; they are now
-  figures in `docs/figures/` rendered to PNG like the rest
-  (`explore-night`, `explore-step`, `explore-code`). The docs workflow fails on
-  a mermaid fence under `docs/`, and `mkdocs.yml` no longer configures one.
-- **The workloads figure shows all 34 shipped workloads.** It had 28; `enrol`,
-  `explore`, `upgrade-test`, `size-report`, `tvloop` and `llm-eval` are added.
-- **`devices.png` is the new device drawings, and there is a `findings.png`.**
-  Both are captured read-only from a running brain by the new
-  `npm run shoot:live`, filtered to what was online and to the `bug-garden`
-  fixture app; docs/brand.md says why a throwaway collector cannot make them.
-
 ### Fixed
 
-- **`fleet-explore-apple` exited 1 in 0.0 minutes on 10-14.** Not a missing
-  build: the shelf refused to load Holo4 at 64% free memory against its 65%
-  threshold, after the night queue had admitted the job on its own measure.
-  See the warm-up change above; with `--fresh-build` that night would also
-  have skipped earlier, at "no greenfolio-ios build for tonight".
-- **tvOS simulators registered as `os: ios`, so the TV explore night tested
-  nothing.** The executor read simctl's runtime key for `iOS-` only, so an
-  Apple TV simulator was described as plain `ios`, every `os ~ 'tvos'` job
-  skipped with "no device matches this job on ultra", and each
-  `fleet-explore-tv` night "passed" in about a minute. A tvOS simulator is
-  now `tvos-26.5` (watchOS and visionOS likewise). No TV night has run with
-  the fix yet.
-
+- **The older job routes skipped two auth checks.** With `FLEET_AUTH=tokens`,
+  `POST /api/jobs/:id/cancel` and `/retry` let any `run` token stop or re-run
+  anyone's job, and `POST /jobs` and `POST /api/jobs` accepted the `shell`
+  workload from a token without `admin`. Only `/api/v1` asked. Both paths now
+  call the same two functions (`collector/src/api/policy.ts`). With auth off
+  nothing changes.
+- **`fleet-cli`'s `bin` pointed at a file the build does not produce.** It
+  named `dist/cli.mjs`; the build writes `dist/bin/fleet.mjs`, and `dist/` was
+  left out of the package by `.gitignore`, so installing from a tarball gave no
+  command. Both `fleet` and `fleetr` now point at the bundle, and `files`
+  includes `dist/`.
+- **A mistyped timer interval became a near-zero one.** `FLEET_SWEEP_MS`,
+  `FLEET_SCHEDULER_TICK_MS` and `FLEET_ALERT_TICK_MS` went through a bare
+  `Number()`, so `15s` was NaN and `15` (seconds, meant) a sweep every 15 ms.
+  Anything but whole milliseconds of at least 1000 now falls back to the
+  default, with a startup warning.
+- **Explore's live-view frames were refused with `FLEET_AUTH_PROTOCOL=token`.**
+  They sent only `FLEET_DASH_TOKEN`; they now also send `FLEET_TOKEN` as a
+  bearer token.
+- **A schedule template's empty `job_id` was replaced without a word.** A
+  non-empty one was already refused; an empty or `null` one was stored and
+  overwritten at every firing. It is dropped now and the reply carries a
+  `warnings` entry, and a stored template that still has one is named in the
+  log when it fires.
+- Two comments said `fleet up` turns mDNS discovery on. It passes
+  `collector.discovery`, which is off by default.
 - **`fleet skill` failed on an installed 0.8.0.** The 0.8.0 archives carry
   `skills/`, but `install.sh` and `install.ps1` copy a release's directories
   by name and did not name it, so `fleet skill show` and `fleet skill install`
@@ -99,6 +148,18 @@ a CI job fails when they disagree.
   the harness enforces and the standalone checker ignored; it also matched
   case-sensitively where the harness does not. It now reads `absent_text` and
   matches case-insensitively, as the bug garden's README says.
+- **`fleet-explore-apple` exited 1 in 0.0 minutes on 10-14.** Not a missing
+  build: the shelf refused to load Holo4 at 64% free memory against its 65%
+  threshold, after the night queue had admitted the job on its own measure.
+  See the warm-up change above; with `--fresh-build` that night would also
+  have skipped earlier, at "no greenfolio-ios build for tonight".
+- **tvOS simulators registered as `os: ios`, so the TV explore night tested
+  nothing.** The executor read simctl's runtime key for `iOS-` only, so an
+  Apple TV simulator was described as plain `ios`, every `os ~ 'tvos'` job
+  skipped with "no device matches this job on ultra", and each
+  `fleet-explore-tv` night "passed" in about a minute. A tvOS simulator is
+  now `tvos-26.5` (watchOS and visionOS likewise). No TV night has run with
+  the fix yet.
 
 ## [0.8.0] — 2026-10-15
 
@@ -361,6 +422,7 @@ the web path had never needed.
   channel, so such a host runs two of the five projects; Firefox, WebKit and
   mobile Safari need a Mac on a newer macOS.
 
+
 ## [0.6.1] — 2026-09-19
 
 What running the thing found. v0.6.0 was written from a survey; this is from
@@ -435,6 +497,7 @@ two days of the fleet actually being up.
 - The macOS row of [platforms](https://addisdev.github.io/fleet-runner/platforms/)
   records both architectures registering, passing conformance, and reporting
   comparable synthetic numbers with matching digests.
+
 
 ## [0.6.0] — 2026-09-18
 

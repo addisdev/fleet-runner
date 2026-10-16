@@ -12,7 +12,8 @@ import { db } from "../db.js";
 import { powerRetention } from "../power.js";
 import { isValidMatch } from "../match.js";
 import { requireToken } from "./guard.js";
-import { forward } from "../auth.js";
+import { authOf, forward } from "../auth.js";
+import { needsAdmin, notOwned } from "./policy.js";
 import { iso, parse, sha256Refs } from "./shared.js";
 
 /** How long explore keeps a whole night's trajectories before only the findings' remain (plan, phase 5). */
@@ -294,6 +295,9 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
   app.post("/api/jobs/:id/cancel", async (req, reply) => {
     if (!requireToken(req, reply)) return;
     const { id } = req.params as { id: string };
+    // The same owner check /api/v1 makes: a run token stops only its own jobs.
+    const foreign = notOwned(authOf(req), [id]);
+    if (foreign) return reply.code(403).send({ error: foreign.message, hint: foreign.hint });
     const reason = ((req.body as { reason?: string } | null)?.reason ?? "cancelled from the dashboard").slice(0, 500);
 
     const out = cancelTx(id, reason);
@@ -322,6 +326,8 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
   app.post("/api/jobs/:id/retry", async (req, reply) => {
     if (!requireToken(req, reply)) return;
     const { id } = req.params as { id: string };
+    const foreign = notOwned(authOf(req), [id]);
+    if (foreign) return reply.code(403).send({ error: foreign.message, hint: foreign.hint });
     const body = (req.body ?? {}) as { pool?: string; device_id?: string; priority?: number };
 
     const row = db.prepare("SELECT spec, template_id FROM jobs WHERE job_id = ?").get(id) as
@@ -373,6 +379,10 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
   // The composer's enqueue. Guarded, then handed to POST /jobs unchanged.
   app.post("/api/jobs", async (req, reply) => {
     if (!requireToken(req, reply)) return;
+    // Asked here and not only in POST /jobs, because the forward below arrives
+    // there as an internal request, which has already been decided.
+    const refused = needsAdmin(authOf(req), (req.body as { workload?: unknown } | null)?.workload);
+    if (refused) return reply.code(403).send({ error: refused.message, hint: refused.hint });
     const res = await forward(app, req, { method: "POST", url: "/jobs", payload: req.body as object });
     return reply.code(res.statusCode).send(res.json());
   });
