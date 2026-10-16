@@ -20,8 +20,8 @@ disagree: the test suite fails if they do.
 | `GET /api/v1/devices` · `/devices/{id}` | read | The shelf, with status (`online`, `stale`, `offline`) and current job |
 | `GET /api/v1/workloads` · `/workloads/{name}` | read | What the fleet can run: executor, params schema, a valid example spec, how many live agents can take it |
 | `GET /api/v1/templates` | read | Saved job templates |
-| `GET /api/v1/jobs` | read | Jobs; filter by `status`, `workload`, `device`, `pool`, `source`, `requested_by`, `mine=true`, `from`/`to` |
-| `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs |
+| `GET /api/v1/jobs` | read | Jobs; filter by `status`, `workload`, `executor` (`device` or `host`), `device`, `pool`, `source`, `requested_by`, `mine=true`, `q` (substring of the job id), `from`/`to` |
+| `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs. 422 `no_capable_agent` when no live agent declares the workload (or backend); 400 `no_matching_devices` for a fan-out that matches nothing, and 400 `no_build` when `latest` names no published build |
 | `POST /api/v1/jobs/validate` | run | Dry run: schema errors by path, the devices it would land on, warnings. Always 200 |
 | `GET /api/v1/jobs/{id}` | read | One job, with its spec |
 | `GET /api/v1/jobs/{id}/summary` | read | The verdict across every device, per-device outcomes and artifact refs. Works for a fan-out parent |
@@ -31,6 +31,7 @@ disagree: the test suite fails if they do.
 | `GET /api/v1/artifacts/{sha256}` · `/content` | read | What an artifact is, and its bytes. Active types (HTML, SVG) are served as attachments with a sandbox CSP |
 | `GET /api/v1/schedules` · `/alerts` | read | Recurring jobs and open alerts |
 | `GET /api/v1/audit` | admin | Who did what, when tokens are on |
+| `GET /metrics` | read | The fleet in Prometheus text format: devices by status, jobs by status, oldest queued job, per-device success ratio over 24 h, open alerts, artifact counts. Computed from the database on each scrape. Not under `/api/v1` and not in the OpenAPI document |
 
 **Lists** are `{items, page, per_page, total, pages}` with `page` and
 `per_page` (≤ 500) query parameters.
@@ -45,7 +46,8 @@ disagree: the test suite fails if they do.
 **Job specs are validated strictly** against `job.schema.json`: an unknown
 top-level field is refused rather than ignored, so a typo is an error and not
 a setting that silently did nothing. A workload's params are checked against
-its manifest.
+its manifest. This is `/api/v1/jobs` (and so `fleetr run`) only: the legacy
+`POST /jobs` and `POST /api/jobs` do not refuse unknown fields.
 
 **Verdicts** in a summary: `passed`, `failed`, `mixed`, `skipped` (nothing
 ran, never folded into passed), `cancelled`, and while unfinished `queued`,
@@ -57,10 +59,13 @@ unverified; with tokens on, `requested_by` is the token's name, or the person a
 `delegate` token names in `X-Fleet-Actor`. See [Authentication](deploy/auth.md).
 
 **The older routes are deprecated, not removed.** `GET /api/devices`,
-`/api/jobs`, `/api/results`, `/devices`, `/schedules`, `GET /jobs/{id}` and
+`GET /api/devices/{id}`, `GET /api/jobs`, `GET /api/jobs/{id}`,
+`GET /api/results`, `GET /devices`, `GET /schedules`, `GET /jobs/{id}` and
 `POST /jobs` · `/api/jobs` answer with `Deprecation` (RFC 9745) and a
-`Link: <...>; rel="successor-version"` header. There is no sunset date. The
-runner protocol is not deprecated.
+`Link: <...>; rel="successor-version"` header. Only those exact routes carry
+the headers: `/api/devices/{id}/beacons`, `/api/results/bench` and the rest of
+the dashboard's read API do not. There is no sunset date. The runner protocol is
+not deprecated.
 
 Timestamps are ISO-8601 **UTC with a `Z`**. SQLite stores
 `YYYY-MM-DD HH:MM:SS` with no zone marker, which JavaScript parses as local
@@ -69,8 +74,12 @@ Every list is bounded.
 
 ## Agent API
 
-Never guarded, whatever `FLEET_DASH_TOKEN` is set to — the fleet has to keep
-running whether or not anyone has a token in a browser.
+Not guarded by `FLEET_DASH_TOKEN`, with the one exception marked below — the fleet has to keep running whether or
+not anyone has a token in a browser. Open by default even with
+`FLEET_AUTH=tokens`; with `FLEET_AUTH_PROTOCOL=token` as well, every call here
+needs a token with the `agent` scope (a `read` token may still download
+artifacts). See [the protocol](protocol.md#authentication-optional) and
+[Authentication](deploy/auth.md).
 
 | Method & path | Purpose |
 |---|---|
@@ -81,8 +90,14 @@ running whether or not anyone has a token in a browser.
 | `POST /artifacts` | Upload bytes; returns `sha256` |
 | `GET /artifacts/:sha256` | Download, supports Range |
 | `POST /findings` | An `explore` finding from an executor; merged on its fingerprint. See [Findings and verdicts](explore/findings.md#the-api) |
+| `POST /api/jobs/:id/mirror` | One raw JPEG frame from an executor driving a device, for the live view. Kept in memory only (the last three frames), never stored; 2 MB cap per frame. The one row here that `FLEET_DASH_TOKEN` does guard; the `explore` workload sends it |
 
 ## Queue
+
+With `FLEET_AUTH=tokens`: `POST /jobs` needs `run`; `/jobs/:id/release`,
+`/locks/*` and `/events/*` are runner protocol, so they follow
+`FLEET_AUTH_PROTOCOL` like the table above; any other GET needs `read` and
+anything else `admin`. With auth off, all of it is open.
 
 | Method & path | Purpose |
 |---|---|
@@ -97,6 +112,8 @@ running whether or not anyone has a token in a browser.
 | `PATCH /schedules/:id` · `DELETE /schedules/:id` | Enable, disable or remove |
 | `POST /schedules/tick` | Force an evaluation; fires due schedules at most once a minute |
 | `POST /power/:pool/:state` | Fire a pool's smart-plug webhook |
+| `GET /devices` | The raw registry: descriptor, pools, capabilities, last beacon. Deprecated; `GET /api/v1/devices` replaces it |
+| `GET /status-reports` | The last 100 commit-status rows, raw. `GET /api/status-reports` is the dashboard's version |
 
 ## Read API
 
@@ -129,6 +146,9 @@ Every endpoint is `GET` and side-effect free.
 | `GET /api/peers` | Other brains this one knows about, with liveness and device counts |
 | `GET /api/peers/:id/*` | One peer's read API, fetched server to server. GET only, and only the endpoints on an allow-list |
 | `GET /api/status-reports` | The commit-status audit trail, posted or not |
+| `GET /api/templates` | Saved job templates, with their specs |
+| `GET /api/events` · `/api/events/:topic?limit=` | Pipeline-event topics with counts, and one topic's newest events (≤ 500) |
+| `GET /api/jobs/:id/mirror` · `/mirror/status` | The live view of a host job as an MJPEG stream (404 when nothing is streaming), and whether a stream exists without opening it |
 | `GET /api/stream` | SSE |
 
 ### `/api/stream` carries a nudge, not a payload
@@ -157,15 +177,27 @@ From the [`explore`](explore/index.md) workload. Full shapes and replies are in
 
 ## Mutations
 
+With `FLEET_AUTH=tokens`, `POST /api/jobs`, `/api/jobs/preview-targets` and
+`/api/jobs/:id/cancel` · `/retry` need `run`, and unlike their `/api/v1`
+equivalents they do not check that the job is yours (see
+[Authentication](deploy/auth.md#tokens-on-the-collector)). The GET here needs
+`read`, `/api/session` needs no token up front, and everything else needs
+`admin`.
+
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/jobs` | Enqueue; forwards to `POST /jobs` so validation and fan-out have one implementation |
-| `POST /api/jobs/:id/cancel` · `/retry` | Cancel, or clone the spec under `<id>-r2` |
+| `POST /api/jobs/:id/cancel` · `/retry` | Cancel, or clone the spec under `<id>-r2` (body may set `pool`, `device_id`, `priority`) |
 | `PATCH /api/jobs/:id` | Set `priority` |
 | `POST /api/jobs/preview-targets` | "N devices match", using the matcher fan-out uses |
 | `PATCH /api/devices/:id` | Name, notes, pool override (`pools: null` clears it) |
 | `DELETE /api/devices/:id` | Forget a device; refuses while it is running a job |
 | `POST /api/devices/:id/release-lock` | Drop a stuck lock |
+| `POST /api/templates` · `DELETE /api/templates/:id` | Save a job template (`id`, `name`, `spec` without a `job_id`), or delete one |
+| `POST /api/schedules` · `PATCH` · `DELETE /api/schedules/:id` | Forwarded to `/schedules` |
+| `POST /api/schedules/:id/run` | Fire one schedule now, as `<id>-manual-<timestamp>`, without touching its own next firing |
+| `POST /api/power/:pool/:state` | Forwarded to `POST /power/:pool/:state` |
+| `POST /api/session` · `DELETE /api/session` | Exchange a token for the dashboard's read-only cookie, or clear it. See [Authentication](deploy/auth.md#tokens-on-the-collector) |
 | `POST /api/visual/baselines/accept` | Set the baseline for (suite, page, profile) |
 | `GET /api/artifacts/gc-candidates?days=` | Artifacts nothing references |
 | `DELETE /api/artifacts/:sha256` | Delete one; refuses while referenced or pinned |
@@ -177,8 +209,11 @@ From the [`explore`](explore/index.md) workload. Full shapes and replies are in
 
 `GET /api/peers/:id/*` proxies rather than letting the browser call the other
 brain directly, and that is a security decision rather than a convenience.
-There is no authentication: opening the read API cross-origin would let any
-website in the operator's browser read their whole fleet from any tab. The
+There is no authentication by default (see [Authentication](deploy/auth.md)):
+opening the read API cross-origin would let any website in the operator's
+browser read their whole fleet from any tab. With `FLEET_AUTH=tokens` the proxy
+needs `read` like any other GET. It sends no token to the peer, so a peer that
+has tokens on answers 401 through it. The
 proxy keeps one origin, one token, and one place that decides what may be
 asked for — an **allow-list** of endpoints, because the failure of a deny-list
 is that the next endpoint somebody adds is exposed by default.
@@ -211,10 +246,13 @@ report; both stay visible in `GET /api/devices`.
 ## The guard
 
 `FLEET_DASH_TOKEN` guards every mutation above: set it and the dashboard must
-send `X-Fleet-Token`.
+send `X-Fleet-Token`. With `FLEET_AUTH=tokens` it steps aside: the scoped token
+has already been checked, and every mutation needs `run` or `admin` (see
+[Authentication](deploy/auth.md)).
 
 **It is deliberately unset on the reference deployment.** The collector is LAN
-and tailnet only, `POST /jobs` is open anyway so `curl` and CI keep working, and
+and tailnet only with auth off, `POST /jobs` is open then anyway so `curl` and
+CI keep working, and
 the token buys protection against a stray browser tab at the cost of a paste in
 every browser — not a trade worth making on a home network. It is a speed bump,
 not an access control. [The network is the access

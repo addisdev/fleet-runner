@@ -98,8 +98,10 @@ fact created.
 
 ### `POST /findings`
 
-From executors. Open, like `POST /results`: the collector's access control for
-executors is the network, not the dashboard token. The body is an
+From executors. A protocol route, like `POST /results`: by default the
+collector's access control for executors is the network, not the dashboard
+token, and with `FLEET_AUTH_PROTOCOL=token` it needs a token with the `agent`
+scope ([Authentication](../deploy/auth.md)). The body is an
 `ExploreFinding`:
 
 ```json

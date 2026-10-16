@@ -49,7 +49,14 @@ fleet on. The answer is macOS; the suites run on all three.
 
     ---
 
-    All 28 of them, what each measures, and what each refuses to guess.
+    All 34 of them, what each measures, and what each refuses to guess.
+
+-   __[Exploratory QA](explore/index.md)__
+
+    ---
+
+    A vision model uses tonight's build the way a person would, and files
+    only the bugs that reproduce on a clean install.
 
 -   __[The protocol](protocol.md)__
 
@@ -96,21 +103,23 @@ of phones.
 
 ## A warning worth reading before you deploy anything
 
-**There is no authentication, by design.** The collector is meant for a home
-LAN or a tailnet, and anyone who can reach it can enqueue a job. This is stated
+**By default there is no authentication.** The collector is meant for a home
+LAN or a tailnet, and anyone who can reach it can enqueue a job. Scoped tokens
+and an audit log are opt-in with `FLEET_AUTH=tokens`
+([Authentication](deploy/auth.md)); the default does not change. This is stated
 as a posture rather than apologised for, and [the security
 policy](https://github.com/addisdev/fleet-runner/blob/main/SECURITY.md)
 describes what that does and does not cover. Do not put it on the internet.
 
 ## Where things live
 
-The code is one repository with seven components that ship independently and
+The code is one repository with eight components that ship independently and
 share no code, only the protocol.
 
 One brain --
 [`collector/`](https://github.com/addisdev/fleet-runner/tree/main/collector),
-which also holds the host executor and the browser runner it serves at
-`/runner`.
+which also holds the host executor, the [exploratory QA](explore/index.md)
+workload, and the browser runner it serves at `/runner`.
 
 Five runners, in five languages, sharing not one line:
 [`runner-android/`](https://github.com/addisdev/fleet-runner/tree/main/runner-android)

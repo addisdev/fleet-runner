@@ -29,11 +29,19 @@ deploy/install-agent.sh com.addisdev.fleet-runner-machine.plist   # or the .serv
 | `benchmark` | `llama.cpp` | Model fetched by content hash and verified, then `llama-bench`: prefill/decode tok/s, load time, peak memory with the method named |
 | `build` | `gradle`, `xcode`, `npm` | Checks out `params.ref`, builds it, and publishes the product as the app's latest build. Reports `build_s` and `artifact_bytes` |
 | `self-check` | — | Disk, tool versions, NTP offset and whether the installed agent is the one running. Reports `disk_free_gb`, `clock_offset_ms`, `checks_failed` plus a per-check breakdown |
+| `llm-eval` | — | Scores what a device generated against an eval set: exact, regex and JSON-shape rules, plus a model judge at an endpoint the job names |
+| `model-convert` | `gguf`, `coreml`, `tflite` | A checkpoint into GGUF, Core ML or TFLite, declared per format whose toolchain resolves here; each output is uploaded for a dependent job |
+| `dataset-prep` | — | An eval set, carrying its licence and source on the row. Declared only when a converter resolves |
+| `serve` | — | `llama-server` for the length of a lease, bound to loopback or the tailnet, with its endpoint announced |
+| `shell` | — | A script whose sha256 the owner pinned in `FLEET_SHELL_ALLOWLIST` (default `shell-allowlist.txt` in the data directory). Not declared without a non-empty allowlist |
+
+Each is described in [the machine workloads page](../docs/workloads/machine.md).
 
 Capabilities are declared only when honest: `benchmark:llama.cpp` needs a resolvable `llama-bench`,
 `benchmark:mlx` needs `import mlx_lm` to exit 0, `build:gradle`/`build:xcode`/`build:npm` each need
-their binary (`gradle`, `xcodebuild`, `node`) to resolve, and a machine with none of it still
-declares `benchmark` and `self-check`, both of which need nothing installed.
+their binary (`gradle`, `xcodebuild`, `node`) to resolve, `model-convert:<format>` and
+`dataset-prep` need a converter toolchain, `serve` needs `llama-server`, and a machine with none
+of it still declares `benchmark`, `self-check` and `llm-eval`, which need nothing installed.
 Bare `build` rides along with any kind — the collector matches a claim on the workload name and a
 build's kind lives in `params` where `capabilityMatches` cannot see it, so a machine declaring only
 `build:gradle` would never claim a build at all.
@@ -75,6 +83,10 @@ against a throwaway collector, as are `build` (success, failure, log upload, pub
 `"latest"` resolving to what was just published) and `self-check`. `build` has been exercised
 against `kind: "npm"` only — the gradle and xcode command lines are unit-tested but have never run a
 real compiler, and the `.app` zip path and the `xcodegen` step with them.
+
+`model-convert`, `dataset-prep` and `serve` have never run against a real toolchain: none of the
+converters resolves on the development machine, the probes correctly decline to declare them, and
+the command lines are unit-tested only.
 
 The llama.cpp backend is unit-tested against llama-bench's documented
 JSON shape but never run against a real binary; the Windows probes are untested on Windows;

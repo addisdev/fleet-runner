@@ -30,8 +30,12 @@ collector/scripts/explore-run.ts                 missions on a device, no collec
 collector/scripts/explore-bench/                 pointing, steptime, image-size, bakeoff, garden-score
 collector/scripts/explore-apple-check.ts         FleetDriver end to end on a simulator
 collector/scripts/explore-tv-check.ts            the TV actuators end to end
+collector/scripts/explore-night.ts               ultra's night-queue command: devices, tunnel, one job
 collector/examples/missions/                     mission cards
-collector/deploy/explore/                        gateway names, Holo4 fetch, night device script
+collector/examples/jobs/explore-*-ultra.json     the specs ultra's nights run
+collector/deploy/explore/                        gateway names, Holo4 fetch, night-devices.sh
+collector/deploy/explore/nightly-builds.sh       tonight's iOS and tvOS builds from origin/develop
+collector/deploy/explore/night/                  the four night-queue manifests and their priorities
 ```
 
 ## The contract

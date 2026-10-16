@@ -91,7 +91,10 @@ objection to QEMU does not apply here.
   and a loopback bind would make the published port answer nothing at all.
   Everything in [binding and exposure](../deploy/index.md#binding-and-exposure)
   still applies to the *host* side of that mapping. **There is no
-  authentication.**
+  authentication by default**. [Authentication](../deploy/auth.md) turns it
+  on: `-e FLEET_AUTH=tokens`, and the first token created inside the container,
+  `docker exec <container> node /app/bin/fleet.mjs token create ops --scope admin`,
+  so it lands on the volume. Nobody has done that in a container yet.
 - **A `HEALTHCHECK` that asks `/api/health`** rather than checking the process is
   alive. A collector whose port is bound but whose database will not open is
   exactly the failure that looks healthy from the outside.

@@ -25,14 +25,14 @@ And the weekly mission bench:
 | `bench` | `false` | Run only `bench-` cards, with no judge; file nothing; report end states reached |
 | `model` | see [below](#models) | The driver |
 | `judge` | see below | The second model, or `false` for none |
-| `minutes` | 150 | The night's budget, per device |
+| `minutes` | 150 | The night's budget, per device (1 to 600) |
 | `steps` | | Cap every card at this many steps, for a short trial night |
-| `findings_per_night` | 5 | New findings filed per app per night |
+| `findings_per_night` | 5 | New findings filed per app per night (0 to 50) |
 | `replay_attempts` | 2 | Clean-install replays per candidate (1 to 5) |
 | `confirm_per_mission` | 6 | Candidates replayed per mission, worst first |
 | `conditions` | `["baseline"]` | Rotated across the night's missions; see [below](#conditions) |
-| `changed` | | `{repo, since}` reads `git log`; `{files: [...]}` takes a list. Puts matching cards first |
-| `previous_app` | | `{sha256}` of the previous build; each reproduced finding is replayed on it too |
+| `changed` | | `{repo, since}` reads `git log` (`since` is a sha or a git date, default `24 hours ago`); `{files: [...]}` takes a list. Puts matching cards first |
+| `previous_app` | | `{sha256, build?}` of the previous build; each reproduced finding is replayed on it too |
 | `surface` | from the device | `touch` or `dpad`. Android TV, Fire TV, Roku and tvOS default to `dpad` |
 | `credentials` | | `{account, email_var, password_var}` for setup flows; the password comes from the host's Keychain |
 | `mirror` | `true` | Stream each step's screenshot to the job's live view on the dashboard |
@@ -54,8 +54,11 @@ And the weekly mission bench:
 | `extra_body` | | Merged into every request, for server-specific switches |
 
 The API key is never in the spec (the collector refuses specs carrying
-`api_key` or `token`). It comes from the executor's environment
-(`FLEET_EXPLORE_API_KEY`) or its Keychain:
+`api_key` or `token`). The executor looks for it in this order:
+`FLEET_EXPLORE_API_KEY`, then `HARNESS_KEY` (what ultra's night queue hands
+its jobs), then the file `FLEET_EXPLORE_API_KEY_FILE` (default
+`~/.config/harness/keys/fleet.key`; a process started over SSH or by launchd
+cannot write the login Keychain), then the Keychain:
 
 ```bash
 security add-generic-password -s fleet-explore-gateway -a gateway -w
@@ -88,11 +91,14 @@ the judge which language to expect, so English left in a Spanish build is a
 
 | Variable | Default | |
 |---|---|---|
-| `FLEET_EXPLORE_BASE_URL` | `http://ultra.local:4000` | The gateway |
+| `FLEET_EXPLORE_BASE_URL` | `HARNESS_GATEWAY`, then `http://ultra.local:4000` | The gateway |
 | `FLEET_EXPLORE_MODEL` | `pilot` | The driver's name on it |
 | `FLEET_EXPLORE_JUDGE_MODEL` | `vision` | The judge's name on it |
-| `FLEET_EXPLORE_API_KEY` | | Otherwise the Keychain item `fleet-explore-gateway` |
-| `FLEET_MISSIONS_DIR` | `examples/missions` | Mission cards |
+| `FLEET_EXPLORE_API_KEY` | | Otherwise `HARNESS_KEY`, the key file, then the Keychain item `fleet-explore-gateway` |
+| `FLEET_EXPLORE_API_KEY_FILE` | `~/.config/harness/keys/fleet.key` | The key as a file |
+| `FLEET_KEYCHAIN_SERVICE` | `fleet-ui-test` | The Keychain service holding the sign-in passwords `credentials` names |
+| `FLEET_DASH_TOKEN` | | Sent with live-view frames, when the brain guards the dashboard with one |
+| `FLEET_MISSIONS_DIR` | `examples/missions` in the working directory, then beside the bundle | Mission cards |
 | `FLEET_FLOWS_DIR` | `examples/flows` | Setup flows |
 | `FLEET_STATE_DIR` | `~/.fleet` | Screen maps and last-run times live under `explore/<app>/` |
 | `FLEET_TVLOOP_DIR` | `~/tvloop` | A built tvloop checkout, for Rokus |
@@ -159,6 +165,21 @@ recommended: a night that died halfway should not start again at 3 a.m.
 | Schedule | When | What |
 |---|---|---|
 | `nightly-explore-greenfolio` | 22:00 daily, window 22–01 | GreenFolio Android on ultra, 100 minutes, six conditions, aimed at the day's commits |
-| `nightly-explore-dozehound-tv` | 23:45 daily | Dozehound on Fire TV, D-pad, 40 minutes. Leave off until a model passes the TV test |
+| `nightly-explore-dozehound-tv` | 23:45 daily | Dozehound on Fire TV, D-pad, 40 minutes. Parked: the Fire TV app needs the production backend, which is the owner's call (WB-297); the TV question is being answered on tvOS instead |
 | `weekly-explore-shelf` | Wednesdays 23:00 | GreenFolio on the Galaxy S8+ (Android 9) through fleet-host's executor |
 | `weekly-explore-bench` | Sundays 22:00 | The bug garden's bench cards, for a weekly model score |
+
+The nights that actually run today do not come from these schedules. On ultra
+the harness's night queue runs `scripts/explore-night.ts` from the manifests in
+`collector/deploy/explore/night/`, each with a job spec from
+`examples/jobs/`:
+
+| Night job | Priority | Spec |
+|---|---|---|
+| `fleet-explore-builds` | 19 | none: `deploy/explore/nightly-builds.sh` builds GreenFolio iOS and Dozehound tvOS from `origin/develop` and uploads them |
+| `fleet-explore` | 20 | `explore-garden-ultra.json`, the bug garden on the Android emulator |
+| `fleet-explore-tv` | 85 | `explore-dozehound-tvos-ultra.json` and the two tvOS bench specs, on a tvOS simulator |
+| `fleet-explore-apple` | 86 | `explore-greenfolio-ios-ultra.json`, on an iOS simulator |
+
+A lower number runs earlier; the products' own night jobs sit between 20 and
+85. [Running it on ultra](../deploy/explore-on-ultra.md) has the setup.

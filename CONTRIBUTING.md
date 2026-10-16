@@ -11,7 +11,7 @@ that is not on this shelf is data this repository does not have.
 
 ## Running the suites
 
-Four components, four suites. Only run the one you touched.
+Five components, five suites. Only run the one you touched.
 
 === "collector"
 
@@ -80,7 +80,7 @@ Four components, four suites. Only run the one you touched.
     npm install && npm test
     ```
 
-    122 tests, about a second. This is the easiest component to contribute to
+    About a second. This is the easiest component to contribute to
     and the reference implementation of the protocol.
 
 ## Things this project learned the hard way
@@ -162,7 +162,9 @@ the others.
 One version covers every component, so a release is one number everywhere.
 
 1. On a branch from `develop`, run `node scripts/version.mjs set X.Y.Z`. It
-   writes `VERSION` and every component's own version. Then run
+   writes `VERSION` and every component's own version except the desktop
+   app's (`desktop/src-tauri/Cargo.toml` and `tauri.conf.json` are not among
+   the places it writes, and still say 0.5.0). Then run
    `npm --prefix collector run gen:api`, because `openapi.json` carries the
    version and CI fails when it is stale. Android's `versionCode` is not
    derived from it; bump that by hand if the Play Store build needs it.

@@ -6,11 +6,14 @@ SQLite file. One thing to keep alive, one URL, no CORS.
 | | |
 |---|---|
 | ![Overview](img/overview.png) | ![Devices](img/devices.png) |
-| **Overview** — the fleet and the queue at a glance, and what is running now | **Devices** — every phone on the shelf with battery, thermal state and what it is doing |
+| **Overview** — the fleet and the queue at a glance, and what is running now | **Devices** — every device on the shelf with battery, thermal state and what it is doing |
 | ![Jobs](img/jobs.png) | ![Results](img/results.png) |
 | **Jobs** — the queue, with a composer and cancel/retry | **Results** — benchmark trends, eval accuracy, UI-test matrices, drain curves |
 | ![Visual](img/visual.png) | ![Alerts](img/alerts.png) |
 | **Visual** — every page across every profile, diffed against its accepted baseline | **Alerts** — one row per condition for as long as it holds, with acknowledge and snooze |
+
+These screenshots are from 2026-09-05. They predate the device drawings
+described below, and there is none of the Findings screen.
 
 ## Building it
 
@@ -36,6 +39,13 @@ button for each one. Device detail has a 24 h
 battery and thermal chart; job detail has per-device results, beacons and
 artifacts.
 
+**The Devices screen draws each device as the object it is**: one of 22
+drawings, from phones and tablets through Roku boxes and sticks, an Apple TV,
+laptops, watches and a headset to a board and a browser. The drawing is chosen
+from the model string first, because agents that predate the `platform` field
+are reported as `ios` or `android`, so a Roku arrives as `android` and an
+Apple TV or Apple Watch as `ios`.
+
 **Filters live in the URL**, so a filtered view is a link you can send. Jobs can
 be composed, enqueued, cancelled, retried and reprioritised; devices can be
 renamed, annotated and re-pooled; schedules enabled, fired now and deleted;
@@ -43,7 +53,21 @@ artifacts uploaded and garbage-collected.
 
 Alerts appear as a banner on every screen. The layout works on a phone, and `?`
 lists the keyboard shortcuts — `g j` jobs, `g d` devices, `g f` findings, `g n` new job,
-`/` search.
+`/` search, and on a finding `r`, `d`, `n` or `a` for its verdict (real,
+duplicate, not a bug, the agent's mistake).
+
+## When the collector wants a token
+
+If the collector runs with `FLEET_AUTH=tokens`, or has `FLEET_DASH_TOKEN` set,
+and this browser holds no token, every screen shows a banner with a field to
+paste one. With `FLEET_AUTH=tokens` nothing can be seen or changed without it;
+`fleet token create NAME --scope read` on the collector's host makes one, and
+`run` or `admin` lets you change things too. With only `FLEET_DASH_TOKEN`,
+reads work and the banner asks for that value before anything can be changed.
+The token is kept in the browser's local storage and sent as `X-Fleet-Token`.
+With tokens on it is also exchanged for an HttpOnly session cookie that the
+collector honours for reads only, so images and the live stream work. See
+[Authentication](deploy/auth.md).
 
 ## Naming devices
 

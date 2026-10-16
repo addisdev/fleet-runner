@@ -37,7 +37,8 @@ What it uses, all over adb:
 | Launch | The launcher activity, or the leanback launcher's on a TV; launch arguments become string extras |
 | Crashes | `logcat -b crash` for the package, as a running total; `logcat -b events` for `am_anr` |
 
-**A TV** is recognised by the `android.software.leanback` feature. It gets
+**A TV** is recognised by the `android.software.leanback` or
+`android.hardware.type.television` feature. It gets
 `surface: "dpad"`, no touch tools, and a **focus line**: the focused node,
 named by its own label or, on Compose, the text inside it, with the labels of
 the containers around it.

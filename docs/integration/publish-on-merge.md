@@ -33,6 +33,16 @@ curl -X POST http://fleet-host.local:8788/artifacts \
 Those headers are what stamp the publish ordering that `latest` reads. There is
 no `/artifacts/:sha/publish` endpoint and none is needed.
 
+`POST /artifacts` is a runner-protocol route, so it stays open even with
+`FLEET_AUTH=tokens` unless the collector also sets `FLEET_AUTH_PROTOCOL=token`
+(see [Authentication](../deploy/auth.md)). Then it needs a token with the
+`agent` scope (or `admin`; `run` is not enough): send
+`-H "authorization: Bearer <token>"` with curl. `ci-upload` has no bearer
+option; it sends `FLEET_DASH_TOKEN` from its environment as `x-fleet-token`,
+which the collector also accepts as a token, so put the `agent` token in that
+variable. That route has been read from the code, not run against a
+protocol-gated collector.
+
 !!! note "An app with no published build is skipped, not failed"
 
     If nothing has ever been published for an app name, its nightly is
@@ -89,15 +99,19 @@ names.
 ```json
 {
   "schema": 1,
-  "job_id": "nightly-ui",
   "workload": "ui-test",
   "executor": "host",
-  "app": { "name": "your-app-android", "sha256": "latest" },
+  "app": { "name": "your-app-android", "build": "latest", "sha256": "latest" },
   "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" },
   "targets": { "match": "os ~ 'android'", "exclusive": true },
   "lease": { "ttl_s": 1800 }
 }
 ```
+
+This is the schedule's template. It needs no `job_id`: each firing is enqueued
+as `<schedule id>-<minute>`, and one in the template would be replaced.
+`"build": "latest"` is there because the schema requires `app.build`; the
+collector records the build string the published artifact carries.
 
 Put it in
 [`scripts/seed-schedules.ts`](https://github.com/addisdev/fleet-runner/blob/main/collector/scripts/seed-schedules.ts)
@@ -109,27 +123,41 @@ watched it run once by hand.
 
 ## Chaining a build to its own test
 
-If a machine agent does your building, the whole thing can be one enqueue —
-[job chains](../concepts.md#job-chains) do the waiting:
+If a machine agent does your building, [job chains](../concepts.md#job-chains)
+do the waiting. Nothing accepts a list of jobs in one request, so enqueue them
+one at a time, in dependency order, and let `depends_on` hold the later ones in
+`waiting`:
 
-```json
-[
-  { "job_id": "build-903", "workload": "build", "executor": "device",
-    "params": { "repo": "git@github.com:you/app.git", "ref": "main",
-                "kind": "gradle", "task": "assembleDebug", "app": "your-app-android" } },
-
-  { "job_id": "install-903", "workload": "install", "executor": "host",
-    "depends_on": ["build-903"],
-    "app": { "name": "your-app-android", "build": "903",
-             "sha256": "${jobs.build-903.artifact}" } },
-
-  { "job_id": "ui-903", "workload": "ui-test", "executor": "host",
-    "depends_on": ["install-903"],
-    "app": { "name": "your-app-android", "build": "903",
-             "sha256": "${jobs.build-903.artifact}" },
-    "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" } }
-]
+```json title="build-903.json"
+{ "job_id": "build-903", "workload": "build", "executor": "device",
+  "params": { "repo": "git@github.com:you/app.git", "ref": "main",
+              "kind": "gradle", "task": "assembleDebug", "app": "your-app-android" } }
 ```
 
-A broken build fails the install and the UI test with it, naming the cause,
-rather than leaving them in `waiting` until somebody notices next week.
+```json title="install-903.json"
+{ "job_id": "install-903", "workload": "install", "executor": "host",
+  "depends_on": ["build-903"],
+  "app": { "name": "your-app-android", "build": "903",
+           "sha256": "${jobs.build-903.artifact}" } }
+```
+
+```json title="ui-903.json"
+{ "job_id": "ui-903", "workload": "ui-test", "executor": "host",
+  "depends_on": ["build-903", "install-903"],
+  "app": { "name": "your-app-android", "build": "903",
+           "sha256": "${jobs.build-903.artifact}" },
+  "suite": { "kind": "maestro", "flows": "your-app/smoke.yaml" } }
+```
+
+```bash
+fleetr run --spec build-903.json --no-wait
+fleetr run --spec install-903.json --no-wait
+fleetr run --spec ui-903.json --no-wait
+fleetr wait ui-903          # exits with the UI test's verdict
+```
+
+The ids are fixed here because the later specs name the earlier ones. A
+dependency has to exist when its dependent is enqueued, which is why the order
+matters, and a `${jobs.<id>.artifact}` reference may only name a job listed in
+`depends_on`, which is why `ui-903` lists the build as well as the install. A broken build fails the install and the UI test with it, naming the
+cause, rather than leaving them in `waiting` until somebody notices next week.
