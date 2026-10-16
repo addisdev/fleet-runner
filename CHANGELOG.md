@@ -98,6 +98,12 @@ a CI job fails when they disagree.
 
 ### Changed
 
+- **Explore loads its model at 45% free memory, not 65%.** ultra's resident
+  models alone hold it near 56% free, so the shelf's default bar meant no
+  explore night could load Holo4 (~25 GB); 10-15's garden night skipped for
+  it. The night manifests pass `WARM_MIN_FREE_PCT=45` to the warm-up; the
+  shelf's default for everything else is unchanged, and it still refuses
+  under memory pressure. ([#95](https://github.com/addisdev/fleet-runner/pull/95))
 - **`ci-enqueue` speaks `/api/v1` and exits like `fleetr run`.** It polled the
   deprecated `GET /jobs/:id` and exited 0 on `done`, which includes a job that
   skipped and tested nothing, and it sent no token, so it failed against a
