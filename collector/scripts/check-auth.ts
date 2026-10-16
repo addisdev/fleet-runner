@@ -143,6 +143,14 @@ try {
     const denied = await call("POST", "/api/v1/jobs", { token: READ, body: spec });
     check("read token cannot create a job: 403 insufficient_scope run", denied.status === 403 && denied.body.error.code === "insufficient_scope" && denied.body.error.required_scope === "run", JSON.stringify(denied.body));
     check("read token cannot use the legacy enqueue either", (await call("POST", "/jobs", { token: READ, body: { ...spec, schema: 1, job_id: "legacy-denied" } })).status === 403);
+    const verdictDenied = await call("POST", "/api/v1/findings/1/verdict", { token: READ, body: { verdict: "real" } });
+    check("read token cannot judge a finding: 403 insufficient_scope run", verdictDenied.status === 403 && verdictDenied.body.error.required_scope === "run", JSON.stringify(verdictDenied.body));
+    const verdictRun = await call("POST", "/api/v1/findings/999999/verdict", { token: ALICE, body: { verdict: "real" } });
+    check("a run token may judge one (this one does not exist: 404)", verdictRun.status === 404, JSON.stringify(verdictRun.body));
+    check("read token can list findings", (await call("GET", "/api/v1/findings", { token: READ })).status === 200);
+    check("an agent token can pull regression flows", (await call("GET", "/findings/regressions?app=x", { token: AGENT })).status === 200);
+    check("an agent token can report a regression run (none here: 404)",
+      (await call("POST", "/findings/999999/regression", { token: AGENT, body: { job_id: "j", device_id: "d", outcome: "passed" } })).status === 404);
     check("audit needs admin", (await call("GET", "/api/v1/audit", { token: ALICE })).status === 403);
     check("admin can read the audit log", (await call("GET", "/api/v1/audit", { token: ADMIN })).status === 200);
     const w = await call("GET", "/api/v1/whoami", { token: ADMIN });

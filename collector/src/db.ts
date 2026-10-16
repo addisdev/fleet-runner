@@ -676,7 +676,7 @@ CREATE TABLE IF NOT EXISTS findings (
   last_seen    TEXT NOT NULL DEFAULT (datetime('now')),
   seen_count   INTEGER NOT NULL DEFAULT 1,
   builds_seen  TEXT NOT NULL DEFAULT '[]',   -- JSON array of distinct builds
-  verdict      TEXT CHECK (verdict IS NULL OR verdict IN ('real','duplicate','not_a_bug','agent_mistake')),
+  verdict      TEXT CHECK (verdict IS NULL OR verdict IN ('real','duplicate','not_a_bug','agent_mistake','fixed')),
   verdict_note TEXT,
   verdict_at   TEXT,
   duplicate_of INTEGER,
@@ -701,7 +701,83 @@ CREATE TABLE IF NOT EXISTS findings_digests (
   posted   INTEGER NOT NULL DEFAULT 0,
   detail   TEXT
 );
+
+-- Every verdict a finding has had, and every night a regression test brought
+-- it back. The findings row holds only the current verdict; this is how a
+-- reader learns that "open" means "regressed on build 1.4 (12)" rather than
+-- "nobody has looked".
+CREATE TABLE IF NOT EXISTS finding_verdicts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  finding_id  INTEGER NOT NULL,
+  at          TEXT NOT NULL DEFAULT (datetime('now')),
+  event       TEXT NOT NULL CHECK (event IN ('verdict','regressed')),
+  verdict     TEXT,                    -- NULL: reopened
+  note        TEXT,
+  actor       TEXT,
+  source      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_finding_verdicts ON finding_verdicts (finding_id, id);
+
+-- A finding's replay flow, kept as a regression test (src/findings.ts).
+-- In the database rather than as files because the lab's flows directory is
+-- outside git and outside any backup this repository controls: the flow text
+-- is copied here when the finding is marked real, so it survives the artifact
+-- store's GC as well.
+CREATE TABLE IF NOT EXISTS regressions (
+  finding_id    INTEGER PRIMARY KEY,
+  app           TEXT NOT NULL,
+  platform      TEXT NOT NULL,
+  check_name    TEXT NOT NULL,
+  kind          TEXT NOT NULL CHECK (kind IN ('maestro','tvloop')),
+  flow          TEXT NOT NULL,
+  flow_sha256   TEXT,
+  state         TEXT NOT NULL CHECK (state IN ('candidate','active','retired')),
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  activated_at  TEXT,
+  retired_at    TEXT,
+  runs          INTEGER NOT NULL DEFAULT 0,
+  last_run_at   TEXT,
+  last_job_id   TEXT,
+  last_outcome  TEXT,
+  last_detail   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_regressions_app ON regressions (app, state);
 `);
+
+// 'fixed' as a verdict. The findings table's CHECK predates it, and SQLite
+// cannot alter a constraint, so the table is rebuilt once, the same way the
+// jobs table was for 'skipped'. Every existing verdict also gets one history
+// row, so a finding judged before history existed does not read as never
+// judged.
+{
+  const ddl = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='findings'").get() as
+    | { sql: string }
+    | undefined)?.sql;
+  if (ddl && !ddl.includes("'fixed'")) {
+    const widened = ddl
+      .replace(/^CREATE TABLE\s+("?)findings\1/i, "CREATE TABLE findings_migrating")
+      .replace(/verdict IN \(([^)]*)\)/i, (_m, list: string) => `verdict IN (${list.trim()},'fixed')`);
+    if (!widened.includes("'fixed'") || !widened.startsWith("CREATE TABLE findings_migrating"))
+      throw new Error("cannot widen the findings verdict constraint: the table's DDL is not the shape this migration knows");
+    const columns = (db.prepare("PRAGMA table_info(findings)").all() as { name: string }[]).map((c) => `"${c.name}"`).join(", ");
+    withTransaction(db, () => {
+      db.exec(widened);
+      db.exec(`INSERT INTO findings_migrating (${columns}) SELECT ${columns} FROM findings`);
+      db.exec("DROP TABLE findings");
+      db.exec("ALTER TABLE findings_migrating RENAME TO findings");
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_findings_last_seen ON findings (last_seen DESC);
+        CREATE INDEX IF NOT EXISTS idx_findings_app_check ON findings (app, check_name);
+        CREATE INDEX IF NOT EXISTS idx_findings_issue ON findings (app, issue_state, issue_at);
+      `);
+    })();
+  }
+  db.exec(`
+    INSERT INTO finding_verdicts (finding_id, at, event, verdict, note)
+    SELECT f.id, COALESCE(f.verdict_at, f.last_seen), 'verdict', f.verdict, f.verdict_note FROM findings f
+    WHERE f.verdict IS NOT NULL AND NOT EXISTS (SELECT 1 FROM finding_verdicts v WHERE v.finding_id = f.id)
+  `);
+}
 
 // Who asked for a job, and through which front door. After the rebuild for the
 // same reason depends_on is. `requested_by` is a verified identity only when

@@ -17,6 +17,12 @@ const TOKEN = process.env.FLEET_DASH_TOKEN;
 
 export const guardEnabled = () => AUTH === "tokens" || !!TOKEN;
 
+/** The same rule as requireToken, without answering: for /api/v1, which answers in its own envelope. */
+export function dashTokenOk(req: FastifyRequest): boolean {
+  if (AUTH === "tokens" || !TOKEN) return true;
+  return req.headers["x-fleet-token"] === TOKEN;
+}
+
 /** Returns true when the request may proceed; sends 401 and returns false when
  *  it may not, so callers can `if (!requireToken(req, reply)) return;`. */
 export function requireToken(req: FastifyRequest, reply: FastifyReply): boolean {

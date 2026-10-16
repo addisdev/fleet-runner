@@ -220,7 +220,19 @@
         "failed": { "type": "integer" },
         "artifacts": { "type": "array", "items": { "type": "string" }, "description": "sha256 refs of screenshots/videos/junit uploaded to the artifact store" },
         "skipped": { "type": "integer" },
-        "failing_flow": { "type": "string", "description": "The first failing flow or test case, by name; the step that broke is in the row's error" }
+        "failing_flow": { "type": "string", "description": "The first failing flow or test case, by name; the step that broke is in the row's error" },
+        "regressions": {
+          "type": "array",
+          "description": "ui-test with params.regressions: each fixed finding's replay flow run on this device. reproduced reopens the finding",
+          "items": {
+            "type": "object",
+            "properties": {
+              "finding_id": { "type": "integer" },
+              "outcome": { "enum": ["passed", "reproduced", "failed", "skipped"] },
+              "detail": { "type": "string" }
+            }
+          }
+        }
       }
     },
     "shot": {

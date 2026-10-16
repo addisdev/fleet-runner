@@ -25,14 +25,17 @@ disagree: the test suite fails if they do.
 | `GET /api/v1/workloads` · `/workloads/{name}` | read | What the fleet can run: executor, params schema, a valid example spec, how many live agents can take it |
 | `GET /api/v1/templates` | read | Saved job templates |
 | `GET /api/v1/jobs` | read | Jobs; filter by `status` (`waiting`, `queued`, `claimed`, `done`, `failed`, `cancelled`, `skipped`), `workload`, `executor` (`device` or `host`), `device`, `pool`, `source`, `requested_by`, `mine=true`, `q` (substring of the job id), `from`/`to`, `has_error=true`. The list carries `facets` over the whole table: `status_counts`, `workloads`, `pools` |
-| `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs. 422 `no_capable_agent` when no live agent declares the workload (or backend); 400 `no_matching_devices` for a fan-out that matches nothing, and 400 `no_build` when `latest` names no published build |
+| `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs. 422 `no_capable_agent` when no live agent declares the workload (or backend), or `unresolved_reference`; 400 `no_matching_devices` when the targets match no registered device, `no_build` when `latest` names no published build, and `invalid_spec`, `invalid_match`, `invalid_dependency`, `secret_in_spec`. The OpenAPI document lists the same |
 | `POST /api/v1/jobs/validate` | run | Dry run: schema errors by path, the devices it would land on, warnings. Always 200 |
 | `GET /api/v1/jobs/{id}` | read | One job, with its spec |
 | `GET /api/v1/jobs/{id}/summary` | read | The verdict across every device, per-device outcomes and artifact refs. Works for a fan-out parent |
 | `GET /api/v1/jobs/{id}/wait?timeout_s=` | read | Long-poll (≤ 120 s) until the job finishes; returns the summary |
 | `POST /api/v1/jobs/{id}/cancel` · `/retry` | run | Cancel (cascades over a fan-out) or run again under a new id |
 | `GET /api/v1/results` · `/results/flaky` | read | Result rows (`include=payload` for the raw row), and tests whose verdict flips on one build |
-| `GET /api/v1/artifacts/{sha256}` · `/content` | read | What an artifact is, and its bytes. Active types (HTML, SVG) are served as attachments with a sandbox CSP |
+| `GET /api/v1/artifacts/{sha256}` · `/content` | read | What an artifact is, and its bytes. `channel` is `pr` for a pull request's build (`latest` never resolves to it) and `main` otherwise. Active types (HTML, SVG) are served as attachments with a sandbox CSP |
+| `GET /api/v1/findings` | read | What night QA found; filter by `app`, `state` (`open`, `triaged`, `all`), `verdict` (comma-separated), `check`, `since` (ISO 8601 or `24h`, `7d`). See [Findings](#findings) |
+| `GET /api/v1/findings/{id}` | read | One finding: steps in words, evidence as links, the replay flow (inline up to 16 KiB), its regression test, verdict history, counts |
+| `POST /api/v1/findings/{id}/verdict` | run | `{verdict, note?, duplicate_of?}`: `real`, `duplicate`, `not_a_bug`, `agent_mistake`, `fixed` (only after `real`; 409 `conflict` otherwise) or `null` to reopen. Audited |
 | `GET /api/v1/schedules` · `/alerts` | read | Recurring jobs and open alerts |
 | `GET /api/v1/audit` | admin | Who did what, when tokens are on |
 | `GET /metrics` | read | The fleet in Prometheus text format: devices by status, jobs by status, oldest queued job, per-device success ratio over 24 h, open alerts, artifact counts. Computed from the database on each scrape. Not under `/api/v1` and not in the OpenAPI document |
@@ -74,11 +77,13 @@ unverified; with tokens on, `requested_by` is the token's name, or the person a
 
 **The older routes are deprecated, not removed.** `GET /api/devices`,
 `GET /api/devices/{id}`, `GET /api/jobs`, `GET /api/jobs/{id}`,
-`GET /api/results`, `GET /devices`, `GET /schedules`, `GET /jobs/{id}` and
-`POST /jobs` · `/api/jobs` answer with `Deprecation` (RFC 9745) and a
-`Link: <...>; rel="successor-version"` header. Only those exact routes carry
-the headers: `/api/devices/{id}/beacons`, `/api/results/bench` and the rest of
-the dashboard's read API do not. There is no sunset date. The runner protocol is
+`GET /api/results`, `GET /devices`, `GET /schedules`, `GET /jobs/{id}`,
+`POST /jobs` · `/api/jobs`, and `GET /api/findings`, `GET /api/findings/{id}`
+and `POST /api/findings/{id}/verdict` answer with `Deprecation` (RFC 9745) and
+a `Link: <...>; rel="successor-version"` header. Only those exact routes carry
+the headers: `/api/devices/{id}/beacons`, `/api/results/bench`,
+`/api/findings/precision`, `/digest`, `/issues` and the rest of the
+dashboard's read API do not. There is no sunset date. The runner protocol is
 not deprecated.
 
 Timestamps are ISO-8601 **UTC with a `Z`**. SQLite stores
@@ -104,6 +109,8 @@ artifacts). See [the protocol](protocol.md#authentication-optional) and
 | `POST /artifacts` | Upload bytes; returns `sha256`. Headers: `x-artifact-name`, and for a build `x-artifact-app`, `x-artifact-build`, `x-artifact-platform`. `x-artifact-channel: pr` marks a pull request's build, which `"sha256": "latest"` never resolves to; any other channel value is a 400. See [Publish builds on merge](integration/publish-on-merge.md#pull-request-builds-never-move-latest) |
 | `GET /artifacts/:sha256` | Download, supports Range |
 | `POST /findings` | An `explore` finding from an executor; merged on its fingerprint. See [Findings and verdicts](explore/findings.md#the-api) |
+| `GET /findings/regressions?app=&state=active&platform=` | A nightly `ui-test` pulling an app's regression flows. See [Regression tests](explore/findings.md#regression-tests) |
+| `POST /findings/:id/regression` | An executor reporting one regression run: `{job_id, device_id, build, outcome, detail}`; `reproduced` reopens the finding |
 | `POST /api/jobs/:id/mirror` | One raw JPEG frame from an executor driving a device, for the live view. Kept in memory only (the last three frames), never stored; 2 MB cap per frame. The one row here that `FLEET_DASH_TOKEN` does guard; the `explore` workload sends it |
 
 ## Queue
@@ -183,12 +190,17 @@ From the [`explore`](explore/index.md) workload. Full shapes and replies are in
 
 | Method & path | Purpose |
 |---|---|
-| `GET /api/findings` | The list: `?app= &check= &status=open\|triaged\|all &since= &limit=` |
-| `GET /api/findings/:id` | One finding, with its duplicates |
+| `GET /api/findings` | The list: `?app= &check= &status=open\|triaged\|all &verdict= &since= &limit= &offset=` |
+| `GET /api/findings/:id` | One finding, with its duplicates, evidence links, replay flow, regression test and history |
 | `GET /api/findings/precision` | How often each check and visual class was judged real; which are switched off |
 | `GET /api/findings/digest?hours=` | The morning digest, as text and as data |
 | `GET /api/findings/issues` | Every GitHub issue composed, dry run or filed |
-| `POST /api/findings/:id/verdict` | Real, duplicate, not a bug, agent's mistake, or reopen. Guarded |
+| `POST /api/findings/:id/verdict` | Real, duplicate, not a bug, agent's mistake, fixed (only after real), or reopen. Guarded |
+
+The control API has the list, the detail and the verdict too
+(`/api/v1/findings`, above). Both call the same functions in
+`collector/src/findings.ts`; the v1 verdict needs the `run` scope with tokens
+on, and the dashboard's route here keeps the `admin` it always needed.
 
 ## Mutations
 

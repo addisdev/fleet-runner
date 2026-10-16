@@ -30,6 +30,7 @@ import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
 import { runTvloopChecks } from "../src/workloads/tvloop/tvloop.test.js";
 import { runColdStartChecks } from "../src/workloads/cold-start/cold-start.test.js";
 import { runFindingsChecks } from "../src/findings.test.js";
+import { runRegressionChecks } from "../src/workloads/regressions.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
 
@@ -2888,6 +2889,10 @@ await runColdStartChecks(check);
 // armed GitHub path and the digest timer, against a temp database of its own.
 await runFindingsChecks(check);
 
+// The ui-test side of regression tests: which app, a stored flow made
+// runnable, the crash-buffer judgement, and what each run reports.
+await runRegressionChecks(check);
+
 // --- night-QA findings, over HTTP ---
 //
 // What the explore workload's executor will actually do: post findings, post
@@ -2983,6 +2988,40 @@ await runFindingsChecks(check);
     JSON.stringify(mine.map((r) => r.issue.state)));
   check("findings: the issue body is composed for audit",
     mine.some((r) => r.issue.body.includes("Tap Save") && r.issue.labels.includes("night-qa")));
+
+  // A finding becomes a regression test, over HTTP: the flow is uploaded the
+  // way the workload uploads it, real keeps it, fixed activates it, the
+  // nightly's pull sees it, and a reproduced run reopens the finding.
+  const flowText = `appId: com.example.smoke\nname: "smoke ${run}"\n---\n- launchApp:\n    clearState: true\n`;
+  const upFlow = await fetch(`${BASE}/artifacts`, {
+    method: "POST", headers: { "content-type": "application/octet-stream", "x-artifact-name": `explore-finding-${run}.yaml` }, body: flowText,
+  });
+  const flowSha = ((await upFlow.json()) as { sha256: string }).sha256;
+  const rf = await json("POST", "/findings", finding({
+    fingerprint: `${APP}-fp-reg`, check: "crash", replay: { kind: "maestro", sha256: flowSha, attempts: 2, reproduced: 2 },
+    artifacts: { replay: flowSha },
+  }));
+  const rid = rf.body?.id;
+  const tooSoon = await json("POST", `/api/findings/${rid}/verdict`, { verdict: "fixed" });
+  check("regressions: fixed before real is 409 on the dashboard's route too", tooSoon.status === 409, JSON.stringify(tooSoon.body));
+  const real = await json("POST", `/api/findings/${rid}/verdict`, { verdict: "real" });
+  check("regressions: real keeps the uploaded flow as a candidate", real.body?.regression?.state === "candidate" &&
+    real.body.regression.flow === flowText, JSON.stringify(real.body?.regression));
+  const fixed = await json("POST", `/api/findings/${rid}/verdict`, { verdict: "fixed", note: "PR #1" });
+  check("regressions: fixed activates it", fixed.status === 200 && fixed.body?.regression?.state === "active");
+  const pulled = await json("GET", `/findings/regressions?app=${APP}`);
+  check("regressions: GET /findings/regressions is what the nightly pulls",
+    pulled.status === 200 && pulled.body?.regressions?.length === 1 && pulled.body.regressions[0].flow === flowText, JSON.stringify(pulled.body));
+  check("regressions: a bad state filter is 400", (await json("GET", "/findings/regressions?state=maybe")).status === 400);
+  const runBody = { job_id: `smoke-ui-${run}`, device_id: DEVICE, build: "9.9 (1)", outcome: "reproduced", detail: "crashed again" };
+  const rep = await json("POST", `/findings/${rid}/regression`, runBody);
+  check("regressions: a reproduced run reopens the finding", rep.status === 200 && rep.body?.reopened === true, JSON.stringify(rep.body));
+  const after = await json("GET", `/api/findings/${rid}`);
+  check("regressions: reopened, counted, with the build and a history line",
+    after.body?.verdict === null && after.body?.builds_seen?.includes("9.9 (1)") &&
+      after.body?.history?.at(-1)?.event === "regressed" && /regressed on build 9\.9 \(1\)/.test(after.body.history.at(-1).note), JSON.stringify(after.body?.history));
+  check("regressions: a bad run body is 400", (await json("POST", `/findings/${rid}/regression`, { ...runBody, outcome: "meh" })).status === 400);
+  check("regressions: a run for a finding with no test is 404", (await json("POST", "/findings/999999999/regression", runBody)).status === 404);
 }
 
 // --- the synthetic backend's reference digest ---

@@ -9,6 +9,11 @@
  *   GET  /api/findings/issues            every issue composed, dry run or filed
  *   GET  /api/findings/:id               one finding
  *   POST /api/findings/:id/verdict       a person's judgement (token-guarded)
+ *   GET  /findings/regressions           what a nightly ui-test runs (?app= &state= &platform=)
+ *   POST /findings/:id/regression        an executor reporting one regression run
+ *
+ * /api/v1/findings (src/api/v1/routes.ts) calls the same functions in
+ * src/findings.ts; neither route set has logic of its own.
  *
  * ## Guard posture
  *
@@ -17,11 +22,18 @@
  * network (see README and FLEET_BIND), not the dashboard token. The verdict is
  * different -- it is a person's decision, and it decides which checks run
  * tomorrow night -- so it carries the same speed bump as cancel and ack.
+ * The two regression routes are the executor again: it pulls the flows its
+ * job should run and reports what each did, so they sit with `POST /findings`
+ * on the runner protocol's side of auth.
  */
 import type { FastifyInstance } from "fastify";
 import {
   LIMITS,
   buildDigest,
+  listRegressions,
+  parseRegressionRun,
+  parseVerdictBody,
+  recordRegressionRun,
   fileIssue,
   findingDetail,
   issueOptions,
@@ -33,7 +45,7 @@ import {
   validateFinding,
 } from "../findings.js";
 import { FINDINGS_REPOS, FINDINGS_REPOS_ERROR, GITHUB_ISSUES_ARMED, GITHUB_TOKEN } from "../config.js";
-import type { Verdict } from "../workloads/explore/types.js";
+import { authOf } from "../auth.js";
 import { requireToken } from "./guard.js";
 
 type Announce = (event: { type: string; [k: string]: unknown }) => void;
@@ -75,7 +87,10 @@ export function registerFindings(app: FastifyInstance, announce: Announce) {
 
   app.get("/api/findings", async (req, reply) => {
     const q = req.query as Record<string, string | undefined>;
-    const out = listFindings({ app: q.app, check: q.check, status: q.status, since: q.since, limit: Number(q.limit) || undefined });
+    const out = listFindings({
+      app: q.app, check: q.check, status: q.status, verdict: q.verdict, since: q.since,
+      limit: Number(q.limit) || undefined, offset: Number(q.offset) || undefined,
+    });
     if (!out.ok) return reply.code(400).send({ error: out.error });
     return out.body;
   });
@@ -116,18 +131,35 @@ export function registerFindings(app: FastifyInstance, announce: Announce) {
     if (!requireToken(req, reply)) return;
     const id = idOf((req.params as { id: string }).id);
     if (id === null) return reply.code(404).send({ error: "no such finding" });
-    const b = (req.body ?? {}) as { verdict?: unknown; note?: unknown; duplicate_of?: unknown };
-    if (!("verdict" in b)) return reply.code(400).send({ error: "verdict is required (or null to reopen)" });
-    if (b.note !== undefined && b.note !== null && typeof b.note !== "string")
-      return reply.code(400).send({ error: "note must be a string" });
-    const dup = b.duplicate_of === undefined || b.duplicate_of === null ? null : Number(b.duplicate_of);
-    if (dup !== null && !(Number.isInteger(dup) && dup > 0))
-      return reply.code(400).send({ error: "duplicate_of must be a finding id" });
-
-    const note = typeof b.note === "string" && b.note.trim() ? b.note.trim() : null;
-    const out = setVerdict(id, (b.verdict ?? null) as Verdict | null, note, dup);
+    const body = parseVerdictBody(req.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    const ctx = authOf(req);
+    const out = setVerdict(id, body.verdict, body.note, body.duplicateOf, { who: { actor: ctx.actor, source: ctx.source ?? "dash" } });
     if (!out.ok) return reply.code(out.status).send({ error: out.error });
     announce({ type: "finding", id, verdict: out.finding.verdict });
-    return { ok: true, finding: out.finding };
+    return { ok: true, finding: out.finding, regression: out.regression, change: out.change };
+  });
+
+  // The executor's side of regression tests. Literal before parameterised,
+  // as above.
+  app.get("/findings/regressions", async (req, reply) => {
+    const q = req.query as Record<string, string | undefined>;
+    const out = listRegressions({ app: q.app || undefined, state: q.state || undefined, platform: q.platform || undefined });
+    if (!out.ok) return reply.code(400).send({ error: out.error });
+    return { regressions: out.items };
+  });
+
+  app.post("/findings/:id/regression", async (req, reply) => {
+    const id = idOf((req.params as { id: string }).id);
+    if (id === null) return reply.code(404).send({ error: "no such finding" });
+    const body = parseRegressionRun(req.body);
+    if (!body.ok) return reply.code(400).send({ error: body.error });
+    const out = recordRegressionRun(id, body.run);
+    if (!out.ok) return reply.code(out.status).send({ error: out.error });
+    if (out.reopened) {
+      app.log.warn({ finding: id, job: body.run.job_id, build: body.run.build }, "regression reproduced; finding reopened");
+      announce({ type: "finding", id, verdict: null, regressed: true });
+    }
+    return { ok: true, reopened: out.reopened, regression: { state: out.regression.state, runs: out.regression.runs, last_outcome: out.regression.last_outcome } };
   });
 }

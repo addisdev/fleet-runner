@@ -104,6 +104,7 @@ export function openapiDocument() {
       { name: "jobs", description: "Queue, validate, wait for, cancel and retry work." },
       { name: "results", description: "What ran and how it went." },
       { name: "artifacts", description: "Screenshots, logs, reports, builds." },
+      { name: "findings", description: "What night QA found, its verdicts, and the regression tests fixed findings became." },
       { name: "fleet", description: "Schedules, alerts, audit." },
       { name: "protocol", description: "What runners speak. Not for composing work." },
     ],

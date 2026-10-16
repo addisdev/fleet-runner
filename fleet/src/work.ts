@@ -17,7 +17,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import type { FleetClient, JobSpecInput, JobSummary } from "../../collector/src/client/index.js";
+import type { FindingVerdictInput, FleetClient, JobSpecInput, JobSummary } from "../../collector/src/client/index.js";
 import { FleetApiError } from "../../collector/src/client/index.js";
 import { childEnv, load } from "./config.js";
 import { connect, readCredentials, resolveBrain, writeCredentials } from "./connect.js";
@@ -326,6 +326,109 @@ async function artifact(client: FleetClient, a: Args) {
   return EXIT.passed;
 }
 
+/** `not-a-bug` and `agent-mistake` as typed, the API's names, or `reopen` for null. */
+export function verdictWord(raw: string | undefined): FindingVerdictInput["verdict"] | undefined {
+  if (!raw) return undefined;
+  const w = raw.trim().toLowerCase().replace(/-/g, "_");
+  if (w === "reopen" || w === "open") return null;
+  return (["real", "duplicate", "not_a_bug", "agent_mistake", "fixed"] as const).find((v) => v === w);
+}
+
+async function findings(client: FleetClient, a: Args) {
+  const page = await client.listFindings({
+    app: str(a, "app"), state: str(a, "state") as "open" | "triaged" | "all" | undefined, verdict: str(a, "verdict"),
+    check: str(a, "check"), since: str(a, "since"), per_page: num(a, "limit", 50), page: num(a, "page", 1),
+  });
+  if (a.flags.json) return printJson(page), EXIT.passed;
+  if (!page.items.length) {
+    err("no findings match");
+    return EXIT.passed;
+  }
+  table(
+    page.items.map((f) => [
+      `#${f.id}`, f.app, f.check, f.severity, f.verdict ?? "open", f.replay_label, `${f.seen_count}x`, ago(f.last_seen),
+      f.regression ? f.regression.state : "", f.title.slice(0, 60),
+    ]),
+    ["ID", "APP", "CHECK", "SEV", "VERDICT", "REPLAY", "SEEN", "LAST", "REGRESSION", "TITLE"],
+  );
+  if (page.total > page.items.length) err(`${page.items.length} of ${page.total}; --limit N or --page N for more`);
+  return EXIT.passed;
+}
+
+function findingIdOf(a: Args, usage: string): number {
+  const raw = (a.positional[0] ?? "").replace(/^#/, "");
+  if (!/^\d+$/.test(raw)) throw new UsageError(usage);
+  return Number(raw);
+}
+
+async function finding(client: FleetClient, a: Args) {
+  const id = findingIdOf(a, "usage: fleet finding <id> [--flow FILE|-] [--json]");
+  const f = await client.getFinding(String(id));
+  // --flow with no file is stdout, so `fleet finding 12 --flow > repro.yaml` works.
+  const dest = a.flags.flow === true ? "-" : str(a, "flow");
+  if (dest) {
+    const rf = f.replay_flow;
+    if (!rf) {
+      err(`finding ${id} has no replay flow (${f.replay_label})`);
+      return EXIT.error;
+    }
+    let text = rf.text;
+    if (text === null) {
+      if (!rf.in_store) {
+        err(`finding ${id}'s replay flow ${rf.sha256} is no longer in the artifact store`);
+        return EXIT.error;
+      }
+      text = await (await client.getArtifactContent(rf.sha256, undefined, { timeoutMs: 60_000 })).text();
+    }
+    if (dest === "-") process.stdout.write(text);
+    else {
+      writeFileSync(dest, text);
+      err(`wrote ${dest} (${rf.kind} flow, ${Buffer.byteLength(text)} bytes)`);
+    }
+    if (dest === "-" || a.flags.json !== true) return EXIT.passed;
+  }
+  if (a.flags.json) return printJson(f), EXIT.passed;
+  out(`#${f.id}  ${f.title}`);
+  out(`  ${f.app} · ${f.check} (${f.severity}) · ${f.verdict ?? "open"} · ${f.replay_label} · seen ${f.seen_count}x on ${f.builds_seen.length} build${f.builds_seen.length === 1 ? "" : "s"}`);
+  out(`  ${f.screen_name || "unnamed screen"} on ${f.device_id} (${f.platform}), mission ${f.mission_id}, first found by ${f.job_id}`);
+  if (f.verdict === "agent_mistake") out("  agent_mistake: the model misread the app; this is not a bug in it.");
+  if (f.detail) out(`\n${f.detail}`);
+  if (f.steps.length) {
+    out("\nsteps");
+    f.steps.forEach((s, i) => out(`  ${i + 1}. ${s}`));
+  }
+  if (f.evidence.length) {
+    out("\nevidence");
+    for (const e of f.evidence) out(`  ${e.label.padEnd(14)} ${e.sha256}${e.in_store ? "" : "  (collected)"}`);
+  }
+  if (f.replay_flow) out(`\nreplay flow: ${f.replay_flow.kind}, ${f.replay_flow.sha256}  (fleet finding ${f.id} --flow FILE writes it)`);
+  if (f.regression) {
+    const r = f.regression;
+    out(`regression test: ${r.state}, ${r.asserts === "no_crash" ? "asserts no crash" : "replays without error"}, run ${r.runs}x${r.last_outcome ? `, last ${r.last_outcome}` : ""}`);
+  }
+  if (f.history.length) {
+    out("\nhistory");
+    for (const h of f.history) out(`  ${h.at ?? ""}  ${h.event === "regressed" ? "regressed" : h.verdict ?? "reopened"}${h.actor ? ` (${h.actor})` : ""}${h.note ? `: ${h.note}` : ""}`);
+  }
+  return EXIT.passed;
+}
+
+async function verdict(client: FleetClient, a: Args) {
+  const usage = "usage: fleet verdict <id> real|duplicate|not-a-bug|agent-mistake|fixed|reopen [--note TEXT] [--duplicate-of ID]";
+  const id = findingIdOf(a, usage);
+  const v = verdictWord(a.positional[1]);
+  if (v === undefined) throw new UsageError(usage);
+  const dup = str(a, "duplicate-of");
+  const r = await client.setFindingVerdict(String(id), {
+    verdict: v,
+    ...(str(a, "note") ? { note: str(a, "note") } : {}),
+    ...(dup ? { duplicate_of: Number(dup.replace(/^#/, "")) } : {}),
+  });
+  if (a.flags.json) return printJson(r), EXIT.passed;
+  out(`#${id} ${r.finding.verdict ?? "reopened"}${r.change ? `; ${r.change}` : ""}`);
+  return EXIT.passed;
+}
+
 async function whoami(client: FleetClient, a: Args) {
   const [me, health] = await Promise.all([client.whoami(), client.getHealth()]);
   if (a.flags.json) return printJson({ ...me, url: client.baseUrl, version: health.version }), EXIT.passed;
@@ -468,6 +571,11 @@ export const WORK_USAGE = `
   fleet results [--device ID] [--workload W] [--job ID] [--failures] [--limit N]
   fleet flaky [--device ID] [--app NAME]               UI tests that pass and fail on the same build.
   fleet artifact SHA [--out FILE|-]                    Describe or download an artifact.
+  fleet findings [--app A] [--state open|triaged|all] [--verdict V] [--check C] [--since 24h] [--limit N]
+                          What night QA found. --since 24h --json is the morning brief.
+  fleet finding ID [--flow FILE|-]                     One finding: steps, evidence, history; --flow writes its replay flow.
+  fleet verdict ID real|duplicate|not-a-bug|agent-mistake|fixed|reopen [--note TEXT] [--duplicate-of ID]
+                          fixed only after real, once the fix has merged: its flow joins the nightly.
   fleet login [--url U] [--token T] | fleet logout | fleet whoami
   fleet token create NAME --scope read,run,admin,agent,delegate | list | revoke ID|NAME
   fleet skill show | fleet skill install [--target cursor,claude,codex|DIR]
@@ -476,7 +584,7 @@ export const WORK_USAGE = `
   Exit codes: 0 passed, 1 failed, 2 usage/invalid spec, 3 still running, 4 skipped (nothing ran), 5 refused/unreachable.
 `;
 
-export const WORK_COMMANDS = new Set(["devices", "workloads", "run", "job", "wait", "cancel", "retry", "results", "flaky", "artifact", "login", "logout", "whoami", "token", "skill"]);
+export const WORK_COMMANDS = new Set(["devices", "workloads", "run", "job", "wait", "cancel", "retry", "results", "flaky", "artifact", "findings", "finding", "verdict", "login", "logout", "whoami", "token", "skill"]);
 
 export async function workCommand(command: string, argv: string[]): Promise<number> {
   const a = parseArgs(argv);
@@ -495,6 +603,9 @@ export async function workCommand(command: string, argv: string[]): Promise<numb
       case "results": return await results(client, a);
       case "flaky": return await flaky(client, a);
       case "artifact": return await artifact(client, a);
+      case "findings": return await findings(client, a);
+      case "finding": return await finding(client, a);
+      case "verdict": return await verdict(client, a);
       case "whoami": return await whoami(client, a);
       case "cancel": {
         if (!a.positional[0]) throw new UsageError("usage: fleet cancel <job_id> [--reason R]");

@@ -32,6 +32,9 @@ the shared names.
 | `fleet_results` | `fleetr results` | read | no |
 | `fleet_flaky` | `fleetr flaky` | read | no |
 | `fleet_artifact` | `fleetr artifact SHA [--out FILE]` | read | no |
+| `fleet_findings` | `fleetr findings [--app A] [--since 24h]` | read | no |
+| `fleet_finding` | `fleetr finding ID [--flow FILE]` | read | no |
+| `fleet_verdict` | `fleetr verdict ID VERDICT [--note TEXT]` | run | yes |
 | `fleet_whoami` | `fleetr whoami` | read | no |
 <!-- /generated:tools -->
 
@@ -69,6 +72,29 @@ job) or `running`. `fleetr run`, `job`, `wait` and `retry --wait` exit with:
 - **4** skipped: the job was claimed but reported `skipped:` instead of running (the app is not installed, the device was locked by another job, no attached device matched a host job, the host was under memory pressure, no Roku password on the host). Never report this as a pass. A spec nothing can run is refused before it runs instead: exit 2 from validation, or 5 when the collector refuses it at enqueue.
 - **5** refused or unreachable: no permission, unknown workload or job, or no collector. Report it; do not work around it.
 <!-- /generated:exits -->
+
+## Reading a finding
+
+Night QA (the `explore` workload) drives each app overnight and files what
+looks wrong as a finding. `fleetr findings --since 24h` (`fleet_findings
+since=24h`) is last night; `fleetr finding ID` (`fleet_finding id=ID`) is one
+of them with its steps, evidence and replay flow; `--flow FILE` writes the
+flow so you can reproduce it.
+
+- **Read the replay count first.** Every finding was replayed on a clean
+  install before it was filed: `reproduced 2/2` is solid, `flaky 1/2` is
+  weaker, `crash log` means the platform's crash log is the evidence. Look at
+  the screenshot (`fleetr artifact SHA --out DIR`) before you change code.
+- **`agent_mistake` is not a bug.** It means the model misread the app and the
+  app behaved correctly. Do not fix the app for it. `not_a_bug` likewise.
+- **Never mark a finding `fixed` without a fix merged.** `fixed` comes only
+  after `real`, and it puts the finding's flow into the app's nightly as a
+  regression test that reopens the finding if a crash comes back. Put the
+  fix's PR in `--note`. If you are unsure whether it is real, leave the
+  verdict to a person.
+- **`seen_count` and `builds_seen`** say how often and on which builds it came
+  back; a finding open again with a `regressed on build ...` line in its
+  history is a fix that did not hold.
 
 ## Rules
 

@@ -64,10 +64,17 @@ not allow, is refused with each problem named by path, where the older
 `POST /api/jobs` took the spec and let the job fail later. The curl it shows
 is the same request. Jobs it enqueues record `source: dash`.
 
+**Findings read and judge through `/api/v1/findings`**, so a verdict from the
+dashboard is the same call, with the same refusals, as `fleetr verdict` and
+`fleet_verdict`. The precision table still reads `/api/findings/precision`,
+which has no `/api/v1` counterpart.
+
 Alerts appear as a banner on every screen. The layout works on a phone, and `?`
 lists the keyboard shortcuts — `g j` jobs, `g d` devices, `g f` findings, `g n` new job,
-`/` search, and on a finding `r`, `d`, `n` or `a` for its verdict (real,
-duplicate, not a bug, the agent's mistake).
+`/` search, and on a finding `r`, `d`, `n`, `a` or `f` for its verdict (real,
+duplicate, not a bug, the agent's mistake, fixed). Fixed is offered only once a
+finding is real, and a finding with a regression test shows its state, last
+run and verdict history in a panel of its own.
 
 ## When the collector wants a token
 
