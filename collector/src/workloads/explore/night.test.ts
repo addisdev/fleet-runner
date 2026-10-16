@@ -46,8 +46,9 @@ export async function runNightChecks(check: Check) {
 
   // --- max_minutes from the night queue's manifest ----------------------------
   const files: Record<string, string> = {
-    "/n/recurring/fleet-explore-tv.json": JSON.stringify({ name: "fleet-explore-tv", max_minutes: 150 }),
-    "/n/queue/one-off.json": JSON.stringify({ name: "one-off" }),
+    // path.join, so the keys match what the reader builds on Windows too.
+    [path.join("/n", "recurring", "fleet-explore-tv.json")]: JSON.stringify({ name: "fleet-explore-tv", max_minutes: 150 }),
+    [path.join("/n", "queue", "one-off.json")]: JSON.stringify({ name: "one-off" }),
   };
   const read = (p: string) => { if (!(p in files)) throw new Error("ENOENT"); return files[p]; };
   check("NIGHT_JOB's manifest gives max_minutes", nightManifestMinutes({ NIGHT_JOB: "fleet-explore-tv", NIGHT_ROOT: "/n" }, read) === 150);
@@ -198,12 +199,16 @@ async function runNightCommandChecks(check: Check) {
     check("again without warming or booting", !/warmed-up|booting|creating simulator/.test(r3.out), r3.out);
 
     // 4. The warm-up fails for a reason that is not memory: a failure, posted as one.
-    posts.length = 0;
-    const r4 = await runNight(roomy);
-    const r4result = posts.find((x) => x.url === "/results")?.body;
-    check("a broken warm-up fails the night (exit 1)", r4.code === 1, r4.out);
-    check("and the brain is told why", r4result?.ok === false && /^the model did not load: warmed-up/.test(String(r4result?.error)), JSON.stringify(r4result));
-    check("the simulator was still not booted", !/booting|creating simulator/.test(r4.out), r4.out);
+    // The warm command runs under /bin/bash, as it does on ultra; the night
+    // command is macOS-only, so Windows has nothing to run it with.
+    if (process.platform !== "win32") {
+      posts.length = 0;
+      const r4 = await runNight(roomy);
+      const r4result = posts.find((x) => x.url === "/results")?.body;
+      check("a broken warm-up fails the night (exit 1)", r4.code === 1, r4.out);
+      check("and the brain is told why", r4result?.ok === false && /^the model did not load: warmed-up/.test(String(r4result?.error)), JSON.stringify(r4result));
+      check("the simulator was still not booted", !/booting|creating simulator/.test(r4.out), r4.out);
+    }
   } finally {
     server.close();
   }
