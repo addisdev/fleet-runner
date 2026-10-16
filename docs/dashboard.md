@@ -11,6 +11,8 @@ SQLite file. One thing to keep alive, one URL, no CORS.
 | **Jobs** — the queue, with a composer and cancel/retry | **Results** — benchmark trends, eval accuracy, UI-test matrices, drain curves |
 | ![Visual](img/visual.png) | ![Alerts](img/alerts.png) |
 | **Visual** — every page across every profile, diffed against its accepted baseline | **Alerts** — one row per condition for as long as it holds, with acknowledge and snooze |
+| ![Findings](img/findings.png) | |
+| **Findings** — what an [`explore`](explore/index.md) night reproduced, with a verdict for each | |
 
 These screenshots are from 2026-09-05. They predate the device drawings
 described below, and there is none of the Findings screen.

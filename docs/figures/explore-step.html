@@ -1,0 +1,86 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>explore-step</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  One mission of an explore night, as the five parties see it. The executor is
+  the only one that talks to anyone; the device, the two models and the
+  collector never talk to each other. The model names are the gateway's
+  defaults (FLEET_EXPLORE_MODEL "pilot", FLEET_EXPLORE_JUDGE_MODEL "vision").
+  The order inside the step box is the order in loop.ts.
+
+  Rendered by `npm run assets` in
+  collector/ to docs/img/explore-step.png.
+-->
+<div class="figure" style="width:1280px;height:1020px">
+<svg viewBox="0 0 1280 1020" width="1280" height="1020" role="img"
+     aria-label="The executor resets the device: install, clear data, sign in. Then, each step until the model answers or the budget, time or progress runs out: it observes the device (screenshot, tree, focus), places the screen on the map and runs the checks, has the judge look at any screen new to this run, sends the model the screenshot and the harness notes, gets tool calls back, snaps and leashes each action, acts and lets the screen settle, reads the crashes since the last step, and sends the collector a beacon that renews the lease. After the mission the judge is asked whether the card's goal was met. Each candidate, worst first, is replayed twice from a reset with the same check asked again. The executor then posts findings that reproduced, or crashed, and the result row with its metrics.">
+
+  <text class="t-mono" x="48" y="40">One mission. Only the executor talks; the device, both models and the collector never talk to each other.</text>
+
+  <path class="l-structure" d="M150 136V928"/>
+  <path class="l-structure" d="M470 136V928"/>
+  <path class="l-structure" d="M720 136V928"/>
+  <path class="l-structure" d="M950 136V928"/>
+  <path class="l-structure" d="M1150 136V928"/>
+  <rect fill="var(--panel)" stroke="var(--amber)" stroke-width="1.5" x="52" y="64" width="196" height="72" rx="10"/>
+  <use href="#dev-laptop" x="58" y="68" width="56" height="63"/>
+  <text class="t-title" x="118" y="96">executor</text>
+  <text class="t-mono" x="118" y="120">explore</text>
+  <rect class="l-panel" x="372" y="64" width="196" height="72" rx="10"/>
+  <use href="#dev-android" x="378" y="68" width="56" height="63"/>
+  <text class="t-title" x="438" y="96">device</text>
+  <text class="t-mono" x="438" y="120">actuator</text>
+  <rect class="l-panel" x="635" y="64" width="170" height="72" rx="10"/>
+  <text class="t-title" x="653" y="96">model</text>
+  <text class="t-mono" x="653" y="120">pilot</text>
+  <rect class="l-panel" x="865" y="64" width="170" height="72" rx="10"/>
+  <text class="t-title" x="883" y="96">judge</text>
+  <text class="t-mono" x="883" y="120">vision</text>
+  <rect class="l-panel" x="1065" y="64" width="170" height="72" rx="10"/>
+  <text class="t-title" x="1083" y="96">collector</text>
+  <text class="t-mono" x="1083" y="120">the brain</text>
+
+  <path class="l-protocol" d="M150 186H462" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="177" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">reset · install, clear, sign in</text>
+  <rect x="64" y="214" width="1176" height="440" rx="10" fill="none" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text class="t-mono-amber" x="80" y="238" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">each step, until answer, budget, time or stuck</text>
+  <path class="l-protocol" d="M150 282H462" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="273" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">observe · screenshot, tree, focus</text>
+  <path class="l-protocol" d="M150 304H190V324H158" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="204" y="319" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">screen map, then the checks</text>
+  <path class="l-protocol" d="M150 374H942" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="365" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">a new screen? judge it, once per screen</text>
+  <path class="l-protocol" d="M150 414H712" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="405" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">the screenshot and the harness notes</text>
+  <path class="l-structure" style="stroke:var(--muted);stroke-dasharray:6 5" d="M720 454H158" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="166" y="445" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">tool calls</text>
+  <path class="l-protocol" d="M150 476H190V496H158" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="204" y="491" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">snap and leash each action</text>
+  <path class="l-protocol" d="M150 546H462" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="537" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">act, then let the screen settle</text>
+  <path class="l-protocol" d="M150 586H462" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="577" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">crashes since the last step</text>
+  <path class="l-protocol" d="M150 624H1142" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="615" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">beacon · renews the lease</text>
+  <path class="l-protocol" d="M150 706H942" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="697" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">goal met? cards with a success line</text>
+  <rect x="64" y="734" width="1176" height="88" rx="10" fill="none" stroke="var(--line)" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text class="t-mono-amber" x="80" y="758" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">each candidate, worst first · twice</text>
+  <path class="l-protocol" d="M150 802H462" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="793" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">reset, replay, ask the check again</text>
+  <path class="l-protocol" d="M150 868H1142" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="859" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">POST /findings · reproduced, or a crash</text>
+  <path class="l-protocol" d="M150 908H1142" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono-light" x="166" y="899" style="paint-order:stroke;stroke:var(--charcoal);stroke-width:6px;stroke-linejoin:round">the result row, with its metrics</text>
+
+  <!-- ─── legend ────────────────────────────────────────────────────── -->
+  <path class="l-structure" d="M48 956H1232"/>
+  <path class="l-protocol" d="M48 988h36" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="96" y="993">the executor asks</text>
+  <path class="l-structure" style="stroke:var(--muted);stroke-dasharray:6 5" d="M300 988h36" marker-end="url(#arrow-muted)"/>
+  <text class="t-mono" x="348" y="993">the model answers</text>
+  <text class="t-mono" x="1232" y="993" text-anchor="end">gateway defaults: pilot drives, vision judges</text>
+</svg>
+</div>
+<script src="symbols.js"></script>
