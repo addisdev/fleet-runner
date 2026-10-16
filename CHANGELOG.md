@@ -26,8 +26,8 @@ a CI job fails when they disagree.
   `GITHUB_EVENT_NAME` is `pull_request` (or with `--channel pr`). The pull
   request's own job still names its build by hash. Builds uploaded before this
   count as merged builds, and the same bytes republished from main come off the
-  channel. The `/api/v1` artifact document does not show the channel yet;
-  `GET /api/artifacts` does.
+  channel. The `/api/v1` artifact document shows it as `channel: pr|main`
+  since #96.
 - **`FLEET_PEER_TOKENS`: the brain switcher can read a peer with tokens on.**
   The peers proxy sent no token, so a peer running `FLEET_AUTH=tokens`
   answered 401 through it. Each peer's URL now maps to a `read` token that
@@ -95,6 +95,43 @@ a CI job fails when they disagree.
   pull request, docs-only ones included, when a marked number disagrees with
   the shipped entries in `collector/src/workloads/catalog.ts`. The collector's
   suite checks that reading against the real `CATALOG`. ([#89](https://github.com/addisdev/fleet-runner/pull/89))
+- **Findings are in the control API.** `/api/v1` had 22 routes and none was
+  findings, so a coding agent could run a job but not read the bug list night
+  QA wrote for it. `GET /api/v1/findings` (filter by `app`, `state`,
+  `verdict`, `check`, `since`, which takes `24h` as well as ISO 8601),
+  `GET /api/v1/findings/{id}` (the steps in words, the evidence as links, the
+  replay flow inline up to 16 KiB, the regression test, the verdict history)
+  and `POST /api/v1/findings/{id}/verdict` (scope `run`, audited). The legacy
+  `/api/findings` routes call the same functions and gained the same filters
+  and fields. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
+- **`fleetr findings`, `fleetr finding`, `fleetr verdict`, and three MCP
+  tools.** "What did last night find in GreenFolio, and give me the Maestro
+  flow" is now one call: `fleetr findings --app greenfolio --since 24h`, then
+  `fleetr finding ID --flow repro.yaml`; `fleet_findings`, `fleet_finding`
+  (flow text inline) and `fleet_verdict` (not read-only, scope `run`) do the
+  same over MCP. `fleetr findings --since 24h --json` is the input a scheduled
+  agent session can start from; its shape is documented in docs/agents.md.
+  The skill has a section on reading a finding: the replay count first,
+  `agent_mistake` is not a bug, and never `fixed` without a fix merged. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
+- **A fixed finding becomes a regression test.** A new verdict, `fixed`, comes
+  only after `real` (a 409 otherwise). Marking a finding real copies its replay
+  flow into a new `regressions` table as a candidate; fixed makes it active;
+  duplicate, not a bug or agent's mistake retire it. A nightly `ui-test` with
+  `params.regressions: "<app>"` pulls the app's active flows from the
+  collector at run time and runs each after its own flow, so a finding marked
+  fixed today is in tonight's run without anyone editing a schedule. For a
+  crash or ANR finding on Android the executor reads `logcat -b crash` and
+  `am_anr` around the flow; a new crash of the package is `reproduced`, fails
+  the row and reopens the finding (verdict cleared, seen once more, the build
+  added, a `regressed on build ...` line in its new verdict history). Every
+  other check can only be asserted as "replays without error", and the docs
+  and each run's detail say so; a failing flow fails the row but reopens
+  nothing. GitHub issues are only ever created, never read back, so closing
+  one does not mark a finding fixed. The dashboard has a **Fixed** button
+  (<kbd>f</kbd>) and a regression panel. A database opened by this release
+  rebuilds the findings table once to allow `fixed` and backfills one history
+  row per existing verdict. Not yet run on a real nightly: covered by the
+  suite against fake crash readings and a fake Maestro. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
 
 ### Changed
 
@@ -171,6 +208,10 @@ a CI job fails when they disagree.
 
 ### Fixed
 
+- **The OpenAPI document named the wrong status for two enqueue refusals.**
+  `POST /api/v1/jobs` listed `no_matching_devices` and `no_build` under 422,
+  but `queue.ts` refuses both with 400. The 400 and 422 entries now name the
+  codes each really carries. ([#96](https://github.com/addisdev/fleet-runner/pull/96))
 - **The older job routes skipped two auth checks.** With `FLEET_AUTH=tokens`,
   `POST /api/jobs/:id/cancel` and `/retry` let any `run` token stop or re-run
   anyone's job, and `POST /jobs` and `POST /api/jobs` accepted the `shell`
