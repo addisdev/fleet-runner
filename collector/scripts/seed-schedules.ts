@@ -258,8 +258,8 @@ const SCHEDULES: Record<string, Schedule> = {
   // Overnight exploratory QA (src/workloads/explore). The night slot the plan
   // proposes is 22:00-00:30, before Dozehound's video queue takes the Studio's
   // memory; the window constraint keeps a late claim from running into it.
-  // All three arrive switched off like every schedule here, and the TV one
-  // should stay off until the plan's phase-3 test says a model can drive a TV.
+  // All four arrive switched off like every schedule here. The TV one targets
+  // Fire TV, which is parked (WB-297): the TV question is answered on tvOS.
   "nightly-explore-greenfolio": {
     "cron": "0 22 * * *",
     "template": {
