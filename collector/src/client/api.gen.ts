@@ -142,7 +142,7 @@ export type DeviceList = {
 export type DeviceOutcome = {
   device_id: string;
   job_id: string;
-  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled";
+  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled" | "skipped";
   ok: boolean | null;
   /** Nothing ran (no matching device, or a host refusing work). Not a pass. */
   skipped: boolean;
@@ -211,7 +211,7 @@ export type Job = {
   job_id: string;
   workload: string;
   executor: "device" | "host";
-  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled";
+  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled" | "skipped";
   claimed_by?: string | null;
   attempts: number;
   max_attempts: number;
@@ -486,7 +486,7 @@ export type TemplateList = {
 export type Validation = {
   valid: boolean;
   job_id?: string;
-  /** What the job would be on enqueue: queued, waiting or failed. */
+  /** What the job would be on enqueue: queued, waiting, failed (a dependency failed) or skipped (a dependency skipped). */
   status?: string;
   fanout?: string[];
   /** The spec as it would be stored: `latest` resolved, lease filled in. */

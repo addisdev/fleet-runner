@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { db, type SqlParam } from "../db.js";
 import { AGE, beaconFields, inClause, iso, paging, parse, sha256Refs } from "./shared.js";
 
-const STATUSES = new Set(["waiting", "queued", "claimed", "done", "failed", "cancelled"]);
+const STATUSES = new Set(["waiting", "queued", "claimed", "done", "failed", "cancelled", "skipped"]);
 const EXECUTORS = new Set(["device", "host"]);
 const SORTS: Record<string, string> = {
   created: "created_at",

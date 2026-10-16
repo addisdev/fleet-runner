@@ -77,6 +77,8 @@ function build() {
          COUNT(*) FILTER (WHERE status = 'claimed') AS claimed,
          COUNT(*) FILTER (WHERE status = 'done'   AND finished_at >= datetime('now','-24 hours')) AS done_24h,
          COUNT(*) FILTER (WHERE status = 'failed' AND finished_at >= datetime('now','-24 hours')) AS failed_24h,
+         -- Its own count, never folded into done: a skip is a job that ran nothing.
+         COUNT(*) FILTER (WHERE status = 'skipped' AND finished_at >= datetime('now','-24 hours')) AS skipped_24h,
          COUNT(*) FILTER (WHERE status = 'claimed' AND attempts >= max_attempts) AS last_attempt,
          (SELECT ${AGE("MIN(created_at)")} FROM jobs WHERE status = 'queued') AS oldest_queued_age_s
        FROM jobs`,
@@ -153,6 +155,7 @@ function build() {
       claimed: queue.claimed ?? 0,
       done_24h: queue.done_24h ?? 0,
       failed_24h: queue.failed_24h ?? 0,
+      skipped_24h: queue.skipped_24h ?? 0,
       last_attempt: queue.last_attempt ?? 0,
       oldest_queued_age_s: queue.oldest_queued_age_s ?? null,
     },

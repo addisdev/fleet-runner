@@ -132,7 +132,7 @@ export function Jobs() {
                   // 'waiting' leads because it is the one status a person goes
                   // looking for: a chain that has not started is invisible in
                   // every other view, including the overview's queue depth.
-                  options={["waiting", "queued", "claimed", "done", "failed", "cancelled"].map((s) => ({
+                  options={["waiting", "queued", "claimed", "done", "failed", "skipped", "cancelled"].map((s) => ({
                     value: s,
                     label: `${s} (${d.status_counts[s] ?? 0})`,
                   }))}

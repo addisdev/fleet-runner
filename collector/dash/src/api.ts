@@ -166,7 +166,9 @@ export type Job = {
   job_id: string;
   workload: string;
   executor: "device" | "host";
-  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled";
+  /** `skipped`: claimed and closed without running anything (no device matched,
+   *  the app was not installed, a dependency skipped). Not a pass. */
+  status: "waiting" | "queued" | "claimed" | "done" | "failed" | "cancelled" | "skipped";
   /** Job ids this one waits for; it stays `waiting` until they are all done. */
   depends_on?: string[] | null;
   /** Whether a higher-priority job may ask this one to checkpoint and step aside. */
@@ -214,6 +216,7 @@ export type Overview = {
     claimed: number;
     done_24h: number;
     failed_24h: number;
+    skipped_24h: number;
     last_attempt: number;
     oldest_queued_age_s: number | null;
   };

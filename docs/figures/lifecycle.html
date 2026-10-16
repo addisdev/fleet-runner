@@ -10,9 +10,9 @@
 
   Rendered by `npm run assets` in collector/ to docs/img/lifecycle.png.
 -->
-<div class="figure" style="width:1280px;height:680px">
-<svg viewBox="0 0 1280 680" width="1280" height="680" role="img"
-     aria-label="A job goes waiting, queued, claimed and running, then done. A beacon renews the lease and answers preempt. A lapsed lease is swept back to queued and burns an attempt; a preempted job goes back to queued with its attempt handed back; a job that reports ok false, or lapses on its last attempt, ends failed.">
+<div class="figure" style="width:1280px;height:732px">
+<svg viewBox="0 0 1280 732" width="1280" height="732" role="img"
+     aria-label="A job goes waiting, queued, claimed and running, then done. A beacon renews the lease and answers preempt. A lapsed lease is swept back to queued and burns an attempt; a preempted job goes back to queued with its attempt handed back; a job that reports ok false, or lapses on its last attempt, ends failed. A job whose runner ran nothing closes skipped, not done.">
 
   <!-- ─── the beacon band, over the running state ───────────────────── -->
   <text class="t-mono-amber" x="746" y="104" text-anchor="middle">beacon · renews the lease · answers preempt</text>
@@ -69,6 +69,8 @@
   <text class="t-mono" x="48" y="582">A dependency that fails, fails everything waiting on it, the whole way down the chain.</text>
   <text class="t-mono" x="48" y="608">Nothing is ever killed. Cancelling sets the row to cancelled, and the next beacon answers</text>
   <text class="t-mono" x="48" y="634">lease_renewed: false — work in flight finishes, nothing new starts.</text>
+  <text class="t-mono" x="48" y="660">A runner that ran nothing posts ok: true with an error beginning skipped:, and the job closes</text>
+  <text class="t-mono" x="48" y="686">skipped, not done. A job waiting on a skipped one skips too.</text>
 </svg>
 </div>
 <script src="symbols.js"></script>

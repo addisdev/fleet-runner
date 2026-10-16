@@ -19,7 +19,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { closeDb, db, dbFile, isUniqueViolation, openDb, withTransaction } from "./db.js";
+import { backfillSkipped, closeDb, db, dbFile, dbHandle, isUniqueViolation, openDb, withTransaction } from "./db.js";
 
 type Check = (name: string, cond: boolean, detail?: string) => void;
 
@@ -262,6 +262,75 @@ export function runDbChecks(check: Check) {
       "re-opening a migrated database changes nothing",
       (db.prepare("SELECT COUNT(*) AS n FROM jobs").get() as { n: number }).n === 2,
     );
+    closeDb();
+  });
+
+  // --- 'skipped', on a database that holds two weeks of skips as 'done' -----
+  //
+  // The 0.8 shape: every status but 'skipped', and the columns added since by
+  // ALTER. The live brain's tvloop nightly closed as done every night with a
+  // skipped: host row; explore's tvOS jobs closed as done over device rows that
+  // all skipped. Both must come out skipped, a real pass must not, and the
+  // result rows must be exactly what they were.
+  inTempDir((dir) => {
+    const file = path.join(dir, "fleet.db");
+    const seed = new DatabaseSync(file);
+    seed.exec(PRE_DEPENDS_ON_JOBS.replace("('queued','claimed','done','failed','cancelled')", "('waiting','queued','claimed','done','failed','cancelled')"));
+    seed.exec("ALTER TABLE jobs ADD COLUMN depends_on TEXT");
+    seed.exec("ALTER TABLE jobs ADD COLUMN requested_by TEXT");
+    seed.exec("ALTER TABLE jobs ADD COLUMN source TEXT");
+    seed.exec(`CREATE TABLE results (job_id TEXT NOT NULL, device_id TEXT NOT NULL, iter INTEGER NOT NULL DEFAULT 0,
+      payload TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')), PRIMARY KEY (job_id, device_id, iter))`);
+    const job = seed.prepare("INSERT INTO jobs (job_id, executor, workload, spec, status, requested_by, last_error) VALUES (?,?,?,?,?,?,?)");
+    const result = seed.prepare("INSERT INTO results (job_id, device_id, iter, payload) VALUES (?,?,?,?)");
+    job.run("nightly-tvloop-hardware-202610150630", "host", "tvloop", "{}", "done", "schedule:nightly-tvloop-hardware", null);
+    result.run("nightly-tvloop-hardware-202610150630", "host:fleet-host", 0,
+      JSON.stringify({ final: true, ok: true, error: "skipped: no Roku developer password on this host" }));
+    job.run("explore-tvos-1", "host", "explore", "{}", "done", null, "lease expired on ultra; requeued after attempt 1/3");
+    result.run("explore-tvos-1", "sim-a", 0, JSON.stringify({ ok: true, error: "skipped: no device matches this job on ultra" }));
+    result.run("explore-tvos-1", "host:ultra", 0, JSON.stringify({ final: true, ok: true }));
+    job.run("real-pass", "host", "ui-test", "{}", "done", null, null);
+    result.run("real-pass", "phone-a", 0, JSON.stringify({ ok: true, error: "skipped: locked" }));
+    result.run("real-pass", "phone-b", 0, JSON.stringify({ ok: true, test: { passed: 2, failed: 0 } }));
+    result.run("real-pass", "host:mac", 0, JSON.stringify({ final: true, ok: true }));
+    job.run("real-fail", "host", "ui-test", "{}", "failed", null, null);
+    result.run("real-fail", "host:mac", 0, JSON.stringify({ final: true, ok: false, error: "skipped: odd but failed" }));
+    const before = (seed.prepare("SELECT job_id, device_id, iter, payload FROM results ORDER BY job_id, device_id").all() as unknown[]);
+    seed.close();
+
+    openDb(dir);
+    const ddl = (db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='jobs'").get() as { sql: string }).sql;
+    check("skipped: the rebuild widens the constraint to accept 'skipped'", ddl.includes("'skipped'"), ddl);
+    const status = (id: string) => db.prepare("SELECT status, last_error, requested_by FROM jobs WHERE job_id = ?").get(id) as
+      { status: string; last_error: string | null; requested_by: string | null };
+    check("skipped: a done job whose final row said skipped is re-labelled",
+      status("nightly-tvloop-hardware-202610150630").status === "skipped" &&
+        status("nightly-tvloop-hardware-202610150630").last_error === "skipped: no Roku developer password on this host",
+      JSON.stringify(status("nightly-tvloop-hardware-202610150630")));
+    check("skipped: and keeps the columns added since 0.6 (requested_by survives the rebuild)",
+      status("nightly-tvloop-hardware-202610150630").requested_by === "schedule:nightly-tvloop-hardware");
+    check("skipped: one whose every device skipped under an ok host row is re-labelled, its reason replacing a stale note",
+      status("explore-tvos-1").status === "skipped" && status("explore-tvos-1").last_error === "skipped: no device matches this job on ultra",
+      JSON.stringify(status("explore-tvos-1")));
+    check("skipped: a job where one device ran stays done", status("real-pass").status === "done");
+    check("skipped: a failed job stays failed", status("real-fail").status === "failed");
+    const after = db.prepare("SELECT job_id, device_id, iter, payload FROM results ORDER BY job_id, device_id").all();
+    check("skipped: result rows are untouched", JSON.stringify(after) === JSON.stringify(before));
+    const indexes = (db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='jobs'").all() as { name: string }[]).map((i) => i.name);
+    check("skipped: the rebuild leaves the jobs indexes in place",
+      ["idx_jobs_lease", "idx_jobs_claim", "idx_jobs_parent", "idx_jobs_requested_by"].every((n) => indexes.includes(n)), JSON.stringify(indexes));
+    let accepted = true;
+    try {
+      db.prepare("INSERT INTO jobs (job_id, executor, workload, spec, status) VALUES ('s', 'host', 'x', '{}', 'skipped')").run();
+    } catch {
+      accepted = false;
+    }
+    check("skipped: a migrated database accepts a skipped job", accepted);
+    check("skipped: the backfill is idempotent", backfillSkipped(dbHandle()) === 0);
+    closeDb();
+    openDb(dir);
+    check("skipped: re-opening changes nothing",
+      (db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status = 'skipped'").get() as { n: number }).n === 3);
     closeDb();
   });
 

@@ -18,6 +18,8 @@ import { pressureReason, readPressure } from "./pressure.js";
 import { runArchive } from "./web/archive/index.js";
 import { runDigest } from "./web/digest.js";
 import { countXcodebuildTests, xcodebuildDiagnostics } from "./xcparse.js";
+import { junitFailureReason, parseJunit } from "./junit.js";
+import { execFailureReason } from "./result-reason.js";
 import {
   fleetOwned, physicalApple, simulatorName, simulatorPlatform, isAndroidEmulatorSerial, appleNotReadyReason,
   SIM_PREFIX,
@@ -167,13 +169,6 @@ async function listTargets(ios?: IosDeviceInfo[], rokus: RokuDevice[] = []): Pro
   return dedupe([await adbDriver.list(), await simctlDriver.list(), targetsFrom(ios), rokus.map(rokuTarget)]);
 }
 
-function parseJunit(xml: string): { passed: number; failed: number } {
-  const m = /tests="(\d+)"[^>]*failures="(\d+)"/.exec(xml);
-  if (!m) return { passed: 0, failed: 1 };
-  const tests = Number(m[1]);
-  const failed = Number(m[2]);
-  return { passed: tests - failed, failed };
-}
 
 
 /** Is this target one the fleet may run work on? Presence and jobs must agree. */
@@ -598,6 +593,10 @@ async function runUiTest(job: Job) {
     const outDir = mkdtempSync(path.join(os.tmpdir(), "fleet-junit-"));
     const report = path.join(outDir, "report.xml");
     let failedToRun = false;
+    // Why Maestro produced no report, when it did not: its exit code and the
+    // last thing it said. Never the error's message, which is the command
+    // line -- and the command line carries the test account's password.
+    let runError: string | undefined;
     // params.network, when the job carries one, is applied around the flow run
     // and restored afterwards whatever happens inside it. A profile that cannot
     // be applied fails the device's row by name rather than running the flow
@@ -617,9 +616,10 @@ async function runUiTest(job: Job) {
              flows],
             { timeout: 600_000 },
           );
-        } catch {
+        } catch (e) {
           // Non-zero exit also just means failing flows; the report tells the truth.
           failedToRun = !existsSync(report);
+          if (failedToRun) runError = execFailureReason(e, creds ? [creds.password] : []);
         }
       });
     } catch (e) {
@@ -629,20 +629,34 @@ async function runUiTest(job: Job) {
 
     let passed = 0;
     let failed = 1;
+    let failure: string | null = null;
+    let failingFlow: string | undefined;
     const artifacts: string[] = [];
     if (!failedToRun && existsSync(report)) {
       const xml = readFileSync(report, "utf8");
-      ({ passed, failed } = parseJunit(xml));
+      const junit = parseJunit(xml);
+      ({ passed, failed } = junit);
+      // The failing flow and the step that broke, from the report itself:
+      // `smoke: Assertion is false: "Fleet Runner" is visible`. This used to
+      // be read by nobody, so a failure posted `failed: 1` and no reason.
+      failure = junitFailureReason(junit);
+      if (failure && creds) failure = redact(failure, [creds.password]);
+      failingFlow = junit.failures[0]?.name;
       // Scrub before upload: a failing step echoes the command it ran, and the
       // report is downloadable from the dashboard.
       if (creds) writeFileSync(report, redact(xml, [creds.password]));
       artifacts.push(await uploadArtifact(report, `${job.job_id}-${serial}-junit.xml`));
     }
     if (failed > 0) allOk = false;
+    const error = shapeError
+      ? `params.network: ${shapeError}`
+      : failedToRun
+        ? `maestro produced no report: ${runError ?? "it never ran"}`
+        : failure ?? undefined;
     await postResult({
       job_id: job.job_id, device_id: serial, iter: 0,
-      ok: failed === 0, test: { passed, failed, artifacts },
-      ...(shapeError ? { error: `params.network: ${shapeError}` } : {}),
+      ok: failed === 0, test: { passed, failed, artifacts, ...(failingFlow ? { failing_flow: failingFlow } : {}) },
+      ...(error ? { error } : {}),
     });
     log(`ui-test on ${serial}: ${passed} passed / ${failed} failed${shapeError ? ` (network shaping: ${shapeError})` : ""}`);
   }
@@ -2370,7 +2384,7 @@ export async function describeTarget(
     // registered as {model: "iphone", os: "ios"}.
     const d = rokus.find((r) => rokuTarget(r).id === t.id);
     return {
-      ...(d ? describeRoku(d) : { model: "roku", os: "roku", kind: "device" }),
+      ...(d ? describeRoku(d) : { platform: "roku", model: "roku", os: "roku", kind: "device" }),
       attached_to: NAME,
       attached_host: HOST,
     };
@@ -2828,11 +2842,17 @@ export async function startExecutor(): Promise<RunningExecutor> {
           log(`job ${job.job_id} skipped: ${e.message}`);
           continue;
         }
+        // A subprocess that failed and was not caught by its workload: its
+        // exit code and last stderr line, not Node's message, which is the
+        // whole command line (arguments, and sometimes a password, included).
+        const reason = typeof (e as { cmd?: unknown }).cmd === "string"
+          ? execFailureReason(e)
+          : (e as Error).message.slice(0, 500);
         await postResult({
           job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: false,
-          error: (e as Error).message.slice(0, 500),
+          error: reason,
         });
-        log(`job ${job.job_id} failed: ${(e as Error).message}`);
+        log(`job ${job.job_id} failed: ${reason}`);
       }
     }
   }
