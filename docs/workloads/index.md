@@ -6,7 +6,7 @@ spec, and which agent claims it is decided by
 
 ![Thirty-four workloads in three columns by who claims them: on the device, on a host, and on a machine](../img/workloads.png)
 
-The collector ships 34 workloads. `GET /api/v1/workloads` (or
+The collector ships <!-- count:workloads -->34 workloads. `GET /api/v1/workloads` (or
 `fleetr workloads`) lists the same set with each one's params and an example
 spec, and marks three more names as reserved: `push-latency`, `camera-eval` and
 `desktop-ui-test` are accepted, but no runner in this repository implements

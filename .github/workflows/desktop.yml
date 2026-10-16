@@ -27,3 +27,66 @@ jobs:
           ./desktop/stage-sidecar.sh
       - working-directory: desktop/src-tauri
         run: cargo check --all-targets
+
+  launch:
+    # The first time the app ever ran was this job. `cargo check` proves the
+    # Tauri calls exist; this proves the binary starts, spawns `fleet up` as its
+    # sidecar, stays up, and that its settings window loads and answers over
+    # IPC. Linux rather than macOS because that is where Tauri's WebDriver
+    # support exists (tauri-driver wraps WebKitWebDriver; there is no macOS
+    # driver), and because Xvfb gives it a display without a logged-in desktop.
+    # What it cannot prove is anything macOS-specific: the tray in the menu bar,
+    # the Local Network grant, signing. See desktop/README.md.
+    name: launch smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.13"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+          key: linux-launch
+      # Tauri 2's Linux prerequisites (webkit2gtk 4.1, appindicator for the
+      # tray), plus what the smoke itself uses: Xvfb for a display, dbus for a
+      # session bus, WebKitWebDriver for tauri-driver, ImageMagick to capture
+      # the screen.
+      - name: Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev \
+            xvfb x11-utils dbus-x11 webkit2gtk-driver imagemagick jq
+      - name: Stage the fleet sidecar
+        run: |
+          npm --prefix collector ci
+          npm --prefix fleet ci
+          ./desktop/stage-sidecar.sh
+      - name: Build the app
+        working-directory: desktop/src-tauri
+        # custom-protocol is what `cargo tauri build` turns on: the frontend is
+        # embedded and served from the binary, as it is in a release, rather
+        # than expected from a dev server.
+        run: cargo build --features custom-protocol
+      - name: tauri-driver
+        run: cargo install tauri-driver --locked
+      - name: Launch it
+        run: ./desktop/ci/launch-smoke.sh
+        env:
+          OUT: ${{ runner.temp }}/desktop-smoke
+      - if: always()
+        name: What it printed
+        run: |
+          for f in "$RUNNER_TEMP"/desktop-smoke/*.log "$RUNNER_TEMP"/desktop-smoke/fleet-home/logs/*.log; do
+            [ -f "$f" ] || continue
+            echo "== $f"; tail -80 "$f"
+          done
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-launch-smoke
+          path: ${{ runner.temp }}/desktop-smoke
+          if-no-files-found: warn

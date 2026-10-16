@@ -99,7 +99,7 @@ so it never touches a real fleet's history.
 | `model-convert` / `dataset-prep` | machine | A checkpoint into GGUF, Core ML or TFLite; an eval set that carries its licence and source |
 | `serve` / `shell` | machine | Host a model for the length of a lease; run a script whose hash the machine's owner pinned by hand |
 
-That is all 34 shipped workloads. `GET /api/v1/workloads` (or `fleetr
+That is all <!-- count:workloads -->34 shipped workloads. `GET /api/v1/workloads` (or `fleetr
 workloads`) lists them with their params and an example spec, plus anything a
 registered agent declares that the collector does not know.
 
