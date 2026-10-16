@@ -92,9 +92,13 @@ fleetr run --spec job.json
 ```
 
 `"latest"` resolves at enqueue to the newest build published under that app
-name, which from your own terminal is the one you just uploaded. Where two
-uploads can race (two pull requests building at once), put the hash
-`ci-upload` printed in `app.sha256` instead.
+name, which from your own terminal is the one you just uploaded. A pull
+request's build is different: `ci-upload` publishes it on the `pr` channel
+(automatically when `GITHUB_EVENT_NAME` is `pull_request`, or with
+`--channel pr`), and `"latest"` never resolves to a `pr` build, so the nightly
+keeps testing what was merged. A job testing a pull request names the hash
+`ci-upload` printed in `app.sha256` instead; that is also the answer when two
+uploads could race.
 
 ### Or in one step with `ci-enqueue`
 
@@ -122,23 +126,38 @@ npx tsx scripts/ci-enqueue.ts \
   --timeout 1200
 ```
 
-It uploads the artifact, writes the returned hash into `app.sha256`, posts the
-spec to the deprecated `POST /jobs`, polls `GET /jobs/<id>` every ten seconds,
-and exits 0 when the job is `done`, 1 when it failed or timed out, and 2 on a
-usage error. `"replaced-by-upload"` is only a placeholder for the script to
-overwrite: it is not a hash, so `fleetr run --spec` and `/api/v1/jobs` refuse
-it. Know three things before you let it block a pull request:
+It uploads the artifact, writes the returned hash into `app.sha256` (or
+`model.sha256`), posts the spec to `POST /api/v1/jobs`, waits on
+`GET /api/v1/jobs/<id>/wait`, prints each device's outcome, and exits with the
+same codes as `fleetr run`:
 
-- **A skipped job exits 0.** A job where nothing ran (its `last_error` starts
-  `skipped:`) is still `done`, so the check goes green. `fleetr run` exits 4
-  for the same job.
-- **It sends no token**, so against a collector with `FLEET_AUTH=tokens` the
-  enqueue is refused and the step fails.
+| Exit | Meaning |
+|---|---|
+| 0 | passed |
+| 1 | failed, mixed or cancelled |
+| 2 | usage error or invalid spec (each schema problem is printed by path) |
+| 3 | still running when `--timeout` ran out; the job keeps going, and `fleetr wait <id>` picks it up |
+| 4 | skipped: nothing ran, so nothing was tested. Not a pass |
+| 5 | refused (no token, wrong scope) or the collector could not be reached |
+
+`"replaced-by-upload"` is only a placeholder for the script to overwrite: it is
+not a hash, so without `--artifact` the spec is refused with exit 2.
+
+- **Tokens.** `FLEET_RUNNER_TOKEN` (or `FLEET_TOKEN`) is sent as a bearer
+  token, which a collector with `FLEET_AUTH=tokens` needs (`run` scope; `agent`
+  too if `FLEET_AUTH_PROTOCOL=token`, for the upload). `FLEET_DASH_TOKEN` is
+  still sent as `x-fleet-token`.
+- **Pull requests.** Under a `pull_request` event the upload goes on the `pr`
+  channel, so it never becomes the nightly's `latest`; `--channel pr|main`
+  overrides the guess. The job itself names the uploaded hash, so it tests
+  exactly that build.
 - **A duplicate `job_id` is not an error to it.** It prints "already queued"
-  and reports the earlier job's verdict.
+  and reports the earlier job's verdict, which is what a re-run of the same
+  workflow attempt wants. Put `github.run_attempt` in the id to get a fresh job
+  per attempt.
 
-For a check that blocks a merge, prefer `ci-upload` followed by
-`fleetr run --spec`.
+`ci-upload` followed by `fleetr run --spec` does the same in two steps, with
+`fleetr`'s richer output.
 
 ## 3. Watch it on the dashboard
 

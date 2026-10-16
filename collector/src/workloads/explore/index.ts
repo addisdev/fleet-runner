@@ -216,10 +216,18 @@ async function disabledClasses(app: string): Promise<{ visual: string[]; checks:
 function mirrorFrame(jobId: string, png: Buffer) {
   void toJpeg(png).then((jpg) => {
     if (!jpg) return;
-    const token = process.env.FLEET_DASH_TOKEN;
+    // Both, because they answer different guards: FLEET_DASH_TOKEN is the
+    // dashboard's speed bump, FLEET_TOKEN the agent token a collector with
+    // FLEET_AUTH_PROTOCOL=token requires. The bearer wins when both are sent.
+    const dash = process.env.FLEET_DASH_TOKEN;
+    const agent = process.env.FLEET_TOKEN;
     return fetch(`${BASE}/api/jobs/${encodeURIComponent(jobId)}/mirror`, {
       method: "POST",
-      headers: { "content-type": "image/jpeg", ...(token ? { "x-fleet-token": token } : {}) },
+      headers: {
+        "content-type": "image/jpeg",
+        ...(dash ? { "x-fleet-token": dash } : {}),
+        ...(agent ? { authorization: `Bearer ${agent}` } : {}),
+      },
       body: new Uint8Array(jpg),
       signal: AbortSignal.timeout(5_000),
     });
