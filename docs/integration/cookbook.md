@@ -3,13 +3,12 @@
 One complete job spec per workload. **Every file on this page is included
 verbatim from
 [`collector/examples/jobs/`](https://github.com/addisdev/fleet-runner/tree/main/collector/examples/jobs)
-and validated against
-[`job.schema.json`](https://github.com/addisdev/fleet-runner/blob/main/collector/schemas/job.schema.json)
-by `npm test`** (`scripts/check-examples.ts`). If one stops validating, CI
-fails. That check is the schema file only. `/api/v1/jobs`, and so `fleetr run`,
-is stricter: it refuses unknown top-level fields and checks `params` against
-the workload's manifest where there is one. Every example passes both today,
-but only the first is enforced.
+and validated by `npm test`** (`scripts/check-examples.ts`) with the same
+check `POST /api/v1/jobs`, and so `fleetr run`, makes: the strict job schema,
+which refuses unknown top-level fields, and the workload's params manifest
+where there is one. The script imports the API's own compiled schemas rather
+than a copy. If an example stops validating, CI fails. Whether a device can run
+it is not checked; that depends on what is attached.
 
 Run any of them with `fleetr`:
 

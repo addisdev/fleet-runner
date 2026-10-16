@@ -147,12 +147,13 @@ into your app repository. It builds, then calls `ci-enqueue`, which exits
 non-zero on a red suite — so the check fails whether or not [commit
 statuses](index.md#commit-statuses) are armed.
 
-`ci-enqueue` also exits 0 on a job that was skipped because nothing ran, and
-sends no token, so it fails against a collector with `FLEET_AUTH=tokens`
-([details](first-job.md#or-in-one-step-with-ci-enqueue)). For a check that
-should block a merge, replace that step with `ci-upload` followed by
-`fleetr run --spec job.json`, which exits 1 on a red suite and 4 on a skip,
-and fails the step on either.
+It exits like `fleetr run`: 1 on a red suite and 4 on a job that was skipped
+because nothing ran, so the step fails on either. It sends
+`FLEET_RUNNER_TOKEN` as a bearer token for a collector with
+`FLEET_AUTH=tokens`, and uploads a pull request's build on the `pr` channel so
+it never becomes the nightly's `latest`
+([details](first-job.md#or-in-one-step-with-ci-enqueue)). `ci-upload`
+followed by `fleetr run --spec job.json` is the two-step equivalent.
 
 Give the job a unique `job_id` built from the pull request number, the run
 attempt and the sha. A duplicate is a 409, which is the correct answer but not

@@ -31,7 +31,7 @@ The file is `$FLEET_DATA_DIR/tokens.json` (`~/.fleet/data/tokens.json` under
 | Scope | Allows |
 |---|---|
 | `read` | Every GET: devices, jobs, results, artifacts, the dashboard's data |
-| `run` | Enqueue and validate jobs; cancel or retry the jobs this token started (checked on `/api/v1` only, see below) |
+| `run` | Enqueue and validate jobs; cancel or retry the jobs this token started |
 | `admin` | Everything else: other people's jobs, devices, schedules, the audit log, and the `shell` workload |
 | `agent` | The runner protocol, when `FLEET_AUTH_PROTOCOL=token` |
 | `delegate` | Name the person a request is for (`X-Fleet-Actor`). For a gateway only |
@@ -40,16 +40,18 @@ The file is `$FLEET_DATA_DIR/tokens.json` (`~/.fleet/data/tokens.json` under
 `delegate`, because a token that can put a name on a job can put *anyone's*
 name on it.
 
-**Two checks are made on `/api/v1` only, and not yet on the older routes.**
-`POST /api/v1/jobs/{id}/cancel` and `/retry` refuse a `run` token acting on a
-job somebody else started; the dashboard's `POST /api/jobs/:id/cancel` and
-`/retry` need `run` and check nothing more, so any `run` token can cancel or
-retry any job there. Likewise `POST /api/v1/jobs` refuses the `shell` workload
-to a token without `admin`, but `POST /jobs` and `POST /api/jobs` accept it
-from any `run` token. Both are gaps in the code, not intended behaviour. Until
-they close, treat `run` as able to stop anyone's job. For `shell`, what bounds
-it is each machine's own allowlist of script hashes: a machine with no
-allowlist file never declares `shell`, so nothing can be sent to it.
+**Two checks go beyond the scope, and every route makes them.** A `run`
+token may cancel or retry only a job it started; `admin` may act on any. And
+the `shell` workload needs `admin`, however it is asked for. `/api/v1`, the
+dashboard's `POST /api/jobs/:id/cancel` and `/retry`, and the older enqueue
+routes `POST /jobs` and `POST /api/jobs` all ask the same function
+(`collector/src/api/policy.ts`), so there is no route that skips them; until
+0.9.0 the older routes skipped both. A job queued while auth was off carries
+whatever name its caller claimed then, usually none, so once tokens are on it
+is in practice `admin`'s to stop. What
+bounds `shell` besides the scope is each machine's own allowlist of script
+hashes: a machine with no allowlist file never declares `shell`, so nothing
+can be sent to it.
 
 **Runners stay open unless you close them.** Phones, TVs and the browser
 runner do not send tokens, so with `FLEET_AUTH=tokens` the runner protocol

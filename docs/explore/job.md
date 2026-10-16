@@ -97,7 +97,8 @@ the judge which language to expect, so English left in a Spanish build is a
 | `FLEET_EXPLORE_API_KEY` | | Otherwise `HARNESS_KEY`, the key file, then the Keychain item `fleet-explore-gateway` |
 | `FLEET_EXPLORE_API_KEY_FILE` | `~/.config/harness/keys/fleet.key` | The key as a file |
 | `FLEET_KEYCHAIN_SERVICE` | `fleet-ui-test` | The Keychain service holding the sign-in passwords `credentials` names |
-| `FLEET_DASH_TOKEN` | | Sent with live-view frames, when the brain guards the dashboard with one |
+| `FLEET_DASH_TOKEN` | | Sent with live-view frames as `x-fleet-token`, when the brain guards the dashboard with one |
+| `FLEET_TOKEN` | | Sent with live-view frames as a bearer token, which a brain with `FLEET_AUTH_PROTOCOL=token` requires (an `agent` token). The executor already sends it on everything else |
 | `FLEET_MISSIONS_DIR` | `examples/missions` in the working directory, then beside the bundle | Mission cards |
 | `FLEET_FLOWS_DIR` | `examples/flows` | Setup flows |
 | `FLEET_STATE_DIR` | `~/.fleet` | Screen maps and last-run times live under `explore/<app>/` |
