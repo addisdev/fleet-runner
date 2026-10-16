@@ -23,7 +23,6 @@ import { createReadStream, existsSync, statSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { Ajv2020, type ValidateFunction } from "ajv/dist/2020.js";
 import { onAnnounce } from "../../announce.js";
 import { authOf, forward, type Scope } from "../../auth.js";
 import { ARTIFACT_DIR, AUTH, AUTH_PROTOCOL } from "../../config.js";
@@ -33,9 +32,11 @@ import { enqueueJob, WORKLOADS, type ErrorCode, type JobSpec } from "../../queue
 import { CATALOG, catalogEntry, type CatalogEntry } from "../../workloads/catalog.js";
 import { isTextual } from "../../media-type.js";
 import { AGE, capabilityMatches, deviceCapabilities, inClause, iso, isExpired, ONLINE_S, paging, parse, sha256Refs } from "../shared.js";
+import { needsAdmin, notOwned } from "../policy.js";
 import { schedulesView } from "../system.js";
 import { SCHEMAS } from "./schemas.js";
 import { isSkipError } from "../../skip.js";
+import { errorsOf, paramsValidator, validateSpec, type SchemaError } from "./spec-check.js";
 
 // --- the table's types ------------------------------------------------------------
 
@@ -154,30 +155,6 @@ const E409: Response = { status: 409, description: "The state does not allow it 
 
 // --- spec validation ----------------------------------------------------------------
 
-const ajv = new Ajv2020({ allErrors: true, strict: false });
-const validateSpec = ajv.compile(SCHEMAS.JobSpecInput);
-const paramValidators = new Map<string, ValidateFunction | null>();
-
-function paramsValidator(entry: CatalogEntry | null): ValidateFunction | null {
-  if (!entry?.params) return null;
-  if (!paramValidators.has(entry.name)) {
-    try {
-      paramValidators.set(entry.name, ajv.compile(entry.params));
-    } catch {
-      paramValidators.set(entry.name, null);
-    }
-  }
-  return paramValidators.get(entry.name) ?? null;
-}
-
-type SchemaError = { path: string; message: string };
-
-const errorsOf = (v: ValidateFunction, prefix = ""): SchemaError[] =>
-  (v.errors ?? []).slice(0, 20).map((e) => ({
-    path: `${prefix}${e.instancePath}` || "/",
-    message: `${e.message ?? "invalid"}${e.params && "additionalProperty" in e.params ? `: ${String(e.params.additionalProperty)}` : ""}${e.params && "allowedValues" in e.params ? ` (${(e.params.allowedValues as unknown[]).join(", ")})` : ""}`,
-  }));
-
 /** The spec as v1 accepts it: schema and job_id filled in, then checked strictly. */
 function prepareSpec(req: FastifyRequest): { spec: JobSpec; entry: CatalogEntry | null } {
   const body = req.body;
@@ -201,9 +178,10 @@ function prepareSpec(req: FastifyRequest): { spec: JobSpec; entry: CatalogEntry 
     throw new ApiError(400, "invalid_spec", `params do not match the ${entry!.name} manifest`, `GET /api/v1/workloads/${entry!.name} has the params schema`, { schema_errors: errorsOf(pv, "/params") });
 
   // A script runner reachable from a chat window is the one thing this API
-  // will not do for an ordinary token, however the spec is phrased.
-  if (entry?.dangerous && ctx.mode === "tokens" && !ctx.scopes.has("admin"))
-    throw new ApiError(403, "forbidden", `the ${entry.name} workload needs the admin scope`, "ask an operator to run it, or use a token with admin");
+  // will not do for an ordinary token, however the spec is phrased. The same
+  // function decides it for the older enqueue routes.
+  const refused = needsAdmin(ctx, spec.workload);
+  if (refused) throw new ApiError(403, "forbidden", refused.message, refused.hint);
 
   return { spec: spec as JobSpec, entry };
 }
@@ -425,14 +403,8 @@ function waitFor(id: string, timeoutS: number, reply: FastifyReply) {
 }
 
 function owned(req: FastifyRequest, ids: string[]) {
-  const ctx = authOf(req);
-  if (ctx.mode !== "tokens" || ctx.internal || ctx.scopes.has("admin")) return;
-  const rows = db.prepare(`SELECT job_id, requested_by FROM jobs WHERE job_id IN (${ids.map(() => "?").join(",")})`).all(...ids) as {
-    job_id: string; requested_by: string | null;
-  }[];
-  const foreign = rows.filter((r) => r.requested_by !== ctx.actor);
-  if (foreign.length)
-    throw new ApiError(403, "forbidden", `you can stop only jobs you started; ${foreign[0].job_id} was started by ${foreign[0].requested_by ?? "someone unrecorded"}`, "an admin token can act on any job");
+  const refused = notOwned(authOf(req), ids);
+  if (refused) throw new ApiError(403, "forbidden", refused.message, refused.hint);
 }
 
 // --- results ---------------------------------------------------------------------------

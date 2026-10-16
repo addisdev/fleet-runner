@@ -201,6 +201,10 @@ export function workloadServiceableBy(workload: string, backend?: string | null)
  * six days guarding an APK older than the code it was meant to guard; a
  * schedule that asks for "latest" tests whatever CI pushed most recently.
  *
+ * Builds on the `pr` channel are never `latest`: a pull request's upload is
+ * tested by the job that names its hash, and the nightly keeps testing what
+ * was merged.
+ *
  * Throws when there is nothing to test, rather than enqueueing a job pinned to
  * a build that does not exist.
  */
@@ -210,11 +214,14 @@ export function resolveLatestBuild(spec: JobSpec): JobSpec {
   if (!appName) throw new Error("app.sha256 is 'latest' but app.name is missing");
   const row = db
     .prepare(
-      `SELECT sha256, build FROM artifacts WHERE app = ?
+      `SELECT sha256, build FROM artifacts WHERE app = ? AND channel IS NOT 'pr'
        ORDER BY COALESCE(publish_seq, rowid) DESC LIMIT 1`,
     )
     .get(appName) as { sha256: string; build: string | null } | undefined;
-  if (!row) throw new Error(`no build has been uploaded for ${appName}`);
+  if (!row) {
+    const prOnly = db.prepare("SELECT 1 FROM artifacts WHERE app = ? AND channel = 'pr' LIMIT 1").get(appName);
+    throw new Error(`no build has been uploaded for ${appName}${prOnly ? " except from pull requests, which latest never resolves to" : ""}`);
+  }
   // Record the build string the artifact carries, so a result says which build
   // actually ran. Falling back to the template's build would write the literal
   // word "latest" into the result, which is untraceable to any commit; the

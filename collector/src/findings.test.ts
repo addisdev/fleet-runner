@@ -108,8 +108,9 @@ export async function runFindingsChecks(check: Check) {
     check("findings: ...including for a crash that sent one", !zeroCrash.ok && zeroCrash.status === 422);
     const unknown = validateFinding({ ...sample(), check: "vibes" });
     check("findings: an unknown check name is 400", !unknown.ok && unknown.status === 400 && /vibes/.test(unknown.error));
-    check("findings: the newer check names are accepted",
-      validateFinding(sample({ check: "dead_control" })).ok && validateFinding(sample({ check: "leash" })).ok);
+    check("findings: dead_control is accepted", validateFinding(sample({ check: "dead_control" })).ok);
+    check("findings: names nothing raises are refused (regression, agent_stuck, leash)",
+      ["regression", "agent_stuck", "leash"].every((c) => { const v = validateFinding(sample({ check: c as never })); return !v.ok && v.status === 400; }));
     const noFp = validateFinding({ ...sample(), fingerprint: "" });
     check("findings: a missing fingerprint is 400", !noFp.ok && noFp.status === 400 && /fingerprint/.test(noFp.error));
     const big = validateFinding(sample({ detail: "x".repeat(9000) }));

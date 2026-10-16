@@ -33,6 +33,10 @@ jobs:
         run: ./gradlew :app:assembleDebug
 
       - name: Publish to the fleet
+        env:
+          # Only needed when the collector sets FLEET_AUTH_PROTOCOL=token; then
+          # the token needs the agent scope. Empty is fine otherwise.
+          FLEET_RUNNER_TOKEN: ${{ secrets.FLEET_RUNNER_TOKEN }}
         run: |
           npx --yes tsx scripts/ci-upload.ts \
             --collector "${{ secrets.FLEET_COLLECTOR_URL }}" \

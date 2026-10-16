@@ -17,6 +17,7 @@ import { runDeviceParserChecks } from "../src/device-parsers.test.js";
 import { runDriverChecks, runDescriptorChecks } from "../src/drivers/drivers.test.js";
 import { runZipChecks } from "../src/zip-dir.test.js";
 import { runTailnetChecks } from "../src/tailnet.test.js";
+import { runConfigChecks } from "../src/config.test.js";
 import { runDbChecks } from "../src/db.test.js";
 import { runAlertChecks } from "../src/alerts.test.js";
 import { runSkipChecks } from "../src/skip.test.js";
@@ -1433,8 +1434,81 @@ for (const [workload, device] of [["web-audit", "web:audit"], ["web-unfurl", "we
   check("a job asking for a build nobody has published is rejected", ghost.status === 400,
     `status ${ghost.status}`);
 
+  // A pull request's build never becomes `latest`: the nightly tests what was
+  // merged. The PR's own job still names it by hash.
+  const putPr = async (bytes: string, build: string, channel: string) =>
+    fetch(`${BASE}/artifacts`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream", "x-artifact-name": `${build}.apk`,
+        "x-artifact-app": APP, "x-artifact-build": build, "x-artifact-channel": channel,
+      },
+      body: bytes,
+    });
+  const prRes = await putPr(`pr-${run}`, "pr-42", "pr");
+  const pr = (await prRes.json()) as { sha256: string; channel: string | null };
+  check("an upload can say it is a pull request's build", prRes.status === 201 && pr.channel === "pr", JSON.stringify(pr));
+  const AFTER_PR = `smoke-after-pr-${run}`;
+  await json("POST", "/jobs", {
+    schema: 1, job_id: AFTER_PR, workload: "install", executor: "host",
+    app: { name: APP, build: "latest", sha256: "latest" },
+    targets: { executor: `never-${run}` }, lease: { ttl_s: 600, max_attempts: 1 },
+  });
+  const afterPr = await json("GET", `/api/jobs/${AFTER_PR}`);
+  check("latest skips a pull request's build", afterPr.body?.spec?.app?.sha256 === older.sha256,
+    `${afterPr.body?.spec?.app?.sha256} (pr=${pr.sha256} merged=${older.sha256})`);
+  const PR_JOB = `smoke-pr-job-${run}`;
+  const prJob = await json("POST", "/jobs", {
+    schema: 1, job_id: PR_JOB, workload: "install", executor: "host",
+    app: { name: APP, build: "pr-42", sha256: pr.sha256 },
+    targets: { executor: `never-${run}` }, lease: { ttl_s: 600, max_attempts: 1 },
+  });
+  check("a job may still name a pull request's build by hash", prJob.status === 201, JSON.stringify(prJob.body));
+  const listed = await json("GET", `/api/artifacts?app=${encodeURIComponent(APP)}`);
+  check("the artifact list shows the channel",
+    (listed.body?.artifacts ?? []).some((a: any) => a.sha256 === pr.sha256 && a.channel === "pr"), JSON.stringify(listed.body?.artifacts?.[0]));
+  // The same bytes published again from main come off the channel and lead.
+  await putPr(`pr-${run}`, "1.3.0", "");
+  const MERGED = `smoke-merged-${run}`;
+  await json("POST", "/jobs", {
+    schema: 1, job_id: MERGED, workload: "install", executor: "host",
+    app: { name: APP, build: "latest", sha256: "latest" },
+    targets: { executor: `never-${run}` }, lease: { ttl_s: 600, max_attempts: 1 },
+  });
+  const merged = await json("GET", `/api/jobs/${MERGED}`);
+  check("the same bytes republished from main become latest", merged.body?.spec?.app?.sha256 === pr.sha256,
+    JSON.stringify(merged.body?.spec?.app));
+  // And a PR build matching bytes main already published leaves that row alone.
+  await putPr(`older-${run}`, "pr-43", "pr");
+  const STILL = `smoke-still-${run}`;
+  await json("POST", "/jobs", {
+    schema: 1, job_id: STILL, workload: "install", executor: "host",
+    app: { name: APP, build: "latest", sha256: "latest" },
+    targets: { executor: `never-${run}` }, lease: { ttl_s: 600, max_attempts: 1 },
+  });
+  const still = await json("GET", `/api/jobs/${STILL}`);
+  check("a PR build matching a merged one neither moves nor demotes it", still.body?.spec?.app?.sha256 === pr.sha256,
+    JSON.stringify(still.body?.spec?.app));
+  const typo = await putPr(`typo-${run}`, "x", "PR-maybe");
+  check("an unknown channel is refused, not published", typo.status === 400, String(typo.status));
+
   for (const id of [SCHED, EMPTY]) await json("DELETE", `/schedules/${id}`, undefined);
-  for (const j of [jobId, REVERT]) if (j) await json("POST", `/api/jobs/${j}/cancel`, {});
+  for (const j of [jobId, REVERT, AFTER_PR, PR_JOB, MERGED, STILL]) if (j) await json("POST", `/api/jobs/${j}/cancel`, {});
+}
+
+// 31b. a schedule template's job_id is never used, and the response says so
+{
+  const ID = `smoke-jobid-${run}`;
+  const template = { schema: 1, workload: "install", executor: "host", app: { name: "x", sha256: "latest" }, targets: { executor: `never-${run}` } };
+  const refused = await json("POST", "/schedules", { id: ID, cron: "0 3 * * *", enabled: false, template: { ...template, job_id: "mine" } });
+  check("a schedule template with a job_id is refused", refused.status === 400, JSON.stringify(refused.body));
+  const warned = await json("POST", "/api/schedules", { id: ID, cron: "0 3 * * *", enabled: false, template: { ...template, job_id: "" } });
+  check("an empty job_id is dropped with a warning", warned.status === 201 && (warned.body?.warnings ?? []).some((w: string) => w.includes("job_id")), JSON.stringify(warned.body));
+  const stored = ((await json("GET", "/schedules")).body as any[]).find((s) => s.id === ID);
+  check("and is not stored", stored && !("job_id" in stored.template), JSON.stringify(stored?.template));
+  const clean = await json("POST", "/schedules", { id: ID, cron: "0 3 * * *", enabled: false, template });
+  check("a clean template has no warnings", clean.status === 201 && clean.body?.warnings === undefined, JSON.stringify(clean.body));
+  await json("DELETE", `/schedules/${ID}`, undefined);
 }
 
 // 32. xcodebuild test counts: what ran, not what the exit code implied
@@ -2706,6 +2780,9 @@ runZipChecks(check);
 // wrongly refuses is noticed within the minute by whoever's laptop stopped
 // working; one that wrongly admits is noticed never.
 runTailnetChecks(check);
+
+// --- environment knobs that used to be a bare Number() ---
+runConfigChecks(check);
 
 // The database layer itself: transactions, the open/close lifecycle, the
 

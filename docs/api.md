@@ -47,7 +47,10 @@ disagree: the test suite fails if they do.
 top-level field is refused rather than ignored, so a typo is an error and not
 a setting that silently did nothing. A workload's params are checked against
 its manifest. This is `/api/v1/jobs` (and so `fleetr run`) only: the legacy
-`POST /jobs` and `POST /api/jobs` do not refuse unknown fields.
+`POST /jobs` and `POST /api/jobs` do not refuse unknown fields. They do make
+the same two auth checks `/api/v1` makes with tokens on (the `shell` workload
+needs `admin`; cancel and retry are for the job's owner or `admin`); see
+[Authentication](deploy/auth.md).
 
 **Verdicts** in a summary: `passed`, `failed`, `mixed`, `skipped` (nothing
 ran, never folded into passed), `cancelled`, and while unfinished `queued`,
@@ -94,7 +97,7 @@ artifacts). See [the protocol](protocol.md#authentication-optional) and
 | `GET /devices/:id/next-job` | Long-poll (~25 s) for device work; 204 when none |
 | `GET /executor/next-job?name=` | Long-poll for host work; `name` labels the claimant |
 | `POST /results` | Result rows and beacons. `final: true` closes the job |
-| `POST /artifacts` | Upload bytes; returns `sha256` |
+| `POST /artifacts` | Upload bytes; returns `sha256`. Headers: `x-artifact-name`, and for a build `x-artifact-app`, `x-artifact-build`, `x-artifact-platform`. `x-artifact-channel: pr` marks a pull request's build, which `"sha256": "latest"` never resolves to; any other channel value is a 400. See [Publish builds on merge](integration/publish-on-merge.md#pull-request-builds-never-move-latest) |
 | `GET /artifacts/:sha256` | Download, supports Range |
 | `POST /findings` | An `explore` finding from an executor; merged on its fingerprint. See [Findings and verdicts](explore/findings.md#the-api) |
 | `POST /api/jobs/:id/mirror` | One raw JPEG frame from an executor driving a device, for the live view. Kept in memory only (the last three frames), never stored; 2 MB cap per frame. The one row here that `FLEET_DASH_TOKEN` does guard; the `explore` workload sends it |
@@ -115,7 +118,7 @@ anything else `admin`. With auth off, all of it is open.
 | `POST /locks/acquire` · `POST /locks/release` | Host-executor device locks for `targets.exclusive`; device claims lock implicitly |
 | `POST /events/:topic` | Publish a pipeline event; returns its id |
 | `GET /events/:topic/poll?after=` | Long-poll the next event past the cursor; 204 on expiry |
-| `POST /schedules` · `GET /schedules` | Upsert and list cron schedules |
+| `POST /schedules` · `GET /schedules` | Upsert and list cron schedules. The scheduler names every run (`<id>-<minute>`), so a template's `job_id` is never used: a non-empty one is a 400, and an empty or `null` one is dropped and named in the reply's `warnings` array |
 | `PATCH /schedules/:id` · `DELETE /schedules/:id` | Enable, disable or remove |
 | `POST /schedules/tick` | Force an evaluation; fires due schedules at most once a minute |
 | `POST /power/:pool/:state` | Fire a pool's smart-plug webhook |
@@ -195,14 +198,14 @@ equivalents they do not check that the job is yours (see
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/jobs` | Enqueue; forwards to `POST /jobs` so validation and fan-out have one implementation |
-| `POST /api/jobs/:id/cancel` · `/retry` | Cancel, or clone the spec under `<id>-r2` (body may set `pool`, `device_id`, `priority`) |
+| `POST /api/jobs/:id/cancel` · `/retry` | Cancel, or clone the spec under `<id>-r2` (body may set `pool`, `device_id`, `priority`). With tokens on, a `run` token may act only on its own jobs, as on `/api/v1` |
 | `PATCH /api/jobs/:id` | Set `priority` |
 | `POST /api/jobs/preview-targets` | "N devices match", using the matcher fan-out uses |
 | `PATCH /api/devices/:id` | Name, notes, pool override (`pools: null` clears it) |
 | `DELETE /api/devices/:id` | Forget a device; refuses while it is running a job |
 | `POST /api/devices/:id/release-lock` | Drop a stuck lock |
 | `POST /api/templates` · `DELETE /api/templates/:id` | Save a job template (`id`, `name`, `spec` without a `job_id`), or delete one |
-| `POST /api/schedules` · `PATCH` · `DELETE /api/schedules/:id` | Forwarded to `/schedules` |
+| `POST /api/schedules` · `PATCH` · `DELETE /api/schedules/:id` | Forwarded to `/schedules`, `warnings` and all |
 | `POST /api/schedules/:id/run` | Fire one schedule now, as `<id>-manual-<timestamp>`, without touching its own next firing |
 | `POST /api/power/:pool/:state` | Forwarded to `POST /power/:pool/:state` |
 | `POST /api/session` · `DELETE /api/session` | Exchange a token for the dashboard's read-only cookie, or clear it. See [Authentication](deploy/auth.md#tokens-on-the-collector) |
@@ -220,9 +223,11 @@ brain directly, and that is a security decision rather than a convenience.
 There is no authentication by default (see [Authentication](deploy/auth.md)):
 opening the read API cross-origin would let any website in the operator's
 browser read their whole fleet from any tab. With `FLEET_AUTH=tokens` the proxy
-needs `read` like any other GET. It sends no token to the peer, so a peer that
-has tokens on answers 401 through it. The
-proxy keeps one origin, one token, and one place that decides what may be
+needs `read` like any other GET. A peer that has tokens on answers 401 unless
+this collector sends it a token of its own: `FLEET_PEER_TOKENS` maps each peer's
+URL to a `read` token that peer issued (see [More than one
+brain](deploy/index.md#more-than-one-brain)). The caller's own token is never
+passed on. The proxy keeps one origin, one token, and one place that decides what may be
 asked for — an **allow-list** of endpoints, because the failure of a deny-list
 is that the next endpoint somebody adds is exposed by default.
 

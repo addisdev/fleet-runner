@@ -26,6 +26,7 @@
     "chaos": "tsx scripts/chaos.ts",
     "assets": "tsx scripts/render-assets.ts",
     "shoot:dash": "tsx scripts/shoot-dash.ts",
+    "shoot:live": "tsx scripts/shoot-live.ts",
     "shoot:motion": "tsx scripts/shoot-motion.ts"
   },
   "dependencies": {

@@ -492,6 +492,11 @@ for (const [column, ddl] of [
   // months to diff against. Once build and model-convert start producing
   // artifacts nightly, GC stops being hypothetical and that blind spot becomes
   // a deleted baseline and a visual suite with nothing to compare to.
+  // `pr` for a pull request's build, NULL for everything else. `latest` skips
+  // `pr` rows, so a branch's test build never becomes what the nightly tests.
+  // Rows from before the column are NULL: they count as merged builds, which
+  // is what `latest` already took them to be.
+  ["channel", "channel TEXT"],
   ["pinned", "pinned INTEGER NOT NULL DEFAULT 0"],
   ["pin_reason", "pin_reason TEXT"],
 ] as const) {

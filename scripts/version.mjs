@@ -72,6 +72,12 @@ const SITES = [
   // Three Apple targets share one source tree and each needs its own
   // MARKETING_VERSION; the pattern is global below.
   { file: "runner-ios/project.yml", re: /(MARKETING_VERSION: ")([^"]+)(")/g },
+  // The desktop app. Cargo's own version, anchored to [package] so a
+  // dependency's `version = "2"` cannot match, and Tauri's, which is what the
+  // bundle and the About box say. There is no committed Cargo.lock: when one
+  // exists, cargo rewrites its own entry from Cargo.toml on the next build.
+  { file: "desktop/src-tauri/Cargo.toml", re: /(\[package\][^[]*?\nversion = ")([^"]+)(")/ },
+  { file: "desktop/src-tauri/tauri.conf.json", re: /(\n  "version":\s*")([^"]+)(")/ },
 ];
 
 const read = (file) => readFileSync(path.join(ROOT, file), "utf8");

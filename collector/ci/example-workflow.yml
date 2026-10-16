@@ -4,6 +4,10 @@
 # this goes into an app repo (e.g. your-app-android). Until then this file
 # documents the contract and nothing reads it.
 #
+# ci-enqueue exits like `fleetr run`: 0 passed, 1 failed, 2 invalid spec,
+# 3 still running at --timeout, 4 skipped (nothing ran), 5 refused/unreachable.
+# Any non-zero exit fails the check, so a skip is not a green check.
+#
 # Requirements at connect time, none of which exist today by design:
 #   - the runner host joined to the tailnet, FLEET_COLLECTOR_URL secret set
 #   - FLEET_GITHUB_STATUS=1 + FLEET_GITHUB_TOKEN on the collector, so the
@@ -23,6 +27,12 @@ jobs:
         run: ./gradlew :app:assembleDebug
 
       - name: Real-device smoke via fleet
+        env:
+          # A run token (plus agent if the collector sets FLEET_AUTH_PROTOCOL=token),
+          # needed only when the collector runs with FLEET_AUTH=tokens.
+          FLEET_RUNNER_TOKEN: ${{ secrets.FLEET_RUNNER_TOKEN }}
+          # GITHUB_EVENT_NAME is pull_request here, so the build is uploaded on
+          # the pr channel and never becomes the nightly's "latest".
         run: |
           cat > fleet-job.json <<EOF
           {

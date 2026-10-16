@@ -1,0 +1,88 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>explore-code</title>
+<link rel="stylesheet" href="brand.css">
+<!--
+  The explorer's code map: which file calls which, and the three things outside
+  the executor it talks to. Every box is a file or directory that exists under
+  collector/src/workloads/explore/ or a process it reaches; the arrows are
+  imports and requests, not data flow in general.
+
+  Rendered by `npm run assets` in collector/ to docs/img/explore-code.png.
+-->
+<div class="figure" style="width:1280px;height:692px">
+<svg viewBox="0 0 1280 692" width="1280" height="692" role="img"
+     aria-label="Inside the executor: index.ts runs each device and mission, calls loop.ts, and uses report.ts and replay.ts. loop.ts runs a mission and its replay, using model.ts, judge.ts, leash.ts and screenmap.ts on each step, and the actuators directory to reach the device: adb for Android and Fire TV, FleetDriver over HTTP for Apple devices, tvloop for a Roku. model.ts and judge.ts call the gateway's pilot and vision models. index.ts posts findings, results and artifacts to the collector, whose Findings page is where the verdicts are given. types.ts is the contract they all agree on.">
+<g transform="translate(0 -48)">
+
+  <!-- ─── the executor ──────────────────────────────────────────────── -->
+  <rect class="l-structure" x="48" y="96" width="812" height="604" rx="12"/>
+
+  <rect x="72" y="152" width="360" height="76" rx="10" fill="var(--panel)" stroke="var(--amber)" stroke-width="1.5"/>
+  <text class="t-title" x="90" y="186">index.ts</text>
+  <text class="t-mono" x="90" y="210">per device, per mission; confirm, file</text>
+
+  <rect class="l-panel" x="492" y="152" width="344" height="76" rx="10"/>
+  <text class="t-title" x="510" y="186">report.ts · replay.ts</text>
+  <text class="t-mono" x="510" y="210">steps in words, the replay flow</text>
+  <path class="l-protocol" d="M432 190H484" marker-end="url(#arrow-amber)"/>
+
+  <rect class="l-panel" x="72" y="292" width="360" height="76" rx="10"/>
+  <text class="t-title" x="90" y="326">loop.ts</text>
+  <text class="t-mono" x="90" y="350">runMission · confirm</text>
+  <path class="l-protocol" d="M252 228V284" marker-end="url(#arrow-amber)"/>
+
+  <rect class="l-panel" x="492" y="268" width="344" height="176" rx="10"/>
+  <text class="t-mono" x="510" y="296">each step</text>
+  <g>
+    <rect class="l-structure" x="508" y="312" width="148" height="44" rx="7"/>
+    <text class="t-mono-light" x="582" y="339" text-anchor="middle" style="font-size:15px">model.ts</text>
+    <rect class="l-structure" x="672" y="312" width="148" height="44" rx="7"/>
+    <text class="t-mono-light" x="746" y="339" text-anchor="middle" style="font-size:15px">judge.ts</text>
+    <rect class="l-structure" x="508" y="372" width="148" height="44" rx="7"/>
+    <text class="t-mono-light" x="582" y="399" text-anchor="middle" style="font-size:15px">leash.ts</text>
+    <rect class="l-structure" x="672" y="372" width="148" height="44" rx="7"/>
+    <text class="t-mono-light" x="746" y="399" text-anchor="middle" style="font-size:15px">screenmap.ts</text>
+  </g>
+  <path class="l-protocol" d="M432 330H484" marker-end="url(#arrow-amber)"/>
+
+  <rect class="l-panel" x="72" y="504" width="360" height="76" rx="10"/>
+  <text class="t-title" x="90" y="538">actuators/</text>
+  <text class="t-mono" x="90" y="562">android.ts · apple.ts · roku.ts</text>
+  <path class="l-protocol" d="M252 368V496" marker-end="url(#arrow-amber)"/>
+
+  <text class="t-mono-light" x="72" y="628">types.ts is the contract every file here agrees on.</text>
+  <text class="t-mono" x="72" y="652">Outside model.ts, every coordinate is in screenshot pixels.</text>
+  <text class="t-mono-amber" x="72" y="684">the executor · collector/src/workloads/explore/</text>
+
+  <!-- ─── what it reaches ───────────────────────────────────────────── -->
+  <path class="l-protocol" d="M300 152V116H1200V160" marker-end="url(#arrow-amber)"/>
+  <text class="t-mono" x="900" y="148">findings, results, artifacts</text>
+
+  <rect x="900" y="168" width="332" height="76" rx="10" fill="var(--panel)" stroke="var(--amber)" stroke-width="1.5"/>
+  <text class="t-title" x="918" y="202">collector</text>
+  <text class="t-mono" x="918" y="226">the findings store</text>
+
+  <path class="l-structure" d="M1066 244V276" marker-end="url(#arrow-muted)"/>
+  <rect class="l-panel" x="900" y="284" width="332" height="76" rx="10"/>
+  <text class="t-title" x="918" y="318">Findings page</text>
+  <text class="t-mono" x="918" y="342">where your verdicts go</text>
+
+  <path class="l-protocol" d="M836 424H892" marker-end="url(#arrow-amber)"/>
+  <rect class="l-panel" x="900" y="386" width="332" height="76" rx="10"/>
+  <text class="t-title" x="918" y="420">gateway</text>
+  <text class="t-mono" x="918" y="444">pilot drives · vision judges</text>
+
+  <path class="l-cable" d="M432 542H892" marker-end="url(#arrow-muted)"/>
+  <rect class="l-panel" x="900" y="516" width="332" height="148" rx="10"/>
+  <text class="t-title" x="918" y="550">the device</text>
+  <text class="t-mono-light" x="918" y="582">adb</text>
+  <text class="t-mono" x="1074" y="582">Android, Fire TV</text>
+  <text class="t-mono-light" x="918" y="610">FleetDriver</text>
+  <text class="t-mono" x="1074" y="610">Apple, over HTTP</text>
+  <text class="t-mono-light" x="918" y="638">tvloop</text>
+  <text class="t-mono" x="1074" y="638">Roku</text>
+</g>
+</svg>
+</div>
+<script src="symbols.js"></script>

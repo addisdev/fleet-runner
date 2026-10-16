@@ -6,6 +6,8 @@ What a night leaves behind, and how your judgement of it steers the next one.
 
 **Findings** in the dashboard's top bar, or <kbd>g</kbd> <kbd>f</kbd>.
 
+![The Findings page filtered to the bug-garden fixture app: 59 open findings, none triaged yet, each row with its severity, check, title and screen, how often and on how many builds it was seen, "reproduced 2/2", and when it was first and last seen](../img/findings.png)
+
 The **list** can be filtered by app, check and status (open, triaged, all).
 Each row shows severity, check, title, screen, how many times and on how many
 builds it has been seen, how it replayed ("reproduced 2/2", "flaky 1/2",
@@ -140,8 +142,11 @@ scope ([Authentication](../deploy/auth.md)). The body is an
 | `413` | A body over 128 KB |
 | `422` | A replay that reproduced 0 times, or `replay: null` on anything but a crash |
 
-`check` is one of `crash anr frozen blank left_app a11y visual goal regression
-agent_stuck dead_control leash`. `subclass` is the visual judge's class.
+`check` is one of `crash anr frozen blank left_app a11y visual goal
+dead_control`. `subclass` is the visual judge's class. Earlier releases also
+listed `regression`, `agent_stuck` and `leash`, which nothing raised; they are
+refused now. A refused action is on the mission's steps (`refused`), not a
+finding.
 
 ### Reading
 
