@@ -81,7 +81,8 @@ export type JobSpec = {
   template_id?: string;
   // Job ids this one waits for. The job is inserted 'waiting' and promoted to
   // 'queued' when the last of them is 'done' — a build → install → ui-test
-  // chain is three POSTs and nothing watching the queue.
+  // chain is three POSTs and nothing watching the queue. If one of them fails
+  // the job fails; if one of them skipped, the job skips.
   depends_on?: string[];
   // The runner will stand down and checkpoint if higher-priority work arrives
   // for the same claimant. Honoured by the collector's beacon reply; a runner
@@ -264,7 +265,8 @@ export type CandidateDevice = { device_id: string; model: string | null; os: str
 export type EnqueueAccepted = {
   ok: true;
   http: 200 | 201;
-  /** queued, waiting (on depends_on), or failed (a dependency already failed). */
+  /** queued, waiting (on depends_on), failed (a dependency already failed) or
+   *  skipped (a dependency already skipped, so there is nothing to run on). */
   status: string;
   job_id: string;
   /** Present when the spec fanned out: one child per device. */
@@ -473,6 +475,7 @@ export function enqueueJob(
       };
     }
 
+    const closedOnArrival = depState.status === "failed" || depState.status === "skipped";
     // Every child inherits the parent's dependencies, so a fan-out can hang off
     // a single build the same way one pinned job can.
     const insert = db.prepare(
@@ -484,12 +487,12 @@ export function enqueueJob(
       const r = insert.run(
         child.job_id, child.executor, child.workload, JSON.stringify(child), ttlS, maxAttempts,
         priority, spec.job_id, templateId, dependsOn, depState.status,
-        depState.status === "failed" ? depState.reason : null,
+        closedOnArrival ? depState.reason : null,
         provenance.requested_by, provenance.source,
       );
       if (r.changes > 0) created.push(child.job_id);
     }
-    if (depState.status === "failed")
+    if (closedOnArrival)
       for (const jobId of created)
         db.prepare("UPDATE jobs SET finished_at = datetime('now') WHERE job_id = ?").run(jobId);
     for (const jobId of created)
@@ -510,10 +513,10 @@ export function enqueueJob(
   try {
     db.prepare(
       `INSERT INTO jobs (job_id, executor, workload, spec, lease_ttl_s, max_attempts, priority, template_id, depends_on, status, last_error, finished_at, requested_by, source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${depState.status === "failed" ? "datetime('now')" : "NULL"}, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${depState.status === "failed" || depState.status === "skipped" ? "datetime('now')" : "NULL"}, ?, ?)`,
     ).run(
       spec.job_id, spec.executor, spec.workload, JSON.stringify(spec), ttlS, maxAttempts, priority, templateId,
-      dependsOn, depState.status, depState.status === "failed" ? depState.reason : null,
+      dependsOn, depState.status, depState.status === "failed" || depState.status === "skipped" ? depState.reason : null,
       provenance.requested_by, provenance.source,
     );
   } catch (e: unknown) {
@@ -532,6 +535,7 @@ export function enqueueJob(
 function warningsFor(spec: JobSpec, candidates: number, deps: { status: string; reason?: string }): string[] {
   const out: string[] = [];
   if (deps.status === "failed") out.push(`a dependency already failed (${deps.reason ?? "unknown"}); the job would be failed at once`);
+  if (deps.status === "skipped") out.push(`a dependency already skipped (${deps.reason ?? "unknown"}); the job would be skipped at once, since there is nothing for it to run on`);
   if (deps.status === "waiting") out.push("waiting on depends_on; it starts when those jobs are done");
   if (spec.executor === "device" && candidates === 0) {
     out.push("no registered device matches these targets and can run this workload; the job would queue until one does");

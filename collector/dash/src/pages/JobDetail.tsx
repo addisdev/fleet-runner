@@ -87,7 +87,7 @@ function DependsOn({ job }: { job: Detail }) {
       .{" "}
       <span class="faint">
         {statusOf(job) === "waiting"
-          ? "It is queued the moment the last of them is done, with any ${jobs.…} references in its spec filled in from their final rows. If one fails or is cancelled, this job fails with it rather than waiting forever."
+          ? "It is queued the moment the last of them is done, with any ${jobs.…} references in its spec filled in from their final rows. If one fails or is cancelled, this job fails with it rather than waiting forever; if one skips, this job skips too, since there is nothing for it to run on."
           : "The chain has already resolved; this is what it hung off."}
       </span>
     </p>

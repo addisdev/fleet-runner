@@ -35,6 +35,7 @@ import { isTextual } from "../../media-type.js";
 import { AGE, capabilityMatches, deviceCapabilities, inClause, iso, isExpired, ONLINE_S, paging, parse, sha256Refs } from "../shared.js";
 import { schedulesView } from "../system.js";
 import { SCHEMAS } from "./schemas.js";
+import { isSkipError } from "../../skip.js";
 
 // --- the table's types ------------------------------------------------------------
 
@@ -252,7 +253,7 @@ type SummaryJob = {
 const SUMMARY_COLUMNS = `job_id, workload, status, claimed_by, last_error, requested_by, source, spec,
   CASE WHEN claimed_at IS NOT NULL THEN CAST(strftime('%s', COALESCE(finished_at, datetime('now'))) - strftime('%s', claimed_at) AS INTEGER) END AS duration_s`;
 
-const FINISHED = new Set(["done", "failed", "cancelled"]);
+const FINISHED = new Set(["done", "failed", "cancelled", "skipped"]);
 const likePrefix = (p: string) => `${p.replace(/[\\%_]/g, "\\$&")}--%`;
 
 function familyOf(id: string): { jobs: SummaryJob[]; fanout: boolean } | null {
@@ -290,16 +291,18 @@ function outcomesOf(job: SummaryJob): DeviceOutcome[] {
   const spec = parse<Record<string, any>>(job.spec, {});
   if (entries.length === 0) {
     const device = String(job.claimed_by ?? spec.targets?.device_id ?? "(unassigned)");
-    const skipped = typeof job.last_error === "string" && job.last_error.startsWith("skipped:");
+    // A job skipped because its dependency skipped never reached a runner, so
+    // it has no rows; its status is the whole story.
+    const skipped = job.status === "skipped" || isSkipError(job.last_error);
     return [{
       device_id: device, job_id: job.job_id, status: job.status,
-      ok: job.status === "done" ? !skipped : job.status === "failed" ? false : null,
+      ok: job.status === "skipped" ? true : job.status === "done" ? !skipped : job.status === "failed" ? false : null,
       skipped, error: job.last_error, metrics: null, test: null, failing_step: null,
     }];
   }
   return entries.map(([device, p]) => {
     const error = typeof p.error === "string" ? p.error : null;
-    const skipped = !!error && error.startsWith("skipped:");
+    const skipped = isSkipError(error);
     const test = p.test && typeof p.test === "object"
       ? { passed: p.test.passed ?? null, failed: p.test.failed ?? null, skipped: p.test.skipped ?? null }
       : null;
@@ -363,7 +366,10 @@ export function summarize(id: string) {
   const has = (s: string) => jobs.some((j) => j.status === s);
   const familyStatus = !finished
     ? has("claimed") ? "claimed" : has("queued") ? "queued" : "waiting"
-    : jobs.every((j) => j.status === "cancelled") ? "cancelled" : has("failed") ? "failed" : "done";
+    : jobs.every((j) => j.status === "cancelled") ? "cancelled" : has("failed") ? "failed"
+    // Nothing in the family ran: every child skipped (or skipped and was
+    // cancelled). One that ran is enough for the family to be done.
+    : !has("done") && has("skipped") ? "skipped" : "done";
   const status = fanout ? familyStatus : head.status;
   return {
     job_id: id,
@@ -620,7 +626,7 @@ export const ROUTES: Route[] = [
     operationId: "listJobs", method: "GET", path: "/api/v1/jobs", tag: "jobs", scope: "read", readOnly: true, idempotent: true,
     summary: "Jobs, newest first, filterable.",
     params: [
-      { name: "status", in: "query", type: "string", description: "Comma-separated: waiting, queued, claimed, done, failed, cancelled." },
+      { name: "status", in: "query", type: "string", description: "Comma-separated: waiting, queued, claimed, done, failed, cancelled, skipped." },
       { name: "workload", in: "query", type: "string", description: "Comma-separated workload names." },
       { name: "executor", in: "query", type: "string", enum: ["device", "host"], description: "device or host." },
       { name: "device", in: "query", type: "string", description: "Claimed by, or pinned to, this device." },

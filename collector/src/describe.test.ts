@@ -49,6 +49,14 @@ export async function runDescribeChecks(check: Check) {
   check("and is attached to this host, which host routing follows", typeof r1.attached_to === "string");
   const r2 = await describeTarget({ id: "roku-gone", platform: "roku", kind: "device" } as never, null, null, []);
   check("a Roku discovery lost track of is still a Roku, not an iPhone", r2.os === "roku", JSON.stringify(r2));
+  // It used to say nothing, and the collector's fallback guess for anything
+  // that is not iOS is Android: the shelf's Roku Express listed as android.
+  check("a Roku says its platform is roku", r1.platform === "roku" && r2.platform === "roku",
+    JSON.stringify([r1.platform, r2.platform]));
+  const { devicePlatform } = await import("./api/shared.js");
+  check("and the collector believes it", devicePlatform(r1) === "roku", devicePlatform(r1));
+  const { evalMatch } = await import("./match.js");
+  check("os ~ 'roku' still selects it", evalMatch("os ~ 'roku'", r1) && evalMatch("os ~ 'roku-15'", r1));
 
   const { rokuPresenceHere } = await import("./drivers/roku.js");
   check("Roku presence is off unless this host is told it owns them",

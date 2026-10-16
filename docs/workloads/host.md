@@ -270,6 +270,15 @@ directory (`FLEET_FLOWS_DIR` to change). `exclusive`
 takes a device lock for the run, because two suites tapping the same phone is
 not a test.
 
+**A failing Maestro run says which step broke.** The device row's `error` is
+the first failing flow and its assertion, read from the JUnit report
+(`smoke: Assertion is false: "Fleet Runner" is visible`), `test.failing_flow`
+names the flow, and the report itself is the row's artifact
+(`GET /api/v1/artifacts/<sha>/content`). When Maestro produced no report at
+all, the error is its exit code and the last line it printed to stderr, never
+its command line, which carries the test account's password. Until 0.9 the
+reason was in the uploaded report and nowhere else.
+
 **iOS UI tests need a Mac with full Xcode.** `simctl` and `devicectl` ship with
 Xcode, not the Command Line Tools, so they run on a different executor from the
 Android work. [The iOS executor](../deploy/ios-executor.md) covers standing one

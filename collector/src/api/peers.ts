@@ -44,7 +44,7 @@ const PEER_TIMEOUT_MS = 4_000;
  * What may be proxied.
  *
  * An allow-list of prefixes rather than a rule about methods alone, because
- * `GET /api/artifacts/:sha` streams bytes and `GET /api/stream` is an endless
+ * `GET /api/artifacts/:sha` leads to bytes and `GET /api/stream` is an endless
  * SSE response -- neither belongs on a path whose whole purpose is to fill in a
  * summary table. Everything here answers with a bounded JSON document.
  */

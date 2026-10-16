@@ -83,6 +83,9 @@ export function Overview() {
                 <Stat label="running" value={d.queue.claimed} tone={d.queue.claimed > 0 ? "warn" : undefined} />
                 <Stat label="done 24h" value={d.queue.done_24h} tone="ok" />
                 <Stat label="failed 24h" value={d.queue.failed_24h} tone={d.queue.failed_24h > 0 ? "bad" : undefined} />
+                {/* Its own number, never added to done: a skip ran nothing. No tone,
+                    like the chip -- it is not good news and not a failure. */}
+                <Stat label="skipped 24h" value={d.queue.skipped_24h ?? 0} />
                 <Stat label="oldest queued" value={duration(d.queue.oldest_queued_age_s)} />
                 <Stat
                   label="last attempt"

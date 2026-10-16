@@ -70,7 +70,7 @@ dependency, so nothing new is installed.
 | `img/banner.png` | 2560×1280 | `figures/banner.html` |
 | `img/social-preview.png` | 2560×1280 (2× of GitHub's 1280×640) | `figures/social-preview.html` |
 | `img/architecture.png` | 2560×1280 | `figures/architecture.html` |
-| `img/lifecycle.png` | 2560×1360 | `figures/lifecycle.html` |
+| `img/lifecycle.png` | 2560×1464 | `figures/lifecycle.html` |
 | `img/protocol.png` | 2560×1120 | `figures/protocol.html` |
 | `img/workloads.png` | 2560×1200 | `figures/workloads.html` |
 | `img/platforms.png` | 2560×1400 | `figures/platforms.html` |

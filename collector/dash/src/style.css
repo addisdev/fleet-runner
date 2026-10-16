@@ -163,6 +163,10 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 /* Cancelled is deliberately not styled like failed: a person stopped it,
    nothing went wrong. */
 .pill.cancelled { color: var(--ink-faint); border-color: var(--line); text-decoration: line-through; }
+/* Skipped is neither green nor red: the job was claimed and nothing ran, so it
+   says nothing about the code. Grey and solid, so it does not read as a pass at
+   a glance, and does not read as a person's cancellation either. */
+.pill.skipped { color: var(--ink-dim); border-color: var(--line); background: color-mix(in srgb, var(--ink-faint) 12%, transparent); }
 .pill.claimed { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
 .pill.done, .pill.online { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
 .pill.failed, .pill.offline { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }

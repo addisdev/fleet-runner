@@ -40,6 +40,8 @@ import { admit, isTailnetAddress, normaliseIp, whois } from "./tailnet.js";
 // from this file, so there is no cycle.
 import { firstArtifactSha, settleWaiters, type DepSettlement } from "./api/mutations.js";
 import { announce } from "./announce.js";
+import { closingStatus, type Closing } from "./skip.js";
+import { forgetStaleSimulators, retireRokuIpDuplicate } from "./registry-hygiene.js";
 import { enqueueJob, matchingDevices, resolveLatestBuild, type JobSpec } from "./queue.js";
 import { authWarnings, provenanceOf, registerAuth } from "./auth.js";
 import { registerDeprecations } from "./api/v1/deprecations.js";
@@ -460,6 +462,13 @@ const sweepLeasesTx = db.transaction((): { requeued: SweptJob[]; failed: SweptJo
 
 function sweepLeases() {
   const swept = sweepLeasesTx();
+  // Registry hygiene rides on the same timer: simulators offline past
+  // FLEET_SIMULATOR_TTL_DAYS are forgotten. See registry-hygiene.ts.
+  const forgotten = forgetStaleSimulators();
+  for (const id of forgotten) {
+    app.log.info({ device_id: id }, "simulator offline past its TTL; forgotten");
+    announce({ type: "device", device_id: id, event: "forget", reason: "simulator offline past FLEET_SIMULATOR_TTL_DAYS" });
+  }
   for (const j of swept.requeued) {
     app.log.warn({ job_id: j.job_id, claimed_by: j.claimed_by, attempt: j.attempts }, "lease expired; requeued");
     announce({ type: "job", job_id: j.job_id, status: "queued", reason: "lease expired", attempts: j.attempts });
@@ -468,7 +477,7 @@ function sweepLeases() {
     app.log.error({ job_id: j.job_id, claimed_by: j.claimed_by, attempts: j.attempts }, "lease expired; job failed");
     announce({ type: "job", job_id: j.job_id, status: "failed", reason: "lease expired", attempts: j.attempts });
   }
-  return swept;
+  return { ...swept, forgotten };
 }
 
 // --- devices ---
@@ -537,6 +546,12 @@ app.post("/devices/register", async (req, reply) => {
     type: "device", device_id: b.device_id, event: "register",
     pools: b.pools ?? [], capabilities: b.capabilities ?? null,
   });
+  // The same Roku, seen earlier by address only: one row is the truth.
+  const retired = retireRokuIpDuplicate(b.device_id, (b.descriptor ?? {}) as Record<string, unknown>);
+  if (retired) {
+    app.log.info({ device_id: retired, now: b.device_id }, "retired a Roku's IP-named duplicate");
+    announce({ type: "device", device_id: retired, event: "forget", reason: `same Roku as ${b.device_id}` });
+  }
   return { ok: true };
 });
 
@@ -673,6 +688,7 @@ app.post("/jobs/sweep", async () => {
     ok: true,
     requeued: swept.requeued.map((j) => j.job_id),
     failed: swept.failed.map((j) => j.job_id),
+    forgotten: swept.forgotten,
   };
 });
 
@@ -689,11 +705,15 @@ app.get("/jobs/:id", async (req, reply) => {
  *  A crash between the two would leave a chain permanently stalled on a
  *  dependency that is already finished, which nothing on the collector would
  *  ever come back and fix. */
-const closeJobTx = db.transaction((jobId: string, status: "done" | "failed"): DepSettlement => {
+const closeJobTx = db.transaction((jobId: string, status: Closing["status"], reason: string | null): DepSettlement => {
   // Dropping the deadline takes the job out of the sweep's reach for good.
+  // The reason replaces last_error only when there is one: a skip always has
+  // one, a failure usually does, and a pass has nothing to say.
   db.prepare(
-    "UPDATE jobs SET status = ?, finished_at = datetime('now'), lease_deadline = NULL WHERE job_id = ?",
-  ).run(status, jobId);
+    `UPDATE jobs SET status = ?, finished_at = datetime('now'), lease_deadline = NULL,
+                     last_error = COALESCE(?, last_error)
+     WHERE job_id = ?`,
+  ).run(status, reason, jobId);
   db.prepare("DELETE FROM device_locks WHERE job_id = ?").run(jobId);
   return settleWaiters(jobId);
 });
@@ -815,8 +835,16 @@ app.post("/results", async (req, reply) => {
       app.log.warn({ job_id: b.job_id }, "preempted result for a job that is no longer claimed");
     }
 
-    const status = b.ok === false ? "failed" : "done";
-    const settled = closeJobTx(b.job_id, status);
+    // Failed, done or skipped, judged over every row the job posted: a host
+    // job's final row is the executor's verdict, and its devices may all have
+    // said `skipped:` underneath a plain `ok: true`.
+    const rows = (db
+      .prepare("SELECT device_id, payload FROM results WHERE job_id = ? ORDER BY iter, rowid")
+      .all(b.job_id) as { device_id: string; payload: string }[])
+      .map((r) => ({ device_id: r.device_id, payload: JSON.parse(r.payload) as Record<string, unknown> }));
+    const closing = closingStatus(rows, b as Record<string, unknown>);
+    const status = closing.status;
+    const settled = closeJobTx(b.job_id, status, closing.reason);
     // A finished job has nothing left to show. Outside the transaction, because
     // closing viewer sockets must not be able to roll back a device's result.
     endMirror(b.job_id);
@@ -827,14 +855,18 @@ app.post("/results", async (req, reply) => {
       announce({ type: "job", job_id: jobId, status: "queued", reason: `dependency ${b.job_id} finished` });
     for (const f of settled.failed)
       announce({ type: "job", job_id: f.job_id, status: "failed", reason: f.reason });
+    for (const s of settled.skipped)
+      announce({ type: "job", job_id: s.job_id, status: "skipped", reason: s.reason });
 
-    // A skip -- nothing attached, a host under pressure -- is ok for the queue
-    // and says nothing about the code, so it must not become a green check.
-    const skipped = b.ok === true && typeof b.error === "string" && b.error.startsWith("skipped:");
-    reportStatus(b.job_id, status === "failed" ? "failure" : "success", skipped).catch((e) =>
+    // A skip -- nothing attached, a host under pressure -- says nothing about
+    // the code, so it must not become a green check.
+    reportStatus(b.job_id, status === "failed" ? "failure" : "success", status === "skipped").catch((e) =>
       app.log.error(e, "status report failed"),
     );
-    return { ok: true, status, promoted: settled.promoted, failed: settled.failed.map((f) => f.job_id) };
+    return {
+      ok: true, status, promoted: settled.promoted, failed: settled.failed.map((f) => f.job_id),
+      skipped: settled.skipped.map((s) => s.job_id),
+    };
   }
   return { ok: true };
 });

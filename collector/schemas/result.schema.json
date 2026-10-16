@@ -216,7 +216,9 @@
       "properties": {
         "passed": { "type": "integer" },
         "failed": { "type": "integer" },
-        "artifacts": { "type": "array", "items": { "type": "string" }, "description": "sha256 refs of screenshots/videos/junit uploaded to the artifact store" }
+        "artifacts": { "type": "array", "items": { "type": "string" }, "description": "sha256 refs of screenshots/videos/junit uploaded to the artifact store" },
+        "skipped": { "type": "integer" },
+        "failing_flow": { "type": "string", "description": "The first failing flow or test case, by name; the step that broke is in the row's error" }
       }
     },
     "shot": {

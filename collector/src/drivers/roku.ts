@@ -403,9 +403,14 @@ export function rokuPresenceHere(env: NodeJS.ProcessEnv = process.env): boolean 
  * `ios-18.4` have. `ip` is carried because tvloop and the dev installer both
  * address a Roku by it, and a workload should not have to re-run discovery to
  * learn what the registry already knew.
+ *
+ * `platform: "roku"` is said outright. Without it the collector fell back to
+ * its old guess -- iOS if `os` looks like iOS, Android otherwise -- and the
+ * Roku Express on the shelf registered as an Android device.
  */
 export function describeRoku(d: RokuDevice): Record<string, unknown> {
   return {
+    platform: "roku",
     model: d.modelName ?? d.modelNumber ?? "roku",
     os: d.softwareVersion ? `roku-${d.softwareVersion}` : "roku",
     ...(d.serial ? { serial: d.serial } : {}),

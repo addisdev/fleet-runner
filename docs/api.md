@@ -20,7 +20,7 @@ disagree: the test suite fails if they do.
 | `GET /api/v1/devices` · `/devices/{id}` | read | The shelf, with status (`online`, `stale`, `offline`) and current job |
 | `GET /api/v1/workloads` · `/workloads/{name}` | read | What the fleet can run: executor, params schema, a valid example spec, how many live agents can take it |
 | `GET /api/v1/templates` | read | Saved job templates |
-| `GET /api/v1/jobs` | read | Jobs; filter by `status`, `workload`, `executor` (`device` or `host`), `device`, `pool`, `source`, `requested_by`, `mine=true`, `q` (substring of the job id), `from`/`to` |
+| `GET /api/v1/jobs` | read | Jobs; filter by `status` (`waiting`, `queued`, `claimed`, `done`, `failed`, `cancelled`, `skipped`), `workload`, `executor` (`device` or `host`), `device`, `pool`, `source`, `requested_by`, `mine=true`, `q` (substring of the job id), `from`/`to` |
 | `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs. 422 `no_capable_agent` when no live agent declares the workload (or backend); 400 `no_matching_devices` for a fan-out that matches nothing, and 400 `no_build` when `latest` names no published build |
 | `POST /api/v1/jobs/validate` | run | Dry run: schema errors by path, the devices it would land on, warnings. Always 200 |
 | `GET /api/v1/jobs/{id}` | read | One job, with its spec |
@@ -52,6 +52,13 @@ its manifest. This is `/api/v1/jobs` (and so `fleetr run`) only: the legacy
 **Verdicts** in a summary: `passed`, `failed`, `mixed`, `skipped` (nothing
 ran, never folded into passed), `cancelled`, and while unfinished `queued`,
 `waiting` or `running`.
+
+**Job statuses** are `waiting`, `queued`, `claimed`, `done`, `failed`,
+`cancelled` and `skipped`. `skipped` means the job was claimed and nothing ran
+(its runner said `skipped:`, or a dependency skipped); `last_error` says why.
+A skipped job's summary verdict is `skipped`, as it always was; before 0.9 its
+status said `done`. A fan-out family's `status` is `skipped` when no child ran.
+See [Skipped is not done](concepts.md#skipped-is-not-done).
 
 **Who asked.** Every job records `requested_by` and `source` (`cli`, `mcp`,
 `ci`, `dash`, `schedule`, `api`). With auth off both are what the caller said, labelled
@@ -101,9 +108,9 @@ anything else `admin`. With auth off, all of it is open.
 
 | Method & path | Purpose |
 |---|---|
-| `POST /jobs` | Enqueue. 409 on duplicate `job_id`; the reply's `status` says whether it queued or is `waiting` on `depends_on` |
+| `POST /jobs` | Enqueue. 409 on duplicate `job_id`; the reply's `status` says whether it queued, is `waiting` on `depends_on`, or was closed on arrival as `failed` or `skipped` because a dependency already was |
 | `GET /jobs/:id` | Status, including `attempts`, `lease_deadline` and `last_error` |
-| `POST /jobs/sweep` | Force a lease sweep now; returns what was requeued and failed |
+| `POST /jobs/sweep` | Force a lease sweep now; returns what was requeued and failed, and the simulator rows it forgot (offline past `FLEET_SIMULATOR_TTL_DAYS`, default 7) |
 | `POST /jobs/:id/release` | The claimant hands a job back before starting it. Returns it to `queued` and **refunds the attempt**; 409 once any result exists. See [the protocol](protocol.md#handing-a-job-straight-back) |
 | `POST /locks/acquire` · `POST /locks/release` | Host-executor device locks for `targets.exclusive`; device claims lock implicitly |
 | `POST /events/:topic` | Publish a pipeline event; returns its id |
@@ -127,7 +134,7 @@ Every endpoint is `GET` and side-effect free.
 | `GET /api/devices` | Registry with derived `online`/`stale`/`offline`, current job, lock, flattened beacon |
 | `GET /api/devices/:id` | Descriptor, job history, latest benchmarks, counts |
 | `GET /api/devices/:id/beacons?hours=24` | Beacon history for the battery and thermal charts |
-| `GET /api/jobs` | Filters, paging, sorting; returns status facets |
+| `GET /api/jobs` | Filters (`status` takes `skipped` too), paging, sorting; returns status facets, `skipped` among them |
 | `GET /api/jobs/:id` | Spec, results, beacons, artifacts, locks, fan-out family, status report |
 | `GET /api/results` | Filters: `job`, `device`, `workload`, `final`, `ok`, `from`, `to` |
 | `GET /api/results/bench` | Latest passing run per device per configuration, with history for trends |
@@ -138,6 +145,7 @@ Every endpoint is `GET` and side-effect free.
 | `GET /api/evals` · `GET /api/evals/:input_sha` | Eval sets pivoted by model and device |
 | `GET /api/schedules` | Schedules with computed `next_run` and missed-fire detection |
 | `GET /api/artifacts` | Store listing with on-disk state and reference counts |
+| `GET /api/artifacts/:sha256` | A 308 to `/api/v1/artifacts/:sha256/content`, the bytes; 404 when nothing by that hash was ever uploaded. Before 0.9 this answered "no such endpoint", which read as a missing artifact |
 | `GET /api/visual/baselines` · `/suites` · `/matrix?suite=` | Accepted baselines and the review grid |
 | `GET /api/locks` | Held locks and how long they have been held |
 | `GET /api/executors` | Host-executor liveness, derived from their long-poll traffic |
@@ -234,7 +242,8 @@ already handle. Work in flight finishes; nothing new starts.
 
 A cancelled job is deliberately **not** `failed`. The overview's failure counts
 and every alert built on them would otherwise count deliberate stops as
-breakage.
+breakage. A skipped one is not `done` either, for the mirror-image reason: the
+overview counts it on its own (`queue.skipped_24h`).
 
 ### Pool edits go to a different column
 

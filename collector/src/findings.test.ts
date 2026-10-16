@@ -264,6 +264,25 @@ export async function runFindingsChecks(check: Check) {
     check("digest: high severity first", d.apps[1].top[0].id === a.finding.id);
     check("digest: judged-not-a-bug is left out", !d.text.includes("Not actually a bug"));
 
+    // A skip is a job that ran nothing: its own count and its own line, with
+    // the schedule and the reason, never folded into done.
+    const job = (id: string, status: string, err: string | null) =>
+      db.prepare(
+        "INSERT INTO jobs (job_id, executor, workload, spec, status, last_error, finished_at) VALUES (?, 'host', 'tvloop', '{}', ?, ?, datetime('now'))",
+      ).run(id, status, err);
+    job("nightly-ok-202610150230", "done", null);
+    job("nightly-ui-smoke-202610150230", "failed", 'smoke: Assertion is false: "Fleet Runner" is visible');
+    job("nightly-tvloop-hardware-202610150630", "skipped", "skipped: no Roku developer password on this host");
+    job("explore-tv-202610150300--sim-a", "skipped", "skipped: no device matches this job on ultra");
+    job("explore-tv-202610150300--sim-b", "skipped", "skipped: no device matches this job on ultra");
+    const withJobs = buildDigest(12, "http://fleet.test:8788");
+    check("digest: jobs are counted done, failed and skipped",
+      withJobs.jobs.done === 1 && withJobs.jobs.failed === 1 && withJobs.jobs.skipped === 3, JSON.stringify(withJobs.jobs));
+    check("digest: the skip line says nothing ran", withJobs.text.includes("Jobs, last 12h: 1 done, 1 failed, 3 skipped (nothing ran)."), withJobs.text);
+    check("digest: and names what skipped and why, by schedule",
+      withJobs.text.includes("- skipped: explore-tv x2 (no device matches this job on ultra)") &&
+        withJobs.text.includes("- skipped: nightly-tvloop-hardware (no Roku developer password on this host)"), withJobs.text);
+
     // The timer.
     const at7 = new Date(2026, 9, 3, 7, 0);
     check("digest timer: not before HH:MM", !digestDue(new Date(2026, 9, 3, 6, 59), "07:00", null));

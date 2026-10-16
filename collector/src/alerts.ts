@@ -13,6 +13,7 @@
 import { db } from "./db.js";
 import { beaconFields, deviceStatus, effectivePools, hasBattery, isExpired, parse } from "./api/shared.js";
 import { minuteKey, prevRun } from "./cron.js";
+import { skipReasonText } from "./skip.js";
 
 export type Severity = "warning" | "critical";
 export type Finding = { rule: string; subject: string; severity: Severity; message: string };
@@ -38,7 +39,57 @@ export const THRESHOLDS = {
   // Below this many prior runs there is no median worth trusting, and a new
   // device would alarm on its second result forever.
   regressionMinSamples: env("FLEET_ALERT_REGRESSION_MIN_SAMPLES", 4),
+  // A schedule whose last this-many runs all skipped is not running, whatever
+  // its jobs' statuses say about the code. One skip is a phone on a charger
+  // somewhere else; three in a row is a missing password nobody has noticed.
+  skipStreak: Math.round(env("FLEET_ALERT_SKIP_STREAK", 3)),
 };
+
+/**
+ * The runs a schedule fired, newest first, each judged as a whole.
+ *
+ * A run is the job the scheduler enqueued (`<schedule>-<YYYYMMDDHHMM>`) or, for
+ * a fan-out, that id's children; jobs from before provenance existed carry no
+ * `requested_by`, so the id is what identifies them. Read as a primary-key
+ * range rather than a LIKE, so it costs an index walk however long the history.
+ * A run still in flight is left out: it has not said whether it skipped.
+ */
+export function scheduleRuns(scheduleId: string): { run: string; skipped: boolean; reasons: string[] }[] {
+  const prefix = `${scheduleId}-`;
+  // '-' is 0x2D and '.' is 0x2E, so [prefix, prefix-with-'.') is every id that
+  // starts with it.
+  const upper = `${scheduleId}.`;
+  const escaped = scheduleId.replace(/[.*+?^$()|[\]{}\\]/g, "\\$&");
+  const own = new RegExp("^" + escaped + "-\\d{12}(--.*)?$");
+  const rows = (db
+    .prepare(
+      `SELECT job_id, status, last_error, created_at FROM jobs
+        WHERE job_id >= ? AND job_id < ?`,
+    )
+    .all(prefix, upper) as { job_id: string; status: string; last_error: string | null; created_at: string }[])
+    .filter((r) => own.test(r.job_id));
+  const runs = new Map<string, { created: string; statuses: string[]; reasons: string[] }>();
+  for (const r of rows) {
+    const key = r.job_id.split("--")[0];
+    const run = runs.get(key) ?? { created: r.created_at, statuses: [], reasons: [] };
+    run.statuses.push(r.status);
+    if (r.status === "skipped" && r.last_error) run.reasons.push(r.last_error);
+    if (r.created_at < run.created) run.created = r.created_at;
+    runs.set(key, run);
+  }
+  const FINISHED = new Set(["done", "failed", "cancelled", "skipped"]);
+  return [...runs]
+    .filter(([, r]) => r.statuses.every((s) => FINISHED.has(s)))
+    // The id ends in the minute it fired, so it orders runs exactly; created_at
+    // has one-second resolution and a backfilled run would tie.
+    .sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0))
+    .map(([run, r]) => ({
+      run,
+      // The family rule from the v1 summary: nothing in it ran.
+      skipped: !r.statuses.includes("done") && !r.statuses.includes("failed") && r.statuses.includes("skipped"),
+      reasons: r.reasons,
+    }));
+}
 
 /**
  * A metric watched for regression: where it lives, which direction is bad, and
@@ -256,6 +307,26 @@ export function evaluate(now = new Date(), sizes: { dbBytes: number; logBytes: n
         severity: "warning",
         message: `schedule ${s.id} should have fired at ${minuteKey(prev)} and did not`,
       });
+  }
+
+  // A schedule that keeps skipping. Its jobs are no longer counted as passes,
+  // but a grey chip every morning is still easy to stop seeing: the tvloop
+  // nightly skipped for two weeks on a missing Roku password and nothing said
+  // so. One alert per schedule, naming the reason it keeps giving, resolved by
+  // the first run that is not a skip.
+  const streak = Math.max(1, THRESHOLDS.skipStreak);
+  for (const s of db.prepare("SELECT id FROM schedules WHERE enabled = 1").all() as { id: string }[]) {
+    const recent = scheduleRuns(s.id).slice(0, streak);
+    if (recent.length < streak || !recent.every((r) => r.skipped)) continue;
+    const reasons = recent.map((r) => skipReasonText(r.reasons[0]));
+    const distinct = [...new Set(reasons)];
+    const why = distinct.length === 1 ? distinct[0] : `${reasons[0]} (the latest of ${distinct.length} different reasons)`;
+    out.push({
+      rule: "schedule-skipping",
+      subject: s.id,
+      severity: "warning",
+      message: `${s.id} has skipped ${streak} runs in a row: ${why}`,
+    });
   }
 
   // --- collector ---

@@ -118,10 +118,10 @@ back.
 
 | | |
 |---|---|
-| The device | Roku Express 4K+ at `192.168.50.218`, Roku OS 15.3.4, developer mode on. Registered as `roku-<serial>` by fleet-host |
+| The device | Roku Express 4K+ at `192.168.50.218`, Roku OS 15.3.4, developer mode on. Registered as `roku-<serial>` by fleet-host. An executor older than 0.9 registers it as `platform: android` and leaves an offline `roku-ip-192-168-50-218` beside it; from 0.9 it says `roku`, and the serial-named row retires the IP-named one |
 | The checkout | `~/tvloop` on fleet-host, **synced from the dev MacBook**, not cloned: the repo is private and fleet-host has no GitHub credential. Re-sync with `rsync -a --delete --exclude node_modules --exclude 'packages/*/dist' --exclude tvloop.toml <tvloop>/ fleet-host:tvloop/`, then `corepack pnpm install --frozen-lockfile && corepack pnpm build` there |
 | `~/tvloop/tvloop.toml` | Not in the repo. Points `[project] source` at `examples/sample-channel`, the channel the flows expect. Keep it out of the rsync |
-| The password | Keychain item `fleet-roku-dev` / account `rokudev` on fleet-host, the same one the dev installer reads. Missing means every run is `skipped:` and says how to add it |
+| The password | Keychain item `fleet-roku-dev` / account `rokudev` on fleet-host, the same one the dev installer reads. Missing means every run is `skipped:` and says how to add it. On a 0.7 or 0.8 brain those runs show as `done`; from 0.9 they are `skipped`, and three in a row raise a `schedule-skipping` alert |
 | The steps | `doctor`, `install` (sideloads the sample channel, **replacing whatever is in the dev slot**), `hardware`, `replay`. A failed doctor or install stops the run |
 
 ## Real phones from CI
@@ -148,7 +148,8 @@ Three things have to be true for a status to appear:
 `fleet mcp` serves the lab as MCP tools; register it once with
 `claude mcp add --scope user fleet -- ~/.fleet/bin/fleet mcp`. From the dev
 MacBook it reaches the brain through the tunnel, the same as the agent does.
-A result whose error starts with `skipped:` means nothing ran.
+A result whose error starts with `skipped:` means nothing ran. The 0.7.2 brain
+closes those jobs as `done`; from 0.9 their status is `skipped`.
 
 From 0.8.0 there is also `fleetr`, whose exit code is the verdict, and a skill
 (`fleet skill install`) that tells an agent which commands to run in what
@@ -194,7 +195,7 @@ Five enabled. All times local to fleet-host.
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
 | `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The Galaxy S8+ is plugged in again and the suite now runs on it, and fails, every night; why is not diagnosed yet |
 | `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | Green. The baseline was re-accepted on 2026-09-22 from fleet-host's own captures, after Aliquant's sign-in page gained a "Forgot password?" link; the old one had diverged 2.7% on desktop and 6.1% on mobile since 09-10. The `webkit` and `mobile-safari` baselines are still the August ones, because nothing runs those projects now |
-| `nightly-tvloop-hardware` | 05:00 | `fleet-host`, the Roku, exclusive | tvloop's doctor, install, contract tests and flow replay. `skipped:` until the Roku password is in fleet-host's Keychain. Red from doctor means the Roku is asleep, off the network, or out of developer mode |
+| `nightly-tvloop-hardware` | 05:00 | `fleet-host`, the Roku, exclusive | tvloop's doctor, install, contract tests and flow replay. `skipped:` until the Roku password is in fleet-host's Keychain (status `done` on the 0.7.2 brain, `skipped` from 0.9). Red from doctor means the Roku is asleep, off the network, or out of developer mode |
 
 **`nightly-aliquant-web` and `nightly-aliquant-audit` are retired** (disabled
 2026-09-29). Aliquant's own CI already runs the same Playwright suite and
