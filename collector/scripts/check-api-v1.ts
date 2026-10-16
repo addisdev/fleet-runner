@@ -159,6 +159,14 @@ await refusal("cancelling a finished job is 409 conflict", fleet.cancelJob(creat
   const c = await fleet.cancelJob(r.job_id, { reason: "contract check" });
   conforms("cancelJob", "CancelResult", c);
   check("cancel names what it cancelled", c.cancelled.includes(r.job_id));
+  // The dashboard's Jobs screen builds its filter menus and its "has error"
+  // box from these; they used to exist only on the unversioned /api/jobs.
+  const errored = await fleet.listJobs({ has_error: true });
+  check("listJobs has_error=true finds the cancelled job, and only jobs with an error",
+    errored.items.some((j) => j.job_id === r.job_id) && errored.items.every((j) => j.last_error !== null));
+  check("listJobs facets count every status, over the whole table",
+    (errored.facets.status_counts.cancelled ?? 0) >= 1 && (errored.facets.status_counts.done ?? 0) >= 1, JSON.stringify(errored.facets.status_counts));
+  check("listJobs facets name the workloads", errored.facets.workloads.includes("benchmark"), JSON.stringify(errored.facets.workloads));
 }
 await refusal("unknown job is 404 not_found", fleet.getJobSummary("no-such-job"), 404, "not_found");
 
@@ -193,7 +201,13 @@ console.log("results, artifacts, fleet");
   check("an HTML artifact is never served inline", (page.headers.get("content-disposition") ?? "").startsWith("attachment"));
   await refusal("a malformed sha is 400", fleet.getArtifact("nothex"), 400, "bad_request");
 }
-conforms("listDevices", "DeviceList", await fleet.listDevices({ pool: "v1check" }));
+{
+  const devices = await fleet.listDevices({ pool: "v1check" });
+  conforms("listDevices", "DeviceList", devices);
+  // Facets are over every device, so a filter never empties its own menu.
+  const narrowed = await fleet.listDevices({ pool: "no-such-pool" });
+  check("listDevices facets ignore the filter", narrowed.items.length === 0 && narrowed.facets.pools.includes("v1check"), JSON.stringify(narrowed.facets));
+}
 conforms("getDevice", "DeviceDetail", await fleet.getDevice(DEVICE));
 conforms("listTemplates", "TemplateList", await fleet.listTemplates());
 conforms("listSchedules", "ScheduleList", await fleet.listSchedules());

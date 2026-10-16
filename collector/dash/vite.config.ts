@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
 // No @preact/preset-vite: esbuild's automatic JSX runtime pointed at preact
@@ -17,6 +18,12 @@ export default defineConfig({
   },
   server: {
     port: 5178,
+    // The /api/v1 client is generated into the collector's src/client/ and
+    // imported from there, outside this project's root, so the dev server is
+    // told it may serve that one directory too. The build needs no such thing.
+    fs: {
+      allow: [fileURLToPath(new URL(".", import.meta.url)), fileURLToPath(new URL("../src/client", import.meta.url))],
+    },
     // `npm run dev` in this directory talks to a real collector, so the SPA
     // never needs a mock API. Point FLEET_URL at another host to develop the
     // dashboard against the live fleet.
