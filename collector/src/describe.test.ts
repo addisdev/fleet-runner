@@ -74,7 +74,6 @@ export async function runDescribeChecks(check: Check) {
     JSON.stringify([r1.platform, r2.platform]));
   const { devicePlatform } = await import("./api/shared.js");
   check("and the collector believes it", devicePlatform(r1) === "roku", devicePlatform(r1));
-  const { evalMatch } = await import("./match.js");
   check("os ~ 'roku' still selects it", evalMatch("os ~ 'roku'", r1) && evalMatch("os ~ 'roku-15'", r1));
 
   const { rokuPresenceHere } = await import("./drivers/roku.js");
