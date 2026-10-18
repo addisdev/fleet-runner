@@ -255,6 +255,27 @@ const SCHEDULES: Record<string, Schedule> = {
       }
     }
   },
+  // Regression tests from fixed findings (src/workloads/regressions.ts), on
+  // the bug garden: its smoke flow, then every bug-garden finding marked real
+  // and then fixed, replayed on the shelf's Android phone. The garden's
+  // defects are planted, so a finding marked fixed comes back on this build
+  // and the run proves a recurring crash reopens its finding. Off here like
+  // every schedule; the lab turned it on 2026-10-18. Needs the bug-garden APK
+  // published under app "bug-garden" and bug-garden/{smoke,sign-in}.yaml in
+  // the executor's flows directory.
+  "nightly-bug-garden-regressions": {
+    "cron": "45 2 * * *",
+    "template": {
+      "schema": 1,
+      "workload": "ui-test",
+      "executor": "host",
+      "app": { "name": "bug-garden", "build": "latest", "sha256": "latest" },
+      "suite": { "kind": "maestro", "flows": "bug-garden/smoke.yaml", "app_id": "dev.fleetrunner.buggarden" },
+      "params": { "regressions": "bug-garden" },
+      "targets": { "match": "os ~ 'android'", "executor": "fleet-host", "exclusive": true },
+      "lease": { "ttl_s": 1800 }
+    }
+  },
   // Overnight exploratory QA (src/workloads/explore). The night slot the plan
   // proposes is 22:00-00:30, before Dozehound's video queue takes the Studio's
   // memory; the window constraint keeps a late claim from running into it.

@@ -188,13 +188,14 @@ the copy is the last known-good state rather than the freshest one.
 
 ## The schedules
 
-Five enabled. All times local to fleet-host.
+Six enabled. All times local to fleet-host.
 
 | | When | Runs on | What red means |
 |---|---|---|---|
 | `nightly-synthetic-shelf` | 02:00 | fanout, pool `machines` | A machine's throughput moved, or an agent is not claiming. This is the comparison table |
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
-| `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The Galaxy S8+ is plugged in again and the suite now runs on it, and fails, every night; why is not diagnosed yet |
+| `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The Galaxy S8+ is plugged in again but still has a PIN (WB-195): the flow ran against its lock screen and failed `"Fleet Runner" is visible`. From the release after 0.9.0 the executor wakes a phone and swipes its lock screen away, and a PIN makes the run `skipped` with that reason instead |
+| `nightly-bug-garden-regressions` | 02:45 | `fleet-host`, an Android device | Bug garden's smoke flow, then every bug-garden finding marked real and then fixed, replayed as a regression test. The garden's defects are planted, so finding #18 (BG-01, marked fixed on purpose) comes back every night and reopens: that is the run working. `skipped:` while the S8+ is locked with a PIN (WB-195). Proved once on ultra's emulator on 2026-10-18 (`bg-regression-proof-1`) |
 | `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | Green. The baseline was re-accepted on 2026-09-22 from fleet-host's own captures, after Aliquant's sign-in page gained a "Forgot password?" link; the old one had diverged 2.7% on desktop and 6.1% on mobile since 09-10. The `webkit` and `mobile-safari` baselines are still the August ones, because nothing runs those projects now |
 | `nightly-tvloop-hardware` | 05:00 | `fleet-host`, the Roku, exclusive | tvloop's doctor, install, contract tests and flow replay. `skipped:` until the Roku password is in fleet-host's Keychain (status `skipped` from 0.9). Red from doctor means the Roku is asleep, off the network, or out of developer mode |
 
