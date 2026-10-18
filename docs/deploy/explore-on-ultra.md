@@ -181,7 +181,9 @@ has dropped is warmed again and the step retaken; a mission cut off by the
 server or abandoned by the model is not judged; a bench card is scored on the
 model's last look when nothing touched the device after it; and a failed job's
 error is its device's reason. The shelf unloading a model that is between
-requests is the harness's to change.
+requests is the harness's: from model-ladder's shelf-hold change, a warm-up run
+with `SHELF_HOLD_PID` set holds the model while that process lives, and the
+night command sets it to its own pid.
 
 ## Phase 0: measure before building on it
 

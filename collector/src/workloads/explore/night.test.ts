@@ -147,7 +147,7 @@ async function runNightCommandChecks(check: Check) {
   }));
   // If either of these were reached the run would fail: there is no such
   // simulator runtime, and the warm-up exits 3 and is not a memory refusal.
-  const deviceAndModel = ["--sim", "fleet-night-test:no.such.runtime:no.such.type", "--warm", "echo warmed-up >&2; exit 3"];
+  const deviceAndModel = ["--sim", "fleet-night-test:no.such.runtime:no.such.type", "--warm", "echo warmed-up hold=$SHELF_HOLD_PID >&2; exit 3"];
   const runNight = (extra: string[], env: NodeJS.ProcessEnv = {}) => new Promise<{ code: number; out: string }>((resolve) => {
     const p = spawn(process.execPath, [path.join(root, "node_modules/tsx/dist/cli.mjs"), "scripts/explore-night.ts", "--spec", specFile, ...deviceAndModel, ...extra], {
       cwd: root, env: { ...process.env, FLEET_URL: `http://127.0.0.1:${port}`, FLEET_EXECUTOR_NAME: "night-test", NIGHT_JOB: "", FLEET_XCODEBUILD: "true", ...env },
@@ -207,6 +207,7 @@ async function runNightCommandChecks(check: Check) {
       const r4result = posts.find((x) => x.url === "/results")?.body;
       check("a broken warm-up fails the night (exit 1)", r4.code === 1, r4.out);
       check("and the brain is told why", r4result?.ok === false && /^the model did not load: warmed-up/.test(String(r4result?.error)), JSON.stringify(r4result));
+      check("the warm-up was told to hold the model for this process (SHELF_HOLD_PID)", /warmed-up hold=\d+/.test(r4.out), r4.out);
       check("the simulator was still not booted", !/booting|creating simulator/.test(r4.out), r4.out);
     }
 

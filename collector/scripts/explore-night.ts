@@ -346,6 +346,12 @@ async function main() {
 
   // --- the model ---------------------------------------------------------
   if (warm) {
+    // The shelf on ultra unloads an on-demand model it finds idle under
+    // memory pressure, and between two missions the model is idle. With this
+    // set, its warm-up records a hold for the model that lasts as long as this
+    // process; the workload's warm-up after a drop inherits it too. A warm
+    // command that knows nothing of it ignores it.
+    process.env.SHELF_HOLD_PID = String(process.pid);
     // The wait for room may use the night, but must leave the minimum.
     const w = await warmUp(warm, Math.min(Date.now() + warmWait * 60_000, end.getTime() - (minUseful + NIGHT.safetyMin) * 60_000));
     if (!w.ok) {

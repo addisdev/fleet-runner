@@ -151,7 +151,9 @@ unloaded.`), the workload runs the night command's warm-up again (it is handed
 down as `FLEET_EXPLORE_WARM`) and takes the step again, twice a mission at
 most, without spending the step's budget. On ultra the model shelf unloads an
 on-demand model it finds idle under memory pressure, and between two missions
-the driver is idle.
+the driver is idle. The night command also sets `SHELF_HOLD_PID` to its own
+pid before warming, which the shelf's warm-up records as a hold: the model is
+then left loaded until that process ends, unless pressure turns critical.
 
 **A bench card's end state the app takes away by itself** still counts when
 nothing touched the device after the model's last look: Dozehound hides its

@@ -41,7 +41,9 @@ a CI job fails when they disagree.
   mid-run four times, and every later mission ended at step 0 on `Invalid
   model identifier`. The workload now runs the night's warm-up again
   (`FLEET_EXPLORE_WARM`, set by `explore-night.ts --warm`) and retakes the
-  step, twice a mission at most. ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+  step, twice a mission at most. The night command also sets `SHELF_HOLD_PID`
+  for its warm-up, which ultra's shelf now records as a hold so it leaves the
+  model loaded for the night. ([#101](https://github.com/addisdev/fleet-runner/pull/101))
 - **No goal findings from missions that never drove the app.** A mission cut
   off by the model server or the device, or abandoned by the model (four
   replies without a tool call), is no longer judged: the judge had filed the
