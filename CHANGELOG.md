@@ -16,8 +16,25 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- **`nightly-bug-garden-regressions`, a regression nightly on the bug
+  garden.** Bug garden's smoke flow plus every bug-garden finding marked real
+  and then fixed, replayed on the shelf's Android phone at 02:45
+  (`seed-schedules`, off on a fresh collector; the lab has it on). The
+  garden's defects are planted, so a finding marked fixed comes back and
+  reopens: proved once on ultra's emulator, where finding #18's crash recurred
+  and reopened it. ([#100](https://github.com/addisdev/fleet-runner/pull/100))
+
 ### Fixed
 
+- **A sleeping phone failed its UI tests as if the app were broken.** Maestro
+  does not wake a device, so `nightly-fleet-ui-smoke` ran against the Galaxy
+  S8+'s lock screen and failed `"Fleet Runner" is visible` every night.
+  `ui-test` and `locale-shots` now wake an Android device and dismiss a lock
+  screen with no PIN first; a PIN, pattern or password makes that device's row
+  `skipped` with the reason, since nothing here can get past it.
+  ([#100](https://github.com/addisdev/fleet-runner/pull/100))
 - **A model unloaded mid-night is loaded again.** On ultra the model shelf
   unloads an on-demand model it sees idle under memory pressure, and between
   two missions Holo4 is idle: on the first three 0.9.0 nights it was dropped

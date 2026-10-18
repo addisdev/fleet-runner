@@ -279,6 +279,16 @@ all, the error is its exit code and the last line it printed to stderr, never
 its command line, which carries the test account's password. Until 0.9 the
 reason was in the uploaded report and nowhere else.
 
+### A sleeping phone
+
+Before it drives an Android device's screen, `ui-test` (and `locale-shots`)
+wakes it and asks the lock screen to go away. A phone on the shelf sleeps
+between jobs and Maestro does not wake it, so a flow used to run against a dark
+lock screen and fail on its first assertion, which read as the app being
+broken. A lock screen with a PIN, pattern or password cannot be dismissed from
+here: that device's row is `skipped` with the reason, and the fix is to set the
+test device's screen lock to None or Swipe. Emulators have no lock screen.
+
 ### Regression tests from fixed findings
 
 `params.regressions` adds the app's fixed night-QA findings to the run. Set it
@@ -298,7 +308,10 @@ regression flows (`GET /findings/regressions`), and after the suite's own flow
 runs each one whose finding was on the same platform as the device. A finding
 joins by being marked Real and then Fixed; nobody edits the schedule. `flows`
 may be left out to run only the regression flows; a device with none to run is
-then skipped, not passed.
+then skipped, not passed. The lab's `nightly-bug-garden-regressions` is a
+working example: the garden's defects are planted, so a bug-garden finding
+marked fixed comes back on every run and reopens, which is the mechanism
+proving itself rather than a bug.
 
 Each stored flow is adapted before it runs: its `appId` becomes the job's
 `suite.app_id` when the job sets one (night QA often explores `.debug`; the
