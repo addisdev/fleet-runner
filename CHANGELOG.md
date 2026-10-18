@@ -16,6 +16,12 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-10-18
+
+A phone on the shelf is woken before it is driven, and one with a PIN says so
+instead of failing as if the app were broken. The lab gains a regression
+nightly on the bug garden.
+
 ### Added
 
 - **`nightly-bug-garden-regressions`, a regression nightly on the bug
@@ -1488,7 +1494,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...v0.7.2
