@@ -48,7 +48,7 @@ import {
   parseXcuiDebugDescription, type A11yGeometry, type A11yNode,
 } from "./a11y-tree.js";
 import { countBySeverity, uploadReport, type Finding } from "./web/shared.js";
-import { ADB, batteryPct, hasApp, launchApp, processAlive } from "./workloads/device.js";
+import { ADB, batteryPct, ensureAwake, hasApp, launchApp, processAlive } from "./workloads/device.js";
 // Moved out so a workload directory can run a flow without importing the
 // executor, which would start a second poll loop. Same move device.ts made.
 import { FLOWS_DIR, MAESTRO, resolveFlow, runFlow } from "./workloads/flows.js";
@@ -601,6 +601,12 @@ async function runUiTest(job: Job) {
         error: `skipped: ${appId} not installed`,
       });
       log(`ui-test on ${serial}: skipped (${appId} not installed)`);
+      continue;
+    }
+    const asleep = await ensureAwake(target);
+    if (asleep) {
+      await postResult({ job_id: job.job_id, device_id: serial, iter: 0, ok: true, error: asleep });
+      log(`ui-test on ${serial}: ${asleep}`);
       continue;
     }
     const mineRegs = regressionFlows.filter((f) => f.platform === target.platform);
@@ -1348,6 +1354,11 @@ async function runLocaleShots(job: Job) {
       }
       if (!(await hasApp(target, appId))) {
         await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: `skipped: ${appId} not installed` });
+        continue;
+      }
+      const asleep = await ensureAwake(target);
+      if (asleep) {
+        await postResult({ job_id: job.job_id, device_id: target.id, iter: 0, ok: true, error: asleep });
         continue;
       }
 

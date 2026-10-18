@@ -16,6 +16,32 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.1] — 2026-10-18
+
+A phone on the shelf is woken before it is driven, and one with a PIN says so
+instead of failing as if the app were broken. The lab gains a regression
+nightly on the bug garden.
+
+### Added
+
+- **`nightly-bug-garden-regressions`, a regression nightly on the bug
+  garden.** Bug garden's smoke flow plus every bug-garden finding marked real
+  and then fixed, replayed on the shelf's Android phone at 02:45
+  (`seed-schedules`, off on a fresh collector; the lab has it on). The
+  garden's defects are planted, so a finding marked fixed comes back and
+  reopens: proved once on ultra's emulator, where finding #18's crash recurred
+  and reopened it. ([#100](https://github.com/addisdev/fleet-runner/pull/100))
+
+### Fixed
+
+- **A sleeping phone failed its UI tests as if the app were broken.** Maestro
+  does not wake a device, so `nightly-fleet-ui-smoke` ran against the Galaxy
+  S8+'s lock screen and failed `"Fleet Runner" is visible` every night.
+  `ui-test` and `locale-shots` now wake an Android device and dismiss a lock
+  screen with no PIN first; a PIN, pattern or password makes that device's row
+  `skipped` with the reason, since nothing here can get past it.
+  ([#100](https://github.com/addisdev/fleet-runner/pull/100))
+
 ## [0.9.0] — 2026-10-15
 
 Green that means something. A job that ran nothing is `skipped`, not `done`,
@@ -1468,7 +1494,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/addisdev/fleet-runner/compare/v0.7.1...v0.7.2
