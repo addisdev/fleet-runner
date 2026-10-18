@@ -186,6 +186,7 @@
         "explore_not_reproduced": { "type": "integer", "description": "explore: candidates dropped because no replay reproduced them" },
         "explore_misses": { "type": "integer", "description": "explore: taps that landed on nothing tappable (the agent's misses, not app bugs)" },
         "explore_refused": { "type": "integer", "description": "explore: actions the leash refused" },
+        "explore_cut_off": { "type": "integer", "description": "explore: missions the model server or the device cut off; not counted in explore_missions and not judged" },
         "explore_step_ms_p50": { "type": "number", "description": "explore: median wall time of one step (observe, model, act, checks), ms" },
         "explore_model_ms_p50": { "type": "number", "description": "explore: median model latency per step, ms" },
         "explore_prompt_tokens_mean": { "type": "number", "description": "explore: mean prompt tokens per model call" },

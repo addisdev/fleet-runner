@@ -98,7 +98,9 @@ and `--sim name:runtime:devicetype`, which creates the simulator if missing,
 boots it, and shuts it down afterwards if it booted it. Simulator names start
 with `fleet-` so the executor counts them as fleet devices. FleetDriver builds
 itself into `~/.fleet/explore/derived` on first use. Xcode builds use
-`/Applications/Xcode.app`, `xcodegen` comes from `/opt/homebrew`.
+`/Applications/Xcode.app`, `xcodegen` comes from `/opt/homebrew`. After an
+Xcode update, `sudo xcodebuild -runFirstLaunch` has to run once before any
+simulator test will; the night command checks for it and fails until it has.
 
 ### Measured on 8 October 2026
 
@@ -113,6 +115,73 @@ itself into `~/.fleet/explore/derived` on first use. Xcode builds use
 Its first 40-step bug-garden mission filed BG-01 and BG-03, both reproduced
 2/2 on clean installs. The night rehearsal through the brain filed BG-16 (low
 contrast), reproduced 2/2.
+
+### The first nights on 0.9.0 (15 to 17 October 2026)
+
+The night of 10-15 was the first with Holo4 allowed at 45% free and with tvOS
+simulators registering as `tvos`, so the first time the TV and Apple nights
+drove anything. The bug garden at 22:09 still ran the old code (0.9.0 was
+deployed at 00:10) and skipped at "57% free, needs 65%". No night ran short:
+each was admitted with its whole `max_minutes`.
+
+**Phase 3, the tvOS bench** (Dozehound stub catalog, Apple TV 4K simulator on
+tvOS 26.5, build `develop-ebcd74e46e`, 10 cards per model):
+
+| Model | Passed, as scored | Cards it actually ran | Median step · model | Prompt, mean |
+|---|---|---|---|---|
+| Holo4 35B-A3B (`pilot`) | **5 of 10** | 5 of 8 | 4.5 s · 2.4 s | 5.9k tokens |
+| Qwen3.8-27B (`vision`) | **5 of 10**; 6 with the end-state fix below, re-scored from its saved trees | 5 of 10 | 5.9 s · 3.4 s | 2.1k tokens |
+
+Both passed `focus-meadow`, `focus-naptime`, `meadow-cancel`, `meadow-link`
+and `pause-resume`. **The bar, half of 20 navigation missions, is met, just:**
+10 of 20, and each model alone at half. Phase 3 passes; TVs stay on the model
+path rather than scripted replays only.
+
+What the score hides, each now handled in the workload:
+
+- **Holo4 did not get two of its cards.** The model shelf unloaded it as "idle
+  under memory pressure" at 03:50:31, six minutes after the warm-up; Holo4 at
+  45% free puts ultra in the warn band, and between two missions (an app
+  reinstall) the model is idle. `bench-pause` and `bench-play-naptime` then
+  ended at step 0 on `Invalid model identifier`. It happened again at 04:10,
+  22:33 on 10-16 and 22:23 on 10-17, each time mid-run.
+- **`focus-all-channels` was failed by the app, not the models.** Dozehound
+  hides its channel bar six seconds after the last press; the final look came
+  after that and found focus on the hidden bar's "Show channels" catcher, while
+  `vision` had answered from a screen with All channels focused. Holo4 failed
+  the same card on its own: five replies with no tool call.
+- **The every-button explorer and GreenFolio's second card never ran** (the
+  same unloads), and the judge then filed the untouched start screens as goal
+  findings: #70 (Dozehound) and #71 (GreenFolio) are the harness's, not bugs.
+
+**Phase 4, GreenFolio iOS** (iPhone simulator on iOS 26.5, build
+`develop-74c84f254b`, offline): `offline-gate` ran 38 steps, ended stuck with
+its goal met (the sign-in screen says "Couldn't reach the server"), 7
+candidates and 6 misses; `offline-create-account` was cut off at step 0. The
+night filed 8 findings, 7 of them seen before; the one new one is #71 above.
+**Phase 4's bar cannot be read yet:** it compares bench cards with Android, and
+`greenfolio-ios` has no bench cards, only its two explore cards. The tap and
+screenshot half works on the simulator; the shelf iPhone is unplugged (WB-21).
+
+**10-16 and 10-17: the TV and Apple nights failed, and said why only on their
+device rows.** Xcode on ultra updated itself to 27.1 on 10-16 at 06:57 without
+its first-launch install, so its CoreSimulator (1171.7) is older than the one
+it was built against (1174.9.2) and every FleetDriver start exited 70 a minute
+in. Each job tried every card in turn, about ten minutes a job, and the job's
+own error was "one or more devices completed no mission". The bug garden ran
+both nights, but on 10-17 Holo4 answered in prose ("Scroll up to explore
+more…") with no tool call from the first step, the shelf unloaded it at 22:23,
+and seven missions took two steps between them; the judge filed their end
+states as goal findings again.
+
+What changed because of it (PR below): the night command checks
+`xcodebuild -checkFirstLaunchStatus` before warming the model and fails with
+the fix named; the workload stops at the first such error; a model the server
+has dropped is warmed again and the step retaken; a mission cut off by the
+server or abandoned by the model is not judged; a bench card is scored on the
+model's last look when nothing touched the device after it; and a failed job's
+error is its device's reason. The shelf unloading a model that is between
+requests is the harness's to change.
 
 ## Phase 0: measure before building on it
 

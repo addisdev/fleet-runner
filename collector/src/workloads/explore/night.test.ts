@@ -150,7 +150,7 @@ async function runNightCommandChecks(check: Check) {
   const deviceAndModel = ["--sim", "fleet-night-test:no.such.runtime:no.such.type", "--warm", "echo warmed-up >&2; exit 3"];
   const runNight = (extra: string[], env: NodeJS.ProcessEnv = {}) => new Promise<{ code: number; out: string }>((resolve) => {
     const p = spawn(process.execPath, [path.join(root, "node_modules/tsx/dist/cli.mjs"), "scripts/explore-night.ts", "--spec", specFile, ...deviceAndModel, ...extra], {
-      cwd: root, env: { ...process.env, FLEET_URL: `http://127.0.0.1:${port}`, FLEET_EXECUTOR_NAME: "night-test", NIGHT_JOB: "", ...env },
+      cwd: root, env: { ...process.env, FLEET_URL: `http://127.0.0.1:${port}`, FLEET_EXECUTOR_NAME: "night-test", NIGHT_JOB: "", FLEET_XCODEBUILD: "true", ...env },
     });
     let out = "";
     p.stdout.on("data", (c) => (out += c));
@@ -208,6 +208,19 @@ async function runNightCommandChecks(check: Check) {
       check("a broken warm-up fails the night (exit 1)", r4.code === 1, r4.out);
       check("and the brain is told why", r4result?.ok === false && /^the model did not load: warmed-up/.test(String(r4result?.error)), JSON.stringify(r4result));
       check("the simulator was still not booted", !/booting|creating simulator/.test(r4.out), r4.out);
+    }
+
+    // 5. Xcode updated without its first-launch install (ultra, 10-16 and
+    // 10-17): a failure that names the fix, found before the model is warmed.
+    // The check is xcodebuild's, so only a Mac makes it.
+    if (process.platform === "darwin") {
+      posts.length = 0;
+      const r5 = await runNight(roomy, { FLEET_XCODEBUILD: "false" });
+      const r5result = posts.find((x) => x.url === "/results")?.body;
+      check("Xcode needing its first launch fails the night (exit 1)", r5.code === 1, r5.out);
+      check("and the brain is told the fix",
+        r5result?.ok === false && /needs its first-launch install .*sudo xcodebuild -runFirstLaunch/.test(String(r5result?.error)), JSON.stringify(r5result));
+      check("before warming the model or booting the simulator", !/warmed-up|booting|creating simulator/.test(r5.out), r5.out);
     }
   } finally {
     server.close();
