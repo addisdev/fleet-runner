@@ -31,6 +31,7 @@ import { BASE, NoTargetsError } from "../../fleet-client.js";
 import { keychainPassword } from "../../secrets.js";
 import { resolveFlow } from "../flows.js";
 import type { Job, Target, WorkloadCtx } from "../types.js";
+import { HostNotReadyError } from "./actuators/apple.js";
 import { actuatorFor } from "./actuators/index.js";
 import { conditionFor, parseConditions } from "./conditions.js";
 import { toJpeg } from "./image.js";
@@ -45,6 +46,26 @@ import { ScreenMap } from "./screenmap.js";
 import type { Actuator, CheckName, ExploreFinding, Mission } from "./types.js";
 
 const run = promisify(execFile);
+
+/**
+ * The night command's warm-up (`explore-night.ts --warm`, passed down as
+ * FLEET_EXPLORE_WARM), run again when the model server drops the model in the
+ * middle of a night. Undefined when nothing warmed it: a local run's model is
+ * the caller's business.
+ */
+function rewarmer(log: (m: string) => void): LoopDeps["rewarm"] {
+  const cmd = process.env.FLEET_EXPLORE_WARM;
+  if (!cmd) return undefined;
+  return async () => {
+    const out = await run("/bin/bash", ["-c", cmd], { timeout: 10 * 60_000, maxBuffer: 4 << 20 })
+      .then((r) => ({ ok: true, text: `${r.stdout}${r.stderr}` }),
+        (e: { stdout?: string; stderr?: string; message: string }) => ({ ok: false, text: `${e.stdout ?? ""}${e.stderr ?? ""}` || e.message }));
+    const last = out.text.trim().split("\n").pop() ?? "";
+    log(`warm again: ${out.ok ? "" : "failed: "}${last.slice(0, 200)}`);
+    return out.ok;
+  };
+}
+
 const STATE_DIR = process.env.FLEET_STATE_DIR ?? path.join(os.homedir(), ".fleet");
 
 type Params = {
@@ -301,11 +322,13 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
 
   let allOk = targets.length > 0;
   const notes: string[] = [];
+  const failures: string[] = [];
+  const rewarm = rewarmer(ctx.log);
   try {
     for (const t of targets) {
       if (Date.now() > deadline) break;
       const r = await exploreDevice(t);
-      if (!r.ok) allOk = false;
+      if (!r.ok) { allOk = false; failures.push(`${t.id}: ${typeof r.error === "string" ? r.error : "no mission completed"}`); }
       else if (typeof r.error === "string") notes.push(r.error);
       await ctx.postResult({ job_id: job.job_id, device_id: t.id, iter: 0, ...r });
     }
@@ -316,7 +339,9 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
   // is a device that worked: findings are the output, not the failure. A short
   // night that ran is ok, and its note rides on the final row too.
   await ctx.postResult({ job_id: job.job_id, device_id: `host:${ctx.host}`, iter: 0, final: true, ok: allOk,
-    ...(allOk ? (notes.length ? { error: [...new Set(notes)].join("; ") } : {}) : { error: "one or more devices completed no mission; see their rows" }) });
+    // A failed night says why on the job itself, not "see their rows": the
+    // job's error is what the alert, the digest and `fleetr` show.
+    ...(allOk ? (notes.length ? { error: [...new Set(notes)].join("; ") } : {}) : { error: failures.length ? failures.join("; ").slice(0, 500) : "one or more devices completed no mission; see their rows" }) });
 
   async function exploreDevice(t: Target): Promise<Record<string, unknown>> {
     let actuator: Actuator;
@@ -346,7 +371,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
       return { ok: false, error: `no ${p.bench ? "bench " : ""}missions for ${appKey} on a ${surface} device (looked in ${p.missions_dir ?? "examples/missions"}/${appKey})${problems.length ? `; problems: ${problems.join("; ")}` : ""}` };
     }
 
-    const totals = { missions: 0, steps: 0, actions: 0, candidates: 0, findings: 0, findingsNew: 0, notReproduced: 0, misses: 0, refused: 0, benchPassed: 0, benchTotal: 0 };
+    const totals = { missions: 0, cutOff: 0, steps: 0, actions: 0, candidates: 0, findings: 0, findingsNew: 0, notReproduced: 0, misses: 0, refused: 0, benchPassed: 0, benchTotal: 0 };
     const stepMs: number[] = [], modelMs: number[] = [], promptTokens: number[] = [], cachedTokens: number[] = [];
     const missionLog: Record<string, unknown>[] = [];
     let lastStepAt = Date.now();
@@ -373,7 +398,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
           actuator, appId: p.app_id, appName, appFile, model, judge, map, runDir, night: job.job_id,
           log: (msg) => ctx.log(`[${t.id}] ${msg}`), disabledVisual: disabled.visual, disabledChecks: disabled.checks, language: cond.language, hints,
           setupEnv, canRunFlows: t.platform === "android" || t.kind === "simulator", deadline,
-          backgroundAt: cond.backgroundAt,
+          backgroundAt: cond.backgroundAt, rewarm,
           onStep: async (step, obs) => {
             stepMs.push(Date.now() - lastStepAt);
             lastStepAt = Date.now();
@@ -390,10 +415,20 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
         } catch (e) {
           missionLog.push({ id: m.id, condition: condName, error: (e as Error).message.slice(0, 300) });
           ctx.log(`[${t.id}] mission ${m.id} failed: ${(e as Error).message.slice(0, 200)}`);
+          // Xcode needing its first-launch install fails every mission the
+          // same way, a minute of xcodebuild each: on 10-17 that was ten
+          // minutes a job, three jobs a night. Say it once and stop.
+          if (e instanceof HostNotReadyError) break;
           continue;
         }
         lastRun[m.id] = new Date().toISOString();
-        totals.missions++;
+        // A mission the model server or the device cut off ran, but says
+        // nothing about the app or the model: not a completed mission and not
+        // a bench card. Its trajectory is still kept.
+        if (result.cutOff) {
+          totals.cutOff++;
+          ctx.log(`[${t.id}] mission ${m.id} cut off: ${result.cutOff.slice(0, 200)}`);
+        } else totals.missions++;
         totals.steps += result.stats.steps;
         totals.actions += result.stats.actions;
         totals.misses += result.stats.misses;
@@ -424,6 +459,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
           id: m.id, condition: condName, steps: result.stats.steps, ended_by: result.stats.endedBy,
           screens: result.stats.screensThisRun, new_screens: result.stats.newScreensEver, candidates: result.candidates.length,
           misses: result.stats.misses, refused: result.stats.refusedByClass, goal: result.goal, bench: result.bench, answer: result.answer?.slice(0, 300),
+          ...(result.cutOff ? { cut_off: result.cutOff } : {}),
           artifacts: runShas,
         });
 
@@ -465,7 +501,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
     return {
       ok: totals.missions > 0,
       ...(totals.missions === 0
-        ? { error: `${note ? `${note}; ` : ""}no mission completed: ${missionLog.map((x) => `${x.id}: ${x.error ?? x.skipped ?? "?"}`).join("; ").slice(0, 400)}` }
+        ? { error: `${note ? `${note}; ` : ""}no mission completed: ${missionLog.map((x) => `${x.id}: ${x.error ?? x.cut_off ?? x.skipped ?? "?"}`).join("; ").slice(0, 400)}` }
         : note ? { error: note } : {}),
       metrics: {
         explore_missions: totals.missions, explore_cards_planned: missions.length, explore_minutes: p.minutes ?? 150,
@@ -473,6 +509,7 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
         explore_screens: map.seenThisRun.length, explore_new_screens: missionLog.reduce((a, x) => a + (Number(x.new_screens) || 0), 0),
         explore_candidates: totals.candidates, explore_findings: totals.findings, explore_findings_new: totals.findingsNew,
         explore_not_reproduced: totals.notReproduced, explore_misses: totals.misses, explore_refused: totals.refused,
+        explore_cut_off: totals.cutOff,
         explore_step_ms_p50: median(stepMs), explore_model_ms_p50: median(modelMs),
         explore_prompt_tokens_mean: mean(promptTokens), explore_cached_tokens_mean: mean(cachedTokens),
         ...(p.bench ? { explore_bench_passed: totals.benchPassed, explore_bench_total: totals.benchTotal } : {}),

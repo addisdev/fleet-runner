@@ -56,6 +56,17 @@ import type { Action, Actuator, ActuatorCaps, CrashReport, Key, Observation } fr
 // ---------------------------------------------------------------------------
 
 /** A TV is driven by focus; everything else Apple makes here is touched. */
+/**
+ * xcodebuild's words for an Xcode whose first-launch install has not run:
+ * Xcode was updated (ultra's went from 27.0 to 27.1 on 2026-10-16) and the
+ * CoreSimulator it ships was not installed with it. Nothing a retry changes;
+ * `sudo xcodebuild -runFirstLaunch` does.
+ */
+export const XCODE_FIRST_LAUNCH = /CoreSimulator is out of date|xcodebuild -runFirstLaunch|requires (the )?installation of additional components/i;
+
+/** A host that cannot run FleetDriver at all until someone fixes it. Every further mission would fail the same way. */
+export class HostNotReadyError extends Error {}
+
 export function isTv(target: Pick<Target, "platform">): boolean {
   return target.platform === "tvos";
 }
@@ -559,6 +570,8 @@ export class AppleActuator implements Actuator {
     } catch (e) {
       const out = ((e as { stdout?: string }).stdout ?? "") + ((e as { stderr?: string }).stderr ?? "");
       const errors = out.split("\n").filter((l) => /error:|BUILD FAILED|\*\* .* FAILED \*\*/.test(l)).slice(-12);
+      const firstLaunch = out.split("\n").find((l) => XCODE_FIRST_LAUNCH.test(l));
+      if (firstLaunch) throw new HostNotReadyError(`Xcode on this host needs its first-launch install (${firstLaunch.trim()}); run \`sudo xcodebuild -runFirstLaunch\``);
       throw new Error(`FleetDriver build failed: ${(errors.join("\n") || out.slice(-2000) || (e as Error).message).trim()}`);
     }
     writeFileSync(stamp, hash + "\n");
@@ -621,10 +634,14 @@ export class AppleActuator implements Actuator {
     let lastErr = "";
     while (Date.now() < deadline) {
       if (this.childExit) {
-        throw new Error(
-          `xcodebuild exited (${this.childExit}) before FleetDriver answered on ${this.target.id}. ` +
-          `Last lines:\n${this.tail.slice(-15).join("\n")}`,
-        );
+        const tail = this.tail.slice(-15).join("\n");
+        if (XCODE_FIRST_LAUNCH.test(this.tail.join("\n"))) {
+          throw new HostNotReadyError(
+            `Xcode on this host needs its first-launch install (${this.tail.find((l) => XCODE_FIRST_LAUNCH.test(l))?.trim()}); ` +
+            "run `sudo xcodebuild -runFirstLaunch`",
+          );
+        }
+        throw new Error(`xcodebuild exited (${this.childExit}) before FleetDriver answered on ${this.target.id}. Last lines:\n${tail}`);
       }
       try {
         if (!this.baseUrl) this.baseUrl = await this.resolveBaseUrl();

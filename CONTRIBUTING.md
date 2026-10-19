@@ -188,7 +188,8 @@ One version covers every component, so a release is one number everywhere.
    into `develop` since the last `v*` tag and fails, naming each, if one is
    not mentioned as `#N` or a `/pull/N` link between `## [Unreleased]` and the
    last release's heading. Label a pull request `no-changelog` to exempt it;
-   Dependabot's are exempt already. The check only runs when the branch is
+   Dependabot's are exempt already, and so are the release's own pull
+   requests (`release/*` into `develop`, `develop` into `main`). The check only runs when the branch is
    `release/*`, or `develop` into `main` — so name the branch that way, or it
    will not look. Run it yourself first with
    `node scripts/changelog-coverage.mjs --head origin/develop` (it needs `gh`

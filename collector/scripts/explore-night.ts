@@ -8,9 +8,11 @@
 //
 //   1. opens the tunnel to the brain and checks, before anything expensive,
 //      that each spec has a build to test (`--fresh-build`: one published
-//      tonight) and that the night has time left for it;
+//      tonight), that the night has time left for it, and with `--sim` that
+//      Xcode has had its first-launch install;
 //   2. warms the model (`--warm "<cmd>"`), retrying a warm-up the host refused
-//      for memory for up to `--warm-wait` minutes;
+//      for memory for up to `--warm-wait` minutes, and hands the same command
+//      to the workload to run again if the model is unloaded mid-night;
 //   3. boots the night's emulator or simulator if it is not already up (and
 //      remembers it did);
 //   4. enqueues each spec on the brain with tonight's date in its id, pinned to
@@ -66,7 +68,9 @@ const BASE = (process.env.FLEET_URL ?? "http://127.0.0.1:18788").replace(/\/+$/,
 const NAME = process.env.FLEET_EXECUTOR_NAME ?? "ultra";
 const SDK = process.env.ANDROID_HOME ?? path.join(process.env.HOME ?? "", "Library/Android/sdk");
 const ADB = path.join(SDK, "platform-tools/adb");
-const log = (m: string) => console.log(`[explore-night ${new Date().toISOString().slice(11, 19)}] ${m}`);
+// Local time, like every other time in these lines ("the night ends at 06:14")
+// and in the night queue's own log; UTC here put two clocks in one line.
+const log = (m: string) => console.log(`[explore-night ${new Date().toTimeString().slice(0, 8)}] ${m}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The serial of a running emulator with this AVD name, or null. */
@@ -227,6 +231,24 @@ async function postUnrun(item: Item, v: Verdict): Promise<string> {
   return `${item.jobId}: ${v.ok ? "skipped" : "failed"}`;
 }
 
+/**
+ * Why Xcode cannot run a simulator test tonight, or null. After an Xcode
+ * update its first-launch install (CoreSimulator among it) has to run before
+ * xcodebuild can drive a simulator; until then every FleetDriver start fails a
+ * minute in with "CoreSimulator is out of date". ultra's Xcode updated itself
+ * to 27.1 on 2026-10-16 and the TV and Apple nights failed that way after
+ * warming a 25 GB model for nothing. `-checkFirstLaunchStatus` answers in a
+ * second, and only the owner can run the fix (it needs sudo). FLEET_XCODEBUILD
+ * stands in for xcodebuild in the tests, which must not depend on this host's Xcode.
+ */
+async function xcodeProblem(): Promise<string | null> {
+  const dir = await run("xcode-select", ["-p"]).then((r) => r.stdout.trim(), () => "Xcode");
+  const code = await run(process.env.FLEET_XCODEBUILD ?? "xcodebuild", ["-checkFirstLaunchStatus"], { timeout: 60_000 }).then(() => 0, (e: { code?: number }) => e.code ?? 1);
+  if (code === 0) return null;
+  return `Xcode at ${dir.replace(/\/Contents\/Developer$/, "")} needs its first-launch install (xcodebuild -checkFirstLaunchStatus exit ${code}); ` +
+    "run `sudo xcodebuild -runFirstLaunch` on this host";
+}
+
 /** Run the warm-up command, retrying a refusal for memory until `untilMs`. */
 async function warmUp(cmd: string, untilMs: number): Promise<{ ok: true } | { ok: false; refused: boolean; line: string }> {
   for (let attempt = 1; ; attempt++) {
@@ -290,6 +312,13 @@ async function main() {
       log(`short night: ${list.map((i, k) => `${path.basename(i.path)} ${plan.minutes[k]} of ${i.asked} min`).join(", ")}`);
     }
   }
+  // A host problem, not a spec's: a failure with its reason, so the night
+  // queue's check stays red until someone fixes it, but found before the
+  // model is warmed rather than ten minutes into each job.
+  if (sim && process.platform === "darwin" && runnable().length) {
+    const why = await xcodeProblem();
+    if (why) for (const i of runnable()) verdicts.set(i, { ok: false, error: why });
+  }
   for (const [i, v] of verdicts) log(`${path.basename(i.path)}: ${v.ok ? "" : "cannot run: "}${v.error}`);
 
   if (dry) {
@@ -317,6 +346,12 @@ async function main() {
 
   // --- the model ---------------------------------------------------------
   if (warm) {
+    // The shelf on ultra unloads an on-demand model it finds idle under
+    // memory pressure, and between two missions the model is idle. With this
+    // set, its warm-up records a hold for the model that lasts as long as this
+    // process; the workload's warm-up after a drop inherits it too. A warm
+    // command that knows nothing of it ignores it.
+    process.env.SHELF_HOLD_PID = String(process.pid);
     // The wait for room may use the night, but must leave the minimum.
     const w = await warmUp(warm, Math.min(Date.now() + warmWait * 60_000, end.getTime() - (minUseful + NIGHT.safetyMin) * 60_000));
     if (!w.ok) {
@@ -340,6 +375,9 @@ async function main() {
   // so they are settled before the import rather than passed in.
   process.env.FLEET_URL = BASE;
   process.env.FLEET_EXECUTOR_NAME = NAME;
+  // The model shelf may unload the model mid-night; the workload runs this
+  // again when the server says it has no such model.
+  if (warm) process.env.FLEET_EXPLORE_WARM = warm;
   const { startExecutor } = await import("../src/executor.js");
   const executor = await startExecutor();
 
