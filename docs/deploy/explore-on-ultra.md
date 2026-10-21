@@ -26,10 +26,9 @@ LaunchDaemons. Explore plugs into that rather than running its own.
 | The shelf | `ondemand holo4-35b-a3b@holo4-35b-a3b-gguf 65536 1 3600` in `~/harness/shelf.conf`; `bash ~/harness/shelf.sh warm pilot` loads it when enough memory is free: 65% by default, 45% for explore, which sets `WARM_MIN_FREE_PCT=45` in its manifests and in `~/explore/env.sh` (the resident models keep ultra near 56% free, so at 65% Holo4 never loaded; at 45% its ~25 GB leaves about 29 GB). The shelf still refuses under memory pressure. The night command runs it (`--warm`) after its own checks, and retries a refusal for memory for ten minutes |
 | The key | `~/.config/harness/keys/fleet.key` (roles `pilot`, `judge`, `vision`). Not the Keychain: neither SSH nor a LaunchDaemon can write the login Keychain on ultra. The workload reads `HARNESS_KEY`, then this file |
 | The night | `~/night/recurring/fleet-explore.json`, run by the harness's night queue from 22:00 when memory pressure is normal, 35 GB is free and no CI job is running |
-| The brain | On fleet-host, which ultra cannot route to. The night command opens `ssh -L 18788:192.168.50.27:8788 runner-ts` for the length of the run |
+| The brain | On ultra itself since 2026-10-21, at `http://127.0.0.1:8789` (see [the lab](../lab.md#the-machines)). The night manifests export `FLEET_URL=http://127.0.0.1:8789`; no tunnel. Before that it was on fleet-host, which ultra cannot route to, and each night opened `ssh -L` through a third Mac |
 
-The night command (`collector/scripts/explore-night.ts`) opens the tunnel,
-checks that each spec has a build and the night has time for it, warms the
+The night command (`collector/scripts/explore-night.ts`) checks that each spec has a build and the night has time for it, warms the
 model, boots the AVD or simulator if needed, enqueues the spec on the brain
 pinned to the executor name `ultra` with `minutes` cut to what is left, runs an
 executor in-process until the job ends, then shuts down what it started and
@@ -309,18 +308,15 @@ Android, and a screenshot and a tap work on the shelf iPhone 12 Pro.
 ## Phase 5: nightly
 
 ```bash
-# The executor, its tunnel to the brain, and the night's devices.
-deploy/install-agent.sh com.addisdev.fleet-tunnel-ultra.plist
+# The executor and the night's devices. The brain is on this machine.
 deploy/install-agent.sh com.addisdev.fleet-executor-ultra.plist
 deploy/install-agent.sh com.addisdev.fleet-explore-devices.plist
 deploy/install-agent.sh com.addisdev.fleet-explore-devices-down.plist
 # The schedules arrive switched off.
-FLEET_URL=http://127.0.0.1:18788 npm run seed:schedules
+FLEET_URL=http://127.0.0.1:8789 npm run seed:schedules
 ```
 
-ultra is on the Mini's side of the home network and cannot route to
-fleet-host's 192.168.50.x address, so the tunnel goes over the tailnet
-(`fleet-ts`). Turn `nightly-explore-greenfolio` on from the Schedules page after
+Turn `nightly-explore-greenfolio` on from the Schedules page after
 phase 2 passes. Leave `nightly-explore-dozehound-tv` off: it is the Fire TV
 schedule, parked with Fire TV itself.
 

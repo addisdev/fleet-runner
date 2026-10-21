@@ -42,7 +42,7 @@
     <!-- Loopback, not the LAN address. macOS gates local-network access per
          app and a launchd-started process has no grant and cannot prompt for
          one, so the LAN address returns EHOSTUNREACH here while working fine
-         from Terminal. com.addisdev.fleet-tunnel carries 18788 to fleet-host. -->
+         from Terminal. com.addisdev.fleet-tunnel carries 18788 to the brain on ultra. -->
     <key>FLEET_URL</key>
     <string>http://127.0.0.1:18788</string>
     <!-- The name jobs pin with: targets.executor = "mac-xcode". -->

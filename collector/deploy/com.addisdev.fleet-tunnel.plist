@@ -4,46 +4,35 @@
 <dict>
   <key>Label</key>
   <string>com.addisdev.fleet-tunnel</string>
-
-  <!-- Loopback to the collector, for the iOS executor on this workstation.
+  <!-- Loopback to the brain, for the agent, executor, CLI and MCP server on
+       this workstation. The brain is on ultra (since 2026-10-21) at
+       127.0.0.1:8789 there; this Mac reaches it at 127.0.0.1:18788.
        macOS 26+ gates local-network access per app, and a process started by
        launchd has no grant and no way to prompt for one: the same node binary
-       that reaches the collector's LAN address from Terminal gets EHOSTUNREACH
-       under launchd.
-       Loopback is not gated, so the executor talks to 127.0.0.1:18788 and ssh
-       carries it to fleet-host.
-
-       The alternative is granting Local Network to node in System Settings,
-       which is cleaner and needs a human at the keyboard. If that is done, this
-       agent can be removed and FLEET_URL pointed back at the LAN address.
-
-       18788 because 8788 on this machine belongs to another project. -->
+       that reaches the brain's LAN address from Terminal gets EHOSTUNREACH
+       under launchd. Loopback is not gated, so everything here talks to
+       127.0.0.1:18788 and ssh carries it.
+       `ultra` is the LAN alias and `ultra-ts` the tailnet one, so the same
+       agent works at home and away: the LAN is tried first, with a short
+       connect timeout, and when that session ends launchd starts the pair
+       again. 18788 because 8788 on this machine belongs to another project. -->
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/ssh</string>
-    <string>-N</string>
-    <string>-o</string><string>BatchMode=yes</string>
-    <string>-o</string><string>ExitOnForwardFailure=yes</string>
-    <!-- Notice a dead link in ~90s rather than hanging a long-poll forever. -->
-    <string>-o</string><string>ServerAliveInterval=30</string>
-    <string>-o</string><string>ServerAliveCountMax=3</string>
-    <string>-L</string><string>18788:127.0.0.1:8788</string>
-    <!-- Reverse: fleet-host's own loopback 8790 lands on this Mac's alert
-         receiver. The collector is a launchd agent and cannot reach a LAN
-         address, and fleet-host is headless, so this is how a red nightly
-         becomes a notification somebody sees. Binds fleet-host's loopback
-         only, which is why no GatewayPorts change is needed there. -->
-    <string>-R</string><string>8790:127.0.0.1:8790</string>
-    <string>fleet-host</string>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <!-- Notice a dead link in ~90s rather than hanging a long-poll forever.
+         Reverse: ultra's own loopback 8790 lands on this Mac's alert
+         receiver. The brain is a launchd agent, ultra is headless, so this is
+         how a red nightly becomes a notification somebody sees. It binds
+         ultra's loopback only, so no GatewayPorts change is needed there. -->
+    <string>for h in ultra ultra-ts; do /usr/bin/ssh -N -o BatchMode=yes -o ConnectTimeout=8 -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -L 18788:127.0.0.1:8789 -R 8790:127.0.0.1:8790 "$h"; done</string>
   </array>
-
   <key>KeepAlive</key>
   <true/>
   <key>RunAtLoad</key>
   <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
-
   <key>StandardOutPath</key>
   <string>__HOME__/Library/Logs/fleet-tunnel.log</string>
   <key>StandardErrorPath</key>

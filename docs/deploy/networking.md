@@ -103,6 +103,15 @@ their own settings screen, so nothing is baked into a binary.
   address. Give the host a DHCP reservation, or use the `.local` name — a lease
   change would otherwise strand every device at once.
 
+**A brain on a Mac whose firewall is in stealth mode** may answer on loopback
+and time out on the LAN, even when `socketfilterfw` says its `node` is
+permitted: that is what ultra did with Homebrew's node in October 2026.
+Bind the brain to `127.0.0.1` and put
+[`collector/deploy/lan-forward.py`](https://github.com/addisdev/fleet-runner/blob/develop/collector/deploy/lan-forward.py)
+on the LAN address under `/usr/bin/python3`, which the firewall lets through
+(`com.addisdev.fleet-lan-forward.plist`). Test from another machine, not from
+the brain: the brain reaching its own LAN address proves nothing.
+
 The dashboard's enrolment screen (`/dash/devices/new`) shows a QR code of an
 address derived from **the host's own network interfaces**, not from the
 browser's origin. View the dashboard through an SSH tunnel and your origin is
