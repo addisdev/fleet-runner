@@ -29,7 +29,7 @@ a CI job fails when they disagree.
   each backup to an outbox sealer for an off-site pull) and
   `FLEET_BACKUP_NO_DB=1` (a host with suites and no brain backs those up
   instead of failing). [The lab](docs/lab.md) has the new layout.
-  (PR_LINK)
+  ([#105](https://github.com/addisdev/fleet-runner/pull/105))
 
 ### Fixed
 
