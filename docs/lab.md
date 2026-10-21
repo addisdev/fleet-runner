@@ -14,18 +14,39 @@ and nothing said which of them held the iPhone.
 
 | | What it is | Runs | Reached by |
 |---|---|---|---|
-| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | The brain, a machine agent, and the `fleet-host` executor — one `fleet` service, three components. The executor does Android host work, the web nightlies in the installed Google Chrome, and tvloop's Roku suite. It owns the Rokus on its network (`FLEET_ROKU=1`) | `ssh fleet-host`, `http://192.168.50.27:8788` |
+| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | A machine agent and the `fleet-host` executor — one `fleet` service, two components, pointed at the brain on ultra (`http://192.168.1.111:8789`). The executor does Android host work, the web nightlies in the installed Google Chrome, and tvloop's Roku suite. It owns the Rokus on its network (`FLEET_ROKU=1`). Until 2026-10-21 it was also the brain; its `~/fleet-collector` is kept as a cold copy | `ssh fleet-host` |
 | **runner-host** | MacBook Pro (Mac14,10), macOS 26.7, Xcode 27 | **Nothing of Fleet Runner's, since 2026-09-22.** It runs the GitHub Actions runner farm, which is its own project | `ssh runner-host` |
 | **the dev MacBook** | M1 Pro, 16 GB, macOS 27, Xcode 27 | A machine agent and the `mac-dev` executor in pool `personal`, plus the SSH tunnel and the alert receiver. Its executor refuses heavy work above load 50 or under 2 GB of free swap (`FLEET_MAX_LOAD`, `FLEET_MIN_FREE_SWAP_MB`) | it is the machine you are on |
 | **the mini** | Mac mini M4, macOS 15.6.1, up 224 days | Nothing fleet-related | `ssh mini`, over the tailnet |
-| **ultra** | Mac Studio, M5 Ultra, 96 GB, macOS 27 | The exploratory QA nights: the `ultra` executor, its Android emulator and Apple simulators, and the model gateway they call. Its night queue runs them, not the brain's schedules; [Running it on ultra](deploy/explore-on-ultra.md) is its runbook | `ssh ultra`; it reaches the brain through its own tunnel |
+| **ultra** | Mac Studio, M5 Ultra, 96 GB, macOS 27 | **The brain** (since 2026-10-21): `fleet up` with role `brain` on `127.0.0.1:8789`, data in `~/fleet-brain`, and a forwarder that puts it on the LAN at `192.168.1.111:8789`. Also the exploratory QA nights: the `ultra` executor, its Android emulator and Apple simulators, and the model gateway they call. Its night queue runs them, not the brain's schedules; [Running it on ultra](deploy/explore-on-ultra.md) is its runbook | `ssh ultra` (`ultra-ts` away), `http://192.168.1.111:8789` from the house |
 
-**Why the brain is the oldest machine.** It is on the shelf's subnet, and it is
-macOS 12, which has no local-network gate. Every other Mac here is macOS 26 or
-later, where a launchd job cannot ask for local-network access and gets
-`EHOSTUNREACH` that looks exactly like a network fault. See
-[networking](deploy/networking.md). The brain being the slowest machine costs
-nothing: it schedules, it does not compute.
+**Why the brain moved to ultra (2026-10-21).** It was on fleet-host because
+that Mac is on the shelf's subnet and is macOS 12, which has no local-network
+gate. But ultra is on the other side of the house's one-way router
+(`192.168.1.x`; the shelf is `192.168.50.x`, which reaches ultra and not the
+reverse), so ultra's night jobs and the away-from-home route both had to hop
+through a third Mac, and that Mac was retired from personal work. A brain
+only ever *answers*, so it belongs on the side everyone can reach: the shelf,
+fleet-host and the laptop all reach ultra; ultra reaches nobody on `.50`.
+
+Two things make it work, and both are traps:
+
+- **The brain listens on loopback and a system-Python forwarder carries the
+  LAN.** ultra's firewall is in stealth mode and drops LAN connections to a
+  Homebrew `node`, although `socketfilterfw` reports that path as permitted;
+  `/usr/bin/python3` gets through (the Homelab Map's page server on ultra
+  relies on the same thing). `com.addisdev.fleet-lan-forward` runs
+  [`collector/deploy/lan-forward.py`](https://github.com/addisdev/fleet-runner/blob/develop/collector/deploy/lan-forward.py),
+  a byte pipe from `192.168.1.111:8789` to `127.0.0.1:8789`. A side effect:
+  every LAN client registers from `127.0.0.0/24`, so `last_net` no longer
+  tells the house from loopback on this brain.
+- **Port 8789, not 8788.** ultra's `127.0.0.1:8788` belongs to another project.
+  Everyone else keeps their own port: the laptop still reaches the brain at
+  `127.0.0.1:18788` through its tunnel.
+
+Executors stay where the devices are cabled: fleet-host keeps the S8+, the
+Roku and the Chrome nightlies, and reaches the brain over the LAN (macOS 12 has
+no local-network gate, so its launchd service can).
 
 **Why runner-host was taken off the fleet.** It is the only Mac here with a
 current Xcode, and it was running every iOS and web nightly — alongside forty
@@ -52,13 +73,22 @@ it drives a browser that was already there rather than downloading new ones.
 Putting Tailscale on fleet-host is what unblocks the mini, and with it the
 `llm-eval` judge and an MLX backend.
 
-## Every agent talks to the brain through loopback
+## Every agent on a new macOS talks to the brain through loopback
 
-Except the brain itself. On macOS 26 and later a LaunchAgent cannot reach a LAN
-address, so the dev MacBook's agent and executor both point at
-`http://127.0.0.1:18788`, which is an SSH tunnel to `fleet-host:8788`
-(`com.addisdev.fleet-tunnel`). It is not a preference. Point one at
-`192.168.50.27` and it will work from your shell and fail under launchd.
+On macOS 26 and later a LaunchAgent cannot reach a LAN address, so the dev
+MacBook's agent, executor, CLI and MCP server all point at
+`http://127.0.0.1:18788`, which is an SSH tunnel to ultra's `127.0.0.1:8789`
+(`com.addisdev.fleet-tunnel`: the LAN alias `ultra` first, the tailnet alias
+`ultra-ts` when away). It is not a preference. Point one at `192.168.1.111`
+and it will work from your shell and fail under launchd. ultra's own night
+jobs use `127.0.0.1:8789` directly. fleet-host is macOS 12 and uses the LAN
+address.
+
+**Runner apps on phones** (the Android and iOS runners in device mode) are
+not launchd jobs and use the LAN address: `http://192.168.1.111:8789`, typed
+into the app's Collector field. None was connected over Wi-Fi when the brain
+moved; a shelf device that comes back with `http://192.168.50.27:8788` saved
+needs that field changed.
 
 ## What runs where, and the traps in it
 
@@ -136,6 +166,9 @@ Three things have to be true for a status to appear:
 
 - **The runner reaches the brain** as `http://fleet-host:8788`, over the tailnet.
   Farm runners are LaunchAgents on macOS 26 and cannot reach a LAN address.
+  That address has been dead since the brain moved to ultra on 2026-10-21, and
+  the lane has not been repointed: Fleet Runner stays disconnected from CI
+  until the owner says otherwise.
 - **A matching phone is attached to fleet-host.** Otherwise the job is a
   `skipped:` result, and a skip posts no status on purpose — a green check where
   nothing ran would be worse than none.
@@ -172,8 +205,10 @@ repository for them is an open question.
 
 | Job | Where | When | What |
 |---|---|---|---|
-| `com.addisdev.fleet-backup` | fleet-host | 01:30 | database (`sqlite3 .backup`, integrity checked), flows, web-specs, config, a manifest |
-| `com.addisdev.fleet-backup-pull` | the dev MacBook | 03:00 | pulls the newest one off the brain and re-checks that it opens |
+| `com.addisdev.fleet-backup` | ultra | 01:30 | database (`sqlite3 .backup`, integrity checked), config, a manifest; then sealed into ultra's `~/offsite-outbox` as `fleet-brain-<stamp>.tar.age` (`FLEET_BACKUP_OUTBOX`) |
+| the off-site pull | fleet-host | 04:30 | the house's existing pull of ultra's outbox carries the sealed bundles to fleet-host, encrypted |
+| `com.addisdev.fleet-backup` | fleet-host | 01:30 | **suites only** (`FLEET_BACKUP_NO_DB=1`): flows, web-specs, config. The brain left, but the executor there still runs these, and they are in no repository |
+| `com.addisdev.fleet-backup-pull` | the dev MacBook | 03:00 | pulls the newest from ultra (`~/fleet-backups/ultra`) and from fleet-host (`~/fleet-backups/fleet-host`), and re-checks that a database opens |
 
 Fourteen kept on each side. Scripts are
 [`collector/deploy/backup-brain.sh`](https://github.com/addisdev/fleet-runner/blob/main/collector/deploy/backup-brain.sh)
@@ -188,7 +223,7 @@ the copy is the last known-good state rather than the freshest one.
 
 ## The schedules
 
-Six enabled. All times local to fleet-host.
+Six enabled. All times local to the brain (ultra, America/New_York; fleet-host was the same zone).
 
 | | When | Runs on | What red means |
 |---|---|---|---|
@@ -225,11 +260,16 @@ that pool here.
 ### The brain is not answering
 
 ```bash
-ssh fleet-host
+ssh ultra
+export PATH="/opt/homebrew/opt/node@22/bin:$HOME/.fleet/bin:$PATH"
 fleet service status          # names a component that gave up, and exits non-zero
 tail -40 ~/.fleet/logs/fleet.log
-curl -s localhost:8788/api/health
+curl -s localhost:8789/api/health
+launchctl list | grep fleet-lan-forward    # the LAN side; its log is ~/.fleet/logs/lan-forward.log
 ```
+
+Loopback answering while `http://192.168.1.111:8789` times out from the house
+is the forwarder, not the brain.
 
 Since 0.6.1 `fleet service status` reads the supervisor's own state, so a
 component it has given up on shows as `GAVE UP at … after N restarts` rather
@@ -245,10 +285,16 @@ now, but by hand:
 
 ```bash
 launchctl bootout gui/$(id -u)/com.addisdev.fleet
-pgrep -f 'fleet\.mjs' | xargs -r kill        # nothing may hold 8788
+pgrep -f 'fleet\.mjs' | xargs -r kill        # nothing may hold the brain's port (8789 on ultra)
 sleep 5
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.addisdev.fleet.plist
 ```
+
+**Check that the collector really went.** When the brain left fleet-host, a
+`bootout` stopped the supervisor but left its `fleet.mjs collector` child
+running as an orphan, still writing the database, and it ignored `SIGTERM`
+for over 40 seconds; it took a `kill -9`. Before copying a database, `lsof`
+it.
 
 **Kill fleet processes by PID or by a path-qualified pattern.** On the dev
 MacBook `pkill -f "src/server.ts"` also kills an unrelated project, and
@@ -264,14 +310,16 @@ silent and no alert arrived, it probably has no name.
 ### Restoring from a backup
 
 ```bash
-ssh fleet-host
+ssh ultra
 fleet service stop
 cd ~/fleet-backups/brain-<stamp>
 sqlite3 fleet.db 'pragma integrity_check;'          # before trusting it
-cp fleet.db ~/fleet-collector/data/fleet.db
-tar -xzf flows.tar.gz -C ~/fleet-collector/
+cp fleet.db ~/fleet-brain/data/fleet.db
 fleet service start
 ```
+
+The suites restore on fleet-host, from its own backups:
+`tar -xzf ~/fleet-backups/brain-<stamp>/flows.tar.gz -C ~/fleet-collector/`.
 
 `MANIFEST.txt` in each backup says which host and which directories it came
 from, so a restore does not have to guess.
@@ -291,7 +339,7 @@ from, so a restore does not have to guess.
 - **No commit-status token on fleet-host**, so a CI lane run that does happen
   posts nothing back to the PR.
 - **Alerts still go to the dev MacBook's local receiver** over the tunnel's
-  reverse forward, which fails whenever the tunnel does. An ntfy topic is the
+  reverse forward (ultra's loopback 8790), which fails whenever the tunnel does. An ntfy topic is the
   fix and it needs an account decision.
 - **No Mac for iOS, or for Firefox, WebKit and mobile Safari.** Those need a
   current macOS and Xcode, and the only such Mac besides your daily laptop is the

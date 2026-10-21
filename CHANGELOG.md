@@ -16,6 +16,21 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Changed
+
+- **The reference lab's brain moved to ultra.** It answers on ultra's loopback
+  (`127.0.0.1:8789`) and, for the shelf, through a new standard-library
+  forwarder, `collector/deploy/lan-forward.py` under `/usr/bin/python3`
+  (`com.addisdev.fleet-lan-forward.plist`): ultra's stealth-mode firewall drops
+  LAN connections to a Homebrew `node`. The night manifests talk to the local
+  brain and open no tunnel; `com.addisdev.fleet-tunnel-ultra.plist` is gone, and
+  the workstation's `com.addisdev.fleet-tunnel` goes to ultra, LAN first and
+  the tailnet when away. `backup-brain.sh` gains `FLEET_BACKUP_OUTBOX` (hand
+  each backup to an outbox sealer for an off-site pull) and
+  `FLEET_BACKUP_NO_DB=1` (a host with suites and no brain backs those up
+  instead of failing). [The lab](docs/lab.md) has the new layout.
+  ([#105](https://github.com/addisdev/fleet-runner/pull/105))
+
 ### Fixed
 
 - **A model unloaded mid-night is loaded again.** On ultra the model shelf

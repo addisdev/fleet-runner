@@ -29,7 +29,7 @@
 // job's failure.
 //
 //   npx tsx scripts/explore-night.ts --spec examples/jobs/explore-garden-ultra.json \
-//     [--avd fleet-explore-1 | --sim name:runtime:devicetype] [--tunnel runner-ts:192.168.50.27:8788]
+//     [--avd fleet-explore-1 | --sim name:runtime:devicetype] [--tunnel jump:host:port]
 //     [--fresh-build] [--warm "bash ~/harness/shelf.sh warm pilot"] [--warm-wait 10]
 //     [--until 07:30] [--max-minutes N] [--min-minutes 15] [--dry-run]
 //
@@ -41,12 +41,13 @@
 // nothing and boots nothing.
 //
 // --tunnel opens `ssh -N -L <local>:<host>:<port> <jump>` for the length of
-// the night and closes it after. ultra sits on the Mini's side of the home
-// network and cannot route to the brain on fleet-host at all; runner-host,
-// on the tailnet, can. A tunnel that exists only while a night runs is one
-// fewer service to keep alive on a machine whose services are LaunchDaemons.
+// the night and closes it after, for a brain on another machine. On ultra it
+// is not used any more: the brain runs there (since 2026-10-21) and the night
+// manifests set FLEET_URL=http://127.0.0.1:8789. Until then the brain was on
+// fleet-host, which ultra cannot route to, and every night hopped through a
+// third Mac.
 //
-// Env: FLEET_URL (the brain, through the tunnel), FLEET_EXECUTOR_NAME (default
+// Env: FLEET_URL (the brain, or the local end of the tunnel), FLEET_EXECUTOR_NAME (default
 // "ultra"), NIGHT_JOB / NIGHT_ROOT (the night queue's job name and directory),
 // and HARNESS_GATEWAY / HARNESS_KEY, which the night queue sets and the
 // workload reads.
