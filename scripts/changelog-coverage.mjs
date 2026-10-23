@@ -6,8 +6,11 @@
  *
  * Lists the pull requests merged into `develop` since the last `v*` tag and
  * fails, naming each one, if the changelog section being released does not
- * mention it as `#N` or `/pull/N`. A pull request labelled `no-changelog`, and
- * any opened by Dependabot, is exempt.
+ * mention it as `#N` or `/pull/N`. A pull request labelled `no-changelog`, any
+ * opened by Dependabot, and the release's own pull requests -- `release/*`
+ * into `develop`, `develop` into `main` -- are exempt. The last were not, and
+ * 0.9.0's `release/0.9.0` pull request (#98) failed its own `develop` -> `main`
+ * check and had to be labelled by hand: a release is not a change to note.
  *
  * ## Why
  *
@@ -49,6 +52,30 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 export const EXEMPT_LABEL = "no-changelog";
 /** `dependabot[bot]` from the REST API, `app/dependabot` from `gh pr view`. */
 export const isDependabot = (author) => /(^|\/)dependabot(-preview)?(\[bot\])?$/.test(author ?? "");
+
+/** A pull request that is the release itself: `release/*` into anything, or `develop` into `main`. */
+export const isReleasePr = ({ head, base } = {}) =>
+  /^release\//.test(head ?? "") || (head === "develop" && (base === undefined || base === "main"));
+
+/**
+ * The branch a GitHub merge commit merged, from its subject
+ * (`Merge pull request #98 from addisdev/release/0.9.0` -> `release/0.9.0`),
+ * or null for a squash merge, whose subject does not say.
+ */
+export function headFromSubject(subject) {
+  const m = /^Merge pull request #\d+ from [^/\s]+\/(\S+)/.exec(subject);
+  return m ? m[1] : null;
+}
+
+/** The release pull requests among merge commit subjects, by number, without asking GitHub. */
+export function releasePrsFromSubjects(subjects) {
+  const out = new Set();
+  for (const s of subjects) {
+    const head = headFromSubject(s);
+    if (head && isReleasePr({ head })) out.add(Number(/#(\d+)/.exec(s)[1]));
+  }
+  return out;
+}
 
 /**
  * Pull request numbers from commit subjects, oldest first, without repeats.
@@ -102,16 +129,22 @@ export function mentionedNumbers(section) {
 /**
  * The verdict, given everything already fetched.
  *
- * `meta` maps a pull request number to `{ labels: string[], author: string }`
- * for the ones that needed looking up; a number with no entry is treated as
- * unlabelled, so a lookup that failed fails the check rather than excusing it.
+ * `meta` maps a pull request number to `{ labels: string[], author: string,
+ * head?: string, base?: string }` for the ones that needed looking up; a
+ * number with no entry is treated as unlabelled, so a lookup that failed fails
+ * the check rather than excusing it. `release` holds the numbers already known
+ * to be release pull requests from their merge commits.
  */
-export function coverage({ merged, mentioned, meta = new Map() }) {
+export function coverage({ merged, mentioned, meta = new Map(), release = new Set() }) {
   const missing = [];
   const exempt = [];
   for (const n of merged) {
     if (mentioned.has(n)) continue;
     const m = meta.get(n);
+    if (release.has(n) || (m && isReleasePr(m))) {
+      exempt.push({ number: n, why: "release" });
+      continue;
+    }
     if (m && (m.labels.includes(EXEMPT_LABEL) || isDependabot(m.author))) {
       exempt.push({ number: n, why: m.labels.includes(EXEMPT_LABEL) ? EXEMPT_LABEL : m.author });
       continue;
@@ -150,7 +183,7 @@ function prMeta(numbers) {
     try {
       const json = execFileSync(
         "gh",
-        ["pr", "view", String(n), "--json", "labels,author,title"],
+        ["pr", "view", String(n), "--json", "labels,author,title,headRefName,baseRefName"],
         { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
       );
       const pr = JSON.parse(json);
@@ -158,6 +191,8 @@ function prMeta(numbers) {
         labels: (pr.labels ?? []).map((l) => l.name),
         author: pr.author?.login ?? "",
         title: pr.title ?? "",
+        head: pr.headRefName ?? "",
+        base: pr.baseRefName ?? "",
       });
     } catch (e) {
       console.error(`  could not read #${n} from GitHub (${(e.stderr || e.message || "").toString().trim()}); treating it as unlabelled`);
@@ -190,8 +225,9 @@ function main(argv) {
     return 1;
   }
   const mentioned = mentionedNumbers(section);
-  const unmentioned = merged.filter((n) => !mentioned.has(n));
-  const { missing, exempt } = coverage({ merged, mentioned, meta: prMeta(unmentioned) });
+  const release = releasePrsFromSubjects(subjects);
+  const unmentioned = merged.filter((n) => !mentioned.has(n) && !release.has(n));
+  const { missing, exempt } = coverage({ merged, mentioned, meta: prMeta(unmentioned), release });
 
   console.log(`${merged.length} pull request(s) merged since ${tag}: ${merged.map((n) => `#${n}`).join(" ") || "none"}`);
   for (const e of exempt) console.log(`  exempt  #${e.number} (${e.why})`);

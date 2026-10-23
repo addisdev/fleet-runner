@@ -122,6 +122,7 @@ Metrics on each device row:
 | Metric | |
 |---|---|
 | `explore_missions` | Missions run |
+| `explore_cut_off` | Missions the model server or the device cut off; neither counted in `explore_missions` nor judged |
 | `explore_cards_planned` | Cards lined up for the device, in priority order. Fewer missions than cards means the budget ran out first |
 | `explore_minutes` | The minutes the device was given: `params.minutes`, cut to fit on a short night |
 | `explore_steps` · `explore_actions` | Model steps; actions actually performed |
@@ -133,11 +134,31 @@ Metrics on each device row:
 | `explore_refused` | Actions the leash refused |
 | `explore_step_ms_p50` · `explore_model_ms_p50` | Median step and model latency |
 | `explore_prompt_tokens_mean` · `explore_cached_tokens_mean` | Mean prompt size, and how much of it the server's cache served |
-| `explore_bench_passed` · `explore_bench_total` | Bench mode only |
+| `explore_bench_passed` · `explore_bench_total` | Bench mode only. A card cut off before its end state is left out of both; one cut off after it counts |
 
 The row also carries `missions`: per mission, its condition, steps, how it
 ended, screens, candidates, misses, refusals by class, the goal verdict, the
-bench result and the model's answer.
+bench result and the model's answer. A mission that was cut off carries
+`cut_off` with the reason, and is not judged: its end state is wherever the
+outage left it. Nor is a mission the model gave up on (four replies in a row
+with no tool call), whose end state is the agent's failure, not the app's; as
+a bench card that one still counts as failed. A failed job's own error is the failing device's reason, not
+"see their rows".
+
+**A model unloaded mid-night is loaded again.** When the model server answers
+that it has no model by that name (`Invalid model identifier`, `Model is
+unloaded.`), the workload runs the night command's warm-up again (it is handed
+down as `FLEET_EXPLORE_WARM`) and takes the step again, twice a mission at
+most, without spending the step's budget. On ultra the model shelf unloads an
+on-demand model it finds idle under memory pressure, and between two missions
+the driver is idle. The night command also sets `SHELF_HOLD_PID` to its own
+pid before warming, which the shelf's warm-up records as a hold: the model is
+then left loaded until that process ends, unless pressure turns critical.
+
+**A bench card's end state the app takes away by itself** still counts when
+nothing touched the device after the model's last look: Dozehound hides its
+channel bar six seconds after the last press, so the final look can find focus
+somewhere the model never put it.
 
 On a short night the device row and the final row are still `ok: true`, and
 `error` says what ran: `short night: ran 3 of 7 cards: 40 minutes left of the
@@ -229,6 +250,14 @@ the cheap things first:
    `--warm-wait` minutes (default 10), then the night is posted as `skipped:
    the model would not load, no room on this host: ...`. Any other warm-up
    failure fails the night, with the reason posted.
+
+With `--sim`, before the warm-up, it also asks `xcodebuild
+-checkFirstLaunchStatus` whether Xcode has had its first-launch install. After
+an Xcode update it has not, and every FleetDriver start fails a minute in with
+`CoreSimulator is out of date`. That is a **failure**, not a skip, posted with
+the fix (`sudo xcodebuild -runFirstLaunch`), because only someone at the host
+can make it go away. Inside a job the same message stops the device's
+missions at the first, instead of trying each card in turn.
 
 Only then does it boot the simulator or emulator. A skip is `ok: true` with
 an error starting `skipped:`, the brain's convention for "nothing ran, and that

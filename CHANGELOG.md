@@ -44,6 +44,62 @@ a CI job fails when they disagree.
   right Mac and then skipped with no targets. The executor's descriptor now
   carries `device_id`. ([#106](https://github.com/addisdev/fleet-runner/pull/106))
 
+### Changed
+
+- **The reference lab's brain moved to ultra.** It answers on ultra's loopback
+  (`127.0.0.1:8789`) and, for the shelf, through a new standard-library
+  forwarder, `collector/deploy/lan-forward.py` under `/usr/bin/python3`
+  (`com.addisdev.fleet-lan-forward.plist`): ultra's stealth-mode firewall drops
+  LAN connections to a Homebrew `node`. The night manifests talk to the local
+  brain and open no tunnel; `com.addisdev.fleet-tunnel-ultra.plist` is gone, and
+  the workstation's `com.addisdev.fleet-tunnel` goes to ultra, LAN first and
+  the tailnet when away. `backup-brain.sh` gains `FLEET_BACKUP_OUTBOX` (hand
+  each backup to an outbox sealer for an off-site pull) and
+  `FLEET_BACKUP_NO_DB=1` (a host with suites and no brain backs those up
+  instead of failing). [The lab](docs/lab.md) has the new layout.
+  ([#105](https://github.com/addisdev/fleet-runner/pull/105))
+
+### Fixed
+
+- **A model unloaded mid-night is loaded again.** On ultra the model shelf
+  unloads an on-demand model it sees idle under memory pressure, and between
+  two missions Holo4 is idle: on the first three 0.9.0 nights it was dropped
+  mid-run four times, and every later mission ended at step 0 on `Invalid
+  model identifier`. The workload now runs the night's warm-up again
+  (`FLEET_EXPLORE_WARM`, set by `explore-night.ts --warm`) and retakes the
+  step, twice a mission at most. The night command also sets `SHELF_HOLD_PID`
+  for its warm-up, which ultra's shelf now records as a hold so it leaves the
+  model loaded for the night. ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+- **No goal findings from missions that never drove the app.** A mission cut
+  off by the model server or the device, or abandoned by the model (four
+  replies without a tool call), is no longer judged: the judge had filed the
+  untouched or abandoned screens as goal findings (#70, #71 and the bug
+  garden's 10-17 goal findings). A cut-off mission is `explore_cut_off`, not
+  `explore_missions`, and a bench card it had not finished is not scored.
+  ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+- **A bench card's end state the app takes away by itself counts.** When
+  nothing touched the device after the model's last look, that look is checked
+  too: Dozehound hides its channel bar six seconds after a press, so
+  `bench-focus-all-channels` failed on a screen the model had already left
+  right. ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+- **An Xcode that needs its first-launch install fails the night up front,
+  with the fix.** `explore-night.ts --sim` asks `xcodebuild
+  -checkFirstLaunchStatus` before warming the model, and FleetDriver stops at
+  the first `CoreSimulator is out of date` instead of spending a minute on each
+  card. ultra's Xcode updated itself to 27.1 on 10-16 and the TV and Apple
+  nights each spent about ten minutes a job finding that out.
+  ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+- **A failed explore job says why on the job.** Its error is the failing
+  device's reason, not "one or more devices completed no mission; see their
+  rows", so the alert and the digest carry it.
+  ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+- **The night command's log lines are in local time**, like the times inside
+  them. ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+- **The changelog coverage check exempts the release's own pull requests**:
+  `release/*` into `develop` and `develop` into `main`. 0.9.0's `release/0.9.0`
+  pull request (#98) failed its own `develop` → `main` check and had to be
+  labelled `no-changelog` by hand. ([#101](https://github.com/addisdev/fleet-runner/pull/101))
+
 ## [0.9.1] — 2026-10-18
 
 A phone on the shelf is woken before it is driven, and one with a PIN says so

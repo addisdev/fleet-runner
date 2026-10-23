@@ -17,14 +17,14 @@ import os from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
 import type { A11yNode } from "../../a11y-tree.js";
-import { unpackApp } from "./actuators/apple.js";
+import { XCODE_FIRST_LAUNCH, unpackApp } from "./actuators/apple.js";
 import { escapeInputText, focusLine, launchExtras, parseAnrEvents, parseForeground, parseImeShown, pngSize } from "./actuators/android.js";
 import { parseConditions } from "./conditions.js";
 import { dhash, hamming, isBlank, shrinkForModel } from "./image.js";
 import { fileable, gatewayKey, missingFlowVars, modelConfigs, paramsProblem, pickCandidates } from "./index.js";
 import { parseJsonLoose, visualIssuesFrom } from "./judge.js";
 import { leash, leftApp, snap } from "./leash.js";
-import { benchCheck, confirm, fingerprint, normalizeMessage, runMission, type LoopDeps } from "./loop.js";
+import { benchCheck, confirm, endpointFailure, fingerprint, modelGone, normalizeMessage, runMission, type LoopDeps } from "./loop.js";
 import { changedWords, orderMissions } from "./missions.js";
 import { convertCall, elementHints, parseInlineCalls, parseToolCalls } from "./model.js";
 import { toMaestro, type Executed } from "./replay.js";
@@ -247,6 +247,17 @@ export async function runExploreChecks(check: Check): Promise<void> {
 
   // --- a whole mission against a fake device and a fake model -----------------
   await missionChecks(check);
+
+  // --- the model server dropped the model, the host's Xcode needs installing ---
+  const LMSTUDIO_GONE = 'model endpoint 400: {"error":{"message":"litellm.NotFoundError: Lm_studioException - Invalid model identifier \\"holo4-35b-a3b-gguf\\". Please specify a valid downloaded model';
+  check("explore(model): LM Studio's unloaded model reads as gone", modelGone(LMSTUDIO_GONE));
+  check("explore(model): a timeout is not a gone model", !modelGone("The operation was aborted due to timeout"));
+  check("explore(model): a reply without a tool call is the model's, not the endpoint's",
+    !endpointFailure("the reply had no tool call") && endpointFailure(LMSTUDIO_GONE) && !endpointFailure(undefined));
+  check("explore(apple): xcodebuild's CoreSimulator complaint means Xcode's first launch",
+    XCODE_FIRST_LAUNCH.test("CoreSimulator is out of date. Current version (1171.7.0) is older than build version (1174.9.2).")
+    && !XCODE_FIRST_LAUNCH.test("** TEST EXECUTE FAILED **"));
+  await cutOffChecks(check);
 }
 
 /**
@@ -369,5 +380,116 @@ async function missionChecks(check: Check) {
     check("explore(loop): without a judge an agent's visual report never reproduces", cv.reproduced === 0 && !fileable(cv));
   } finally {
     server.close();
+  }
+}
+
+/**
+ * A model server that has lost the model until `loaded` is set, the way LM
+ * Studio answered through LiteLLM on ultra after the model shelf unloaded
+ * Holo4 mid-night (2026-10-16). `asked` counts the requests it answered.
+ */
+function droppingModel(state: { loaded: boolean; asked: number }): Promise<{ server: Server; url: string }> {
+  return new Promise((resolve) => {
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        state.asked++;
+        res.setHeader("content-type", "application/json");
+        if (!state.loaded) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: { message: 'litellm.NotFoundError: Lm_studioException - Invalid model identifier "holo4-35b-a3b-gguf".' } }));
+          return;
+        }
+        res.end(JSON.stringify({
+          choices: [{ message: { role: "assistant", content: "", tool_calls: [{ id: `c${state.asked}`, type: "function", function: { name: "answer", arguments: JSON.stringify({ content: "done" }) } }] } }],
+          usage: { prompt_tokens: 1000, completion_tokens: 20 },
+        }));
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const a = server.address();
+      resolve({ server, url: `http://127.0.0.1:${typeof a === "object" && a ? a.port : 0}` });
+    });
+  });
+}
+
+async function cutOffChecks(check: Check) {
+  const pilot = { loaded: false, asked: 0 };
+  const judge = { loaded: true, asked: 0 };
+  const p = await droppingModel(pilot);
+  const j = await droppingModel(judge);
+  try {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "explore-cut-"));
+    const deps = (rewarm?: LoopDeps["rewarm"]): LoopDeps => ({
+      actuator: new FakeApp(), appId: "com.fake", appName: "Garden", appFile: null,
+      model: { baseUrl: p.url, model: "pilot" }, judge: { baseUrl: j.url, model: "judge" },
+      map: new ScreenMap("fake", path.join(dir, "map")), runDir: dir, night: "n1",
+      // Visual judging off, so the judge is asked only about the goal.
+      log: () => {}, canRunFlows: false, deadline: Date.now() + 60_000, disabledChecks: ["visual"], ...(rewarm ? { rewarm } : {}),
+    });
+    const goal: Mission = { id: "g", app: "fake", title: "Press every button", persona: "a viewer", goal: "press them all", success: "the app is playing", budget: { steps: 8 } };
+    const r = await runMission(goal, deps());
+    check("explore(cut off): a mission the model endpoint never answered ends as cut off",
+      r.stats.endedBy === "model" && r.stats.steps === 0 && !!r.cutOff && /Invalid model identifier/.test(r.cutOff), JSON.stringify({ stats: r.stats, cutOff: r.cutOff }));
+    check("explore(cut off): its untouched end state is not judged, so no goal finding",
+      judge.asked === 0 && r.goal === null && !r.candidates.some((c) => c.check === "goal"), `judge asked ${judge.asked}`);
+
+    // A model that answers in prose with no tool call, four times running.
+    const prose = await new Promise<{ server: Server; url: string }>((resolve) => {
+      const server = createServer((req, res) => {
+        req.resume();
+        req.on("end", () => {
+          res.setHeader("content-type", "application/json");
+          res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "Scroll up to explore more settings options." } }], usage: {} }));
+        });
+      });
+      server.listen(0, "127.0.0.1", () => {
+        const a = server.address();
+        resolve({ server, url: `http://127.0.0.1:${typeof a === "object" && a ? a.port : 0}` });
+      });
+    });
+    try {
+      const rp = await runMission(goal, { ...deps(), model: { baseUrl: prose.url, model: "pilot" } });
+      check("explore(gave up): a mission the model abandoned is not cut off, but not judged either",
+        rp.stats.endedBy === "model" && !rp.cutOff && judge.asked === 0 && !rp.candidates.some((c) => c.check === "goal"),
+        JSON.stringify({ stats: rp.stats, cutOff: rp.cutOff, judged: judge.asked }));
+      const rpb = await runMission({ id: "pb", app: "fake", title: "Open the guide", persona: "a viewer", goal: "open it", check: { text: ["Guide"] }, budget: { steps: 8 } },
+        { ...deps(), model: { baseUrl: prose.url, model: "pilot" } });
+      check("explore(gave up): and as a bench card it is the model's fail", rpb.bench?.passed === false && !rpb.cutOff, JSON.stringify(rpb.bench));
+    } finally {
+      prose.server.close();
+    }
+
+    const unfinished: Mission = { id: "u", app: "fake", title: "Open the guide", persona: "a viewer", goal: "open the guide", check: { text: ["Guide"] }, budget: { steps: 8 } };
+    const ru = await runMission(unfinished, deps());
+    check("explore(cut off): a cut-off bench card it had not finished is not scored", ru.bench === null && !!ru.cutOff, JSON.stringify(ru.bench));
+    const bench: Mission = { id: "b", app: "fake", title: "Point at Water", persona: "a viewer", goal: "move to Water", check: { text: ["Water"] }, budget: { steps: 8 } };
+    const rb = await runMission(bench, deps());
+    check("explore(cut off): one whose end state was already reached still counts", rb.bench?.passed === true && !!rb.cutOff, JSON.stringify(rb.bench));
+
+    let warmed = 0;
+    pilot.asked = 0;
+    const rw = await runMission(bench, deps(async () => { warmed++; pilot.loaded = true; return true; }));
+    check("explore(rewarm): a dropped model is loaded again and the mission carries on",
+      warmed === 1 && rw.stats.endedBy === "answer" && !rw.cutOff && rw.bench?.passed === true, JSON.stringify({ warmed, stats: rw.stats, bench: rw.bench }));
+    check("explore(rewarm): the step the outage ate is not spent from the budget", rw.stats.steps === 1, `steps ${rw.stats.steps}`);
+
+    // An end state the app takes away by itself (Dozehound's channel bar
+    // hides six seconds after the last press): the model answered from a
+    // screen that met the card, and nothing touched the device after.
+    class HidingApp extends FakeApp {
+      looks = 0;
+      override async observe(): Promise<Observation> {
+        const o = await super.observe();
+        return ++this.looks > 1 ? { ...o, nodes: (o.nodes ?? []).filter((n) => n.text !== "Water") } : o;
+      }
+    }
+    const hiding = { ...deps(), actuator: new HidingApp() };
+    const rh = await runMission(bench, hiding);
+    check("explore(bench): an end state gone by the final look counts if the model answered from it",
+      rh.bench?.passed === true && /when the model last looked/.test(rh.bench.detail), JSON.stringify(rh.bench));
+  } finally {
+    p.server.close();
+    j.server.close();
   }
 }

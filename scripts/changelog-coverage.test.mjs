@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   coverage,
+  headFromSubject,
   isDependabot,
+  isReleasePr,
   mentionedNumbers,
   newestTag,
   prNumbersFromSubjects,
   releasedSection,
+  releasePrsFromSubjects,
 } from "./changelog-coverage.mjs";
 
 test("merge commits and squash merges both count; passing mentions do not", () => {
@@ -86,4 +89,39 @@ test("the newest tag is chosen by version, not by string order", () => {
   assert.equal(newestTag(["v1.0.0-rc.1", "v1.0.0", "v0.9.0"]), "v1.0.0");
   assert.equal(newestTag(["v1.0.0-rc.2", "v1.0.0-rc.10", "v0.9.0"]), "v1.0.0-rc.10");
   assert.equal(newestTag(["latest", "nightly"]), null);
+});
+
+test("the release's own pull requests are exempt, from the merge subject or from GitHub", () => {
+  // 0.9.0: #98 was release/0.9.0 into develop and failed the develop -> main check.
+  const subjects = [
+    "Merge pull request #98 from addisdev/release/0.9.0",
+    "Merge pull request #97 from addisdev/feat/dash-v1-client",
+    "Merge pull request #80 from addisdev/develop",
+    "Release 0.9.1 (#101)",
+  ];
+  assert.equal(headFromSubject(subjects[0]), "release/0.9.0");
+  assert.equal(headFromSubject(subjects[3]), null);
+  assert.deepEqual([...releasePrsFromSubjects(subjects)].sort(), [80, 98]);
+
+  // A squash-merged release PR is only known from GitHub's head and base.
+  const meta = new Map([
+    [101, { labels: [], author: "addisdev", title: "Release 0.9.1", head: "release/0.9.1", base: "develop" }],
+    [102, { labels: [], author: "addisdev", title: "Back-merge", head: "develop", base: "feat/x" }],
+  ]);
+  const { missing, exempt } = coverage({
+    merged: [97, 98, 80, 101, 102],
+    mentioned: new Set([97]),
+    meta,
+    release: releasePrsFromSubjects(subjects),
+  });
+  assert.deepEqual(exempt.map((e) => [e.number, e.why]), [[98, "release"], [80, "release"], [101, "release"]]);
+  assert.deepEqual(missing.map((m) => m.number), [102]);
+});
+
+test("a release pull request is release/* into anything, or develop into main", () => {
+  assert.ok(isReleasePr({ head: "release/0.9.0", base: "develop" }));
+  assert.ok(isReleasePr({ head: "develop", base: "main" }));
+  assert.ok(!isReleasePr({ head: "develop", base: "feat/x" }));
+  assert.ok(!isReleasePr({ head: "feat/release-notes", base: "develop" }));
+  assert.ok(!isReleasePr({}));
 });

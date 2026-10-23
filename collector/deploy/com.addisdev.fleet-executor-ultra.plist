@@ -9,10 +9,10 @@
        (targets.executor = "ultra"): the model it talks to is on this machine,
        behind the gateway, and so are the emulator and simulator it drives.
 
-       Talks to the brain on fleet-host through com.addisdev.fleet-tunnel-ultra,
-       for two reasons that both point at loopback: ultra sits on the Mini's
-       192.168.1.x side and cannot route to fleet-host's 192.168.50.x at all,
-       and a launchd process has no local-network grant anyway. -->
+       The brain runs on ultra too (since 2026-10-21), on 127.0.0.1:8789, so
+       this talks to it over loopback; a launchd process has no local-network
+       grant anyway. Not installed today: the night queue runs the executor
+       in-process through scripts/explore-night.ts instead. -->
   <key>ProgramArguments</key>
   <array>
     <string>__NODE__</string>
@@ -33,7 +33,7 @@
     <key>PATH</key>
     <string>__NODE_BIN_DIR__:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:__ANDROID_PLATFORM_TOOLS__</string>
     <key>FLEET_URL</key>
-    <string>http://127.0.0.1:18788</string>
+    <string>http://127.0.0.1:8789</string>
     <key>FLEET_EXECUTOR_NAME</key>
     <string>ultra</string>
     <key>FLEET_IOS_PROJECT</key>
