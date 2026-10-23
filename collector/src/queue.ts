@@ -13,6 +13,7 @@
  */
 import { db, isUniqueViolation } from "./db.js";
 import { evalMatch, isValidMatch } from "./match.js";
+import { pinsDevice, RESERVATION_LABEL, reservationAllows, reservedReason, type ReservationSubject } from "./reserved.js";
 import { announce } from "./announce.js";
 import { AGE, capabilityMatches, deviceCapabilities, effectivePools, isExpired, parse } from "./api/shared.js";
 import {
@@ -88,8 +89,21 @@ export type JobSpec = {
   // for the same claimant. Honoured by the collector's beacon reply; a runner
   // that ignores it simply keeps running, which is the old behaviour.
   preemptible?: boolean;
+  // The label of the device reservation this job holds. A reserved device is
+  // only offered to a job carrying its label that also pins it by id; on an
+  // unreserved device the field changes nothing. See src/reserved.ts.
+  reservation?: string;
   [k: string]: unknown;
 };
+
+/** Every reservation, device id to label. Read per call: a reservation made a
+ *  second ago must hold on the very next claim. */
+export function deviceReservations(): Map<string, string> {
+  return new Map(
+    (db.prepare("SELECT device_id, label FROM device_reservations").all() as { device_id: string; label: string }[])
+      .map((r) => [r.device_id, r.label]),
+  );
+}
 
 // web-test and web-shots are host-executed like ui-test, but their target is a
 // URL rather than a device: no phone is involved and none is locked. web-test
@@ -133,7 +147,14 @@ export const WORKLOADS = new Set([
 /** Devices a `targets` clause selects. Shared by fan-out and by the composer's
  *  "N devices match" preview, so the preview cannot disagree with what fan-out
  *  will actually do. */
-export function matchingDevices(pool?: string, match?: string, workload?: string, backend?: string | null) {
+export function matchingDevices(
+  pool?: string, match?: string, workload?: string, backend?: string | null,
+  // Whose reservations to honour. Omitted, a reserved device is never selected:
+  // a caller that cannot say which reservation it holds holds none.
+  job: ReservationSubject = {},
+  opts: { ignoreReservations?: boolean } = {},
+) {
+  const reserved = opts.ignoreReservations ? new Map<string, string>() : deviceReservations();
   return (
     db.prepare(
       `SELECT device_id, pools, pools_override, descriptor, capabilities, ttl_s,
@@ -159,17 +180,52 @@ export function matchingDevices(pool?: string, match?: string, workload?: string
     // Checked before the expression, so a match expression can narrow the set
     // but never widen an agent past what its own code can run.
     if (workload && !capabilityMatches(capabilities, workload, backend)) return false;
+    let descriptor: Record<string, unknown>;
+    try {
+      descriptor = { ...JSON.parse(d.descriptor), device_id: d.device_id, pools, capabilities: capabilities ?? [] };
+    } catch {
+      return false;
+    }
+    // A reserved device is out of every pool and every match unless this job
+    // holds its reservation and names it. This is what keeps a fan-out, the
+    // composer's preview and an `os ~ 'android'` job off the growth phone.
+    if (!reservationAllows(job, d.device_id, reserved.get(d.device_id), descriptor)) return false;
     if (match) {
       try {
-        return evalMatch(match, {
-          ...JSON.parse(d.descriptor), device_id: d.device_id, pools, capabilities: capabilities ?? [],
-        });
+        return evalMatch(match, descriptor);
       } catch {
         return false;
       }
     }
     return true;
   });
+}
+
+/**
+ * The reserved device this job pins without holding its reservation, if any.
+ *
+ * Asked at enqueue so a pinned job that could never run is refused while the
+ * caller is still there to read why, instead of sitting queued (a device job)
+ * or skipping with "no targets" (a host job). A reservation can exist before
+ * its device has ever registered, so an unregistered one is judged on its id
+ * alone.
+ */
+function reservedConflict(spec: JobSpec): { device_id: string; label: string } | null {
+  const targets = spec.targets;
+  if (!targets?.device_id && !targets?.match) return null;
+  const reserved = deviceReservations();
+  if (reserved.size === 0) return null;
+  const rows = new Map(
+    (db.prepare(
+      `SELECT device_id, descriptor FROM devices WHERE device_id IN (${[...reserved.keys()].map(() => "?").join(",")})`,
+    ).all(...reserved.keys()) as { device_id: string; descriptor: string }[])
+      .map((r) => [r.device_id, parse<Record<string, unknown>>(r.descriptor, {})]),
+  );
+  for (const [deviceId, label] of reserved) {
+    if (spec.reservation === label) continue;
+    if (pinsDevice(targets, deviceId, rows.get(deviceId) ?? {})) return { device_id: deviceId, label };
+  }
+  return null;
 }
 
 /**
@@ -244,6 +300,7 @@ export type ErrorCode =
   | "duplicate_job"
   | "no_capable_agent"
   | "no_matching_devices"
+  | "device_reserved"
   | "secret_in_spec"
   | "no_build"
   | "invalid_match"
@@ -387,6 +444,9 @@ export function enqueueJob(
   if (spec.preemptible !== undefined && typeof spec.preemptible !== "boolean")
     return refuse(400, "invalid_spec", "preemptible must be a boolean");
 
+  if (spec.reservation !== undefined && (typeof spec.reservation !== "string" || !RESERVATION_LABEL.test(spec.reservation)))
+    return refuse(400, "invalid_spec", "reservation must be a label of letters, digits, '.', '_', ':' or '-' (at most 64)");
+
   // Dependencies. Refused at enqueue rather than discovered later: a chain that
   // names a job nobody ever posted would otherwise sit in 'waiting' forever,
   // looking exactly like a chain whose build is merely slow.
@@ -415,6 +475,15 @@ export function enqueueJob(
   if (spec.targets?.match && !isValidMatch(spec.targets.match))
     return refuse(400, "invalid_match", `invalid targets.match expression: ${spec.targets.match}`);
 
+  {
+    const conflict = reservedConflict(spec);
+    if (conflict)
+      return refuse(
+        409, "device_reserved", reservedReason(conflict.device_id, conflict.label),
+        `add "reservation": "${conflict.label}" if this job is that work; otherwise target another device`,
+      );
+  }
+
   const pool = spec.targets?.pool;
   const match = spec.targets?.match;
   // Same predicate the claim uses, so neither fan-out nor a preview can name a
@@ -423,8 +492,8 @@ export function enqueueJob(
   // applied.
   const selected = () =>
     spec.executor === "device"
-      ? matchingDevices(pool, match, spec.workload, spec.backend ?? null)
-      : matchingDevices(pool, match);
+      ? matchingDevices(pool, match, spec.workload, spec.backend ?? null, spec)
+      : matchingDevices(pool, match, undefined, undefined, spec);
 
   const existing = db.prepare("SELECT 1 FROM jobs WHERE job_id = ?").get(spec.job_id);
 
@@ -441,13 +510,15 @@ export function enqueueJob(
       return refuse(400, "invalid_spec", "fanout.distinct must be a descriptor field name");
 
     let devices = selected();
-    if (devices.length === 0)
+    if (devices.length === 0) {
+      const held = reservedLeftOut(spec, devices);
       return refuse(
         400, "no_matching_devices",
         `no registered devices${pool ? ` in pool ${pool}` : ""}${match ? ` matching ${match}` : ""}` +
-          ` can run ${spec.workload}`,
+          ` can run ${spec.workload}` + (held.length ? ` (left out as reserved: ${held.join(", ")})` : ""),
         "list devices with GET /api/v1/devices",
       );
+    }
 
     // "One per distinct OS" is the canary shape: a smoke pass on every OS on
     // the shelf without paying for every phone. Newest-seen wins within a
@@ -478,7 +549,7 @@ export function enqueueJob(
       return {
         ok: true, http: 200, status: depState.status, job_id: spec.job_id,
         fanout: children.map((c) => c.job_id),
-        preview: { spec, candidates: devices.map(candidate), warnings: warningsFor(spec, devices.length, depState) },
+        preview: { spec, candidates: devices.map(candidate), warnings: warningsFor(spec, devices, depState) },
       };
     }
 
@@ -513,7 +584,7 @@ export function enqueueJob(
     if (spec.targets?.device_id) devices = devices.filter((d) => d.device_id === spec.targets?.device_id);
     return {
       ok: true, http: 200, status: depState.status, job_id: spec.job_id,
-      preview: { spec, candidates: devices.map(candidate), warnings: warningsFor(spec, devices.length, depState) },
+      preview: { spec, candidates: devices.map(candidate), warnings: warningsFor(spec, devices, depState) },
     };
   }
 
@@ -539,8 +610,9 @@ export function enqueueJob(
  * queued. Every one of these has cost somebody an afternoon of waiting on a job
  * that was never going to start.
  */
-function warningsFor(spec: JobSpec, candidates: number, deps: { status: string; reason?: string }): string[] {
+function warningsFor(spec: JobSpec, selected: { device_id: string }[], deps: { status: string; reason?: string }): string[] {
   const out: string[] = [];
+  const candidates = selected.length;
   if (deps.status === "failed") out.push(`a dependency already failed (${deps.reason ?? "unknown"}); the job would be failed at once`);
   if (deps.status === "skipped") out.push(`a dependency already skipped (${deps.reason ?? "unknown"}); the job would be skipped at once, since there is nothing for it to run on`);
   if (deps.status === "waiting") out.push("waiting on depends_on; it starts when those jobs are done");
@@ -556,5 +628,24 @@ function warningsFor(spec: JobSpec, candidates: number, deps: { status: string; 
     else if (wanted && !live.some((e) => e.name === wanted))
       out.push(`targets.executor is '${wanted}', which has not polled in the last two minutes (live: ${live.map((e) => e.name).join(", ")})`);
   }
+  // A reservation is silent by design at claim time -- the device is simply
+  // not offered -- so the dry run is where it gets said.
+  const held = reservedLeftOut(spec, selected);
+  if (held.length) out.push(`left out as reserved for other work: ${held.join(", ")}`);
+  if (spec.reservation && ![...deviceReservations().values()].includes(spec.reservation))
+    out.push(`no device is reserved for '${spec.reservation}'; the field only matters on a device that is`);
   return out;
+}
+
+/** Reserved devices these targets would otherwise have selected, as "id (label)". */
+function reservedLeftOut(spec: JobSpec, selected: { device_id: string }[]): string[] {
+  const reserved = deviceReservations();
+  if (reserved.size === 0) return [];
+  const kept = new Set(selected.map((d) => d.device_id));
+  const workload = spec.executor === "device" ? spec.workload : undefined;
+  const backend = spec.executor === "device" ? spec.backend ?? null : undefined;
+  return matchingDevices(spec.targets?.pool, spec.targets?.match, workload, backend, spec, { ignoreReservations: true })
+    .filter((d) => reserved.has(d.device_id) && !kept.has(d.device_id))
+    .filter((d) => !spec.targets?.device_id || d.device_id === spec.targets.device_id)
+    .map((d) => `${d.device_id} (${reserved.get(d.device_id)})`);
 }

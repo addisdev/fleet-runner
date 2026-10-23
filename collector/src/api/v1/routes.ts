@@ -39,6 +39,7 @@ import { SCHEMAS } from "./schemas.js";
 import { isSkipError } from "../../skip.js";
 import { errorsOf, paramsValidator, validateSpec, type SchemaError } from "./spec-check.js";
 import { findingDetail, listFindings, parseVerdictBody, setVerdict } from "../../findings.js";
+import { RESERVATION_LABEL } from "../../reserved.js";
 
 // --- the table's types ------------------------------------------------------------
 
@@ -563,6 +564,51 @@ export const ROUTES: Route[] = [
     responses: [{ status: 200, description: "The device.", schema: "DeviceDetail" }, E404],
     handler: async ({ app, req, p }) => inner(app, req, "GET", `/api/devices/${encodeURIComponent(p.id)}`),
   },
+  {
+    operationId: "reserveDevice", method: "POST", path: "/api/v1/devices/{id}/reserve", tag: "devices", scope: "admin", idempotent: true,
+    summary: "Keep a device for one kind of work: only jobs with this reservation label that pin the device may use it.",
+    description:
+      "A reserved device is skipped by fan-out, pools and every targets.match that does not pin its id, on the brain and in " +
+      "the host executor's own device selection. A job may use it only with `reservation` set to the label and the device " +
+      "named in targets.device_id or a targets.match such as device_id == '<id>'. The device need not have registered yet, " +
+      "so a phone can be reserved before it is cabled up; `registered` says whether it has. Reserving again with the same " +
+      "label updates the note; a different label is a conflict until the device is unreserved.",
+    params: [{ name: "id", in: "path", type: "string", required: true, description: "The device id." }],
+    body: { schema: "ReserveInput", description: "The label, and an optional note for the people reading the shelf.", required: true },
+    responses: [{ status: 200, description: "Reserved.", schema: "Reservation" }, E400, E401, E403, E409],
+    handler: async ({ req, p }) => {
+      const body = (req.body ?? {}) as { label?: unknown; note?: unknown };
+      if (typeof body.label !== "string" || !RESERVATION_LABEL.test(body.label))
+        throw new ApiError(400, "bad_request", "label must be letters, digits, '.', '_', ':' or '-' (at most 64)", "for example growth-instagram");
+      if (body.note !== undefined && body.note !== null && typeof body.note !== "string")
+        throw new ApiError(400, "bad_request", "note must be a string");
+      const held = db.prepare("SELECT label FROM device_reservations WHERE device_id = ?").get(p.id) as { label: string } | undefined;
+      if (held && held.label !== body.label)
+        throw new ApiError(409, "conflict", `${p.id} is already reserved for '${held.label}'`, `fleet device unreserve ${p.id} first, if that work is over`);
+      const ctx = authOf(req);
+      db.prepare(
+        `INSERT INTO device_reservations (device_id, label, note, reserved_by) VALUES (?, ?, ?, ?)
+         ON CONFLICT(device_id) DO UPDATE SET note = excluded.note`,
+      ).run(p.id, body.label, typeof body.note === "string" && body.note ? body.note.slice(0, 500) : null, ctx.actor ?? ctx.source ?? null);
+      announce({ type: "device", device_id: p.id, event: "reserve", label: body.label });
+      return reservationView(p.id);
+    },
+  },
+  {
+    operationId: "unreserveDevice", method: "POST", path: "/api/v1/devices/{id}/unreserve", tag: "devices", scope: "admin", idempotent: true,
+    summary: "Give a reserved device back to the shelf: every job that matches it may use it again.",
+    description: "Not an error when the device was not reserved; `was` says what it was reserved for, or null.",
+    params: [{ name: "id", in: "path", type: "string", required: true, description: "The device id." }],
+    responses: [{ status: 200, description: "Released.", schema: "Unreservation" }, E401, E403],
+    handler: async ({ p }) => {
+      const held = db.prepare("SELECT label FROM device_reservations WHERE device_id = ?").get(p.id) as { label: string } | undefined;
+      if (held) {
+        db.prepare("DELETE FROM device_reservations WHERE device_id = ?").run(p.id);
+        announce({ type: "device", device_id: p.id, event: "unreserve", label: held.label });
+      }
+      return { device_id: p.id, was: held?.label ?? null };
+    },
+  },
 
   // workloads
   {
@@ -655,11 +701,12 @@ export const ROUTES: Route[] = [
       {
         status: 400,
         description:
-          "Malformed or refused before queueing: invalid_spec, no_matching_devices (no registered device matches the targets), " +
+          "Malformed or refused before queueing: invalid_spec, no_matching_devices (no registered device matches the targets; reserved devices are left out), " +
           "no_build (no artifact for app `latest`), invalid_match, invalid_dependency, secret_in_spec, bad_request.",
         schema: "Error",
       },
-      E401, E403, E409,
+      E401, E403,
+      { status: 409, description: "duplicate_job (that job_id exists), or device_reserved (the targets pin a device reserved for other work; set `reservation` to its label if this is that work).", schema: "Error" },
       {
         status: 422,
         description: "Valid, but cannot be queued: no_capable_agent (nothing declares the workload), unresolved_reference (a template reference that does not resolve).",
@@ -989,6 +1036,9 @@ export const ROUTES: Route[] = [
   {
     operationId: "nextJobForExecutor", method: "GET", path: "/executor/next-job", tag: "protocol", scope: "protocol", documentOnly: true,
     summary: "A host executor long-polling for host work.",
+    description:
+      "The claimed spec carries `reserved_devices` (device id to reservation label) beside the granted lease: the executor " +
+      "picks devices itself and must not run on a reserved one unless the job holds that reservation and pins it.",
     responses: [{ status: 200, description: "A claimed job spec.", schema: null }, { status: 204, description: "No work.", schema: null }],
   },
   {
@@ -1031,10 +1081,43 @@ export const ROUTES: Route[] = [
 // --- request bodies too small to deserve a component of their own -----------------------
 
 SCHEMAS.CancelInput = { type: "object", properties: { reason: { type: "string", maxLength: 500 } } };
+SCHEMAS.ReserveInput = {
+  type: "object",
+  required: ["label"],
+  properties: {
+    label: { type: "string", pattern: RESERVATION_LABEL.source, description: "What the device is kept for; jobs carry it as `reservation`." },
+    note: { type: ["string", "null"], maxLength: 500, description: "Why, for whoever reads the shelf." },
+  },
+};
+SCHEMAS.Reservation = {
+  type: "object",
+  required: ["device_id", "reserved_for", "note", "reserved_by", "reserved_at", "registered"],
+  properties: {
+    device_id: { type: "string" },
+    reserved_for: { type: "string", description: "The label. A job holds the reservation by setting `reservation` to it." },
+    note: { type: ["string", "null"] },
+    reserved_by: { type: ["string", "null"], description: "Who reserved it, when tokens are on; otherwise the source." },
+    reserved_at: { type: ["string", "null"] },
+    registered: { type: "boolean", description: "Whether the device has registered yet. false is allowed (reserve before cabling) but is also what a typo looks like." },
+  },
+};
+SCHEMAS.Unreservation = {
+  type: "object",
+  required: ["device_id", "was"],
+  properties: { device_id: { type: "string" }, was: { type: ["string", "null"], description: "The label it was reserved for, or null." } },
+};
 SCHEMAS.RetryInput = {
   type: "object",
   properties: { pool: { type: "string" }, device_id: { type: "string" }, priority: { type: "integer" } },
 };
+
+/** A reservation as the API answers it. */
+function reservationView(deviceId: string) {
+  const r = db.prepare("SELECT label, note, reserved_by, reserved_at FROM device_reservations WHERE device_id = ?").get(deviceId) as
+    { label: string; note: string | null; reserved_by: string | null; reserved_at: string };
+  const registered = db.prepare("SELECT 1 FROM devices WHERE device_id = ?").get(deviceId) !== undefined;
+  return { device_id: deviceId, reserved_for: r.label, note: r.note, reserved_by: r.reserved_by, reserved_at: iso(r.reserved_at), registered };
+}
 
 // --- registration ---------------------------------------------------------------------------
 

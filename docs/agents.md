@@ -48,6 +48,7 @@ the file name to write. `--out -` writes to stdout.
 | `--param k=v` | A workload param; repeatable, dotted keys nest, values parsed as JSON where they parse |
 | `--fanout` | One child job per matching device |
 | `--backend B` · `--priority N` · `--id JOB_ID` | The spec fields of the same names; `--id` is an idempotency key |
+| `--reservation LABEL` | The spec's `reservation`: required, with a pin, to run on a [reserved device](concepts.md#reserved-devices) |
 | `--validate` | Validate, print where it would land, and stop |
 | `--no-validate` | Skip the dry run and let the enqueue refuse it instead |
 | `--no-wait` | Print the job id and exit 0 |
@@ -55,7 +56,8 @@ the file name to write. `--out -` writes to stdout.
 
 | Other commands | |
 |---|---|
-| `fleetr devices [--all] [--platform P] [--pool P]` | Online devices, or the whole shelf |
+| `fleetr devices [--all] [--platform P] [--pool P]` | Online devices, or the whole shelf; `RESERVED` names a device kept for other work |
+| `fleetr device reserve ID LABEL [--note T]` · `fleetr device unreserve ID` | Keep a device for jobs with `"reservation": LABEL` that pin it by id ([Reserved devices](concepts.md#reserved-devices)); admin scope |
 | `fleetr workloads [NAME] [--available]` | What the fleet can run; NAME prints the params schema and an example spec |
 | `fleetr job ID` · `fleetr wait ID [--timeout S]` | The verdict now, or when it finishes (default 1800 s); exits with the verdict |
 | `fleetr cancel ID [--reason R]` | Cancel; cascades over a fan-out and fails whatever waited on it |

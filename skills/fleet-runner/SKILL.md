@@ -102,6 +102,10 @@ flow so you can reproduce it.
 - **Target a pool or a match, not a device id**, unless the user named the
   device: other people's jobs are pinned to devices too. `--pool P` or
   `--match "os ~ 'android' && ram_mb >= 4000"`.
+- **Leave reserved devices alone.** A device whose `reserved_for` is set is
+  kept for one kind of work (a phone signed in to a real account, say). Pools,
+  matches and fan-out skip it, and pinning it is refused with
+  `device_reserved`. Do not add `reservation` to a job to get one.
 - **Retry at most once, and only after reading the error.** A failure that
   repeats on the same device and build is the app, not the lab;
   `fleetr flaky` shows tests known to flip.

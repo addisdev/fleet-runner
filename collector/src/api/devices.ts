@@ -16,10 +16,12 @@ type DeviceRow = {
   last_seen: string;
   last_beacon: string | null;
   age_s: number | null;
+  reserved_for: string | null;
 };
 
 const DEVICE_SELECT = `SELECT device_id, descriptor, pools, pools_override, capabilities, ttl_s, last_net, name, notes,
-                              last_seen, last_beacon, ${AGE("last_seen")} AS age_s
+                              last_seen, last_beacon, ${AGE("last_seen")} AS age_s,
+                              (SELECT label FROM device_reservations r WHERE r.device_id = devices.device_id) AS reserved_for
                        FROM devices`;
 
 function shapeDevice(d: DeviceRow) {
@@ -38,6 +40,9 @@ function shapeDevice(d: DeviceRow) {
     // null, not [], for an agent that predates capabilities: the dashboard says
     // "all" for that case rather than showing it as able to run nothing.
     capabilities: deviceCapabilities(d),
+    // The label of the work this device is kept for, or null. A reserved device
+    // is offered only to jobs carrying this label that pin it by id.
+    reserved_for: d.reserved_for,
     last_net: d.last_net,
     // An agent that declared itself temporary, and whether its window closed.
     ttl_s: d.ttl_s,

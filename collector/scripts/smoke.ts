@@ -21,6 +21,7 @@ import { runConfigChecks } from "../src/config.test.js";
 import { runDbChecks } from "../src/db.test.js";
 import { runAlertChecks } from "../src/alerts.test.js";
 import { runSkipChecks } from "../src/skip.test.js";
+import { runReservationChecks } from "../src/reserved.test.js";
 import { runReasonChecks } from "../src/result-reason.test.js";
 import { runRegistryHygieneChecks } from "../src/registry-hygiene.test.js";
 import { runBrowserChecks } from "../src/browser.test.js";
@@ -2849,6 +2850,121 @@ runConfigChecks(check);
   for (const j of [ANDROID, IOS, NOBODY, STATUS]) await json("POST", `/api/jobs/${j}/cancel`, {});
 }
 
+// 41. a reserved device is offered only to the job that holds it, by name
+{
+  // The growth pilot's phone: signed in to a real account and cabled to an
+  // executor that also takes `os ~ 'android'` work. Fan-out, pools, unpinned
+  // matches and executor routing must all pass it by; only a job carrying the
+  // label AND pinning its id may have it.
+  const PHONE = `res-phone-${run}`, SPARE = `res-spare-${run}`, AGENT = `res-agent-${run}`;
+  const EXEC_P = `res-exec-p-${run}`, EXEC_S = `res-exec-s-${run}`, NEVER = `res-never-${run}`;
+  const POOL = `res-pool-${run}`, AGENT_POOL = `res-agent-pool-${run}`, MODEL = `SM-RES-${run}`;
+  const LABEL = `growth-${run}`;
+
+  const pre = await json("POST", `/api/v1/devices/${PHONE}/reserve`, { label: LABEL, note: "smoke" });
+  check("a device can be reserved before it has ever registered",
+    pre.status === 200 && pre.body?.reserved_for === LABEL && pre.body?.registered === false && pre.body?.note === "smoke",
+    JSON.stringify(pre.body));
+  const again = await json("POST", `/api/v1/devices/${PHONE}/reserve`, { label: LABEL });
+  check("reserving again with the same label is fine", again.status === 200, JSON.stringify(again.body));
+  const clash = await json("POST", `/api/v1/devices/${PHONE}/reserve`, { label: `other-${run}` });
+  check("a different label is a conflict until unreserved", clash.status === 409 && clash.body?.error?.code === "conflict",
+    JSON.stringify(clash.body));
+  const badLabel = await json("POST", `/api/v1/devices/${PHONE}/reserve`, { label: "two words" });
+  check("a label with a space is refused", badLabel.status === 400, JSON.stringify(badLabel.body));
+
+  for (const [id, exec] of [[PHONE, EXEC_P], [SPARE, EXEC_S]])
+    await json("POST", "/devices/register", {
+      device_id: id, pools: [POOL],
+      descriptor: { model: MODEL, os: "android-9", kind: "device", serial: id, attached_to: exec },
+    });
+  const listed = (await json("GET", `/api/v1/devices?q=res-&per_page=500`)).body?.items as { device_id: string; reserved_for: string | null }[] | undefined;
+  check("the shelf says which device is reserved, and for what",
+    listed?.find((d) => d.device_id === PHONE)?.reserved_for === LABEL &&
+      listed?.find((d) => d.device_id === SPARE)?.reserved_for === null,
+    JSON.stringify(listed));
+
+  const host = (job_id: string, extra: Record<string, unknown>) => ({
+    schema: 1, job_id, workload: "install", executor: "host",
+    app: { name: "x", build: "1", sha256: "0".repeat(64) }, lease: { ttl_s: 60, max_attempts: 1 }, ...extra,
+  });
+
+  // Fan-out over the pool, with and without the label: the phone is skipped
+  // both times, because neither names it.
+  const fan = await json("POST", "/jobs", host(`res-fan-${run}`, { fanout: true, targets: { pool: POOL, executor: NEVER } }));
+  check("fan-out skips a reserved device", fan.status === 201 &&
+    JSON.stringify(fan.body?.fanout) === JSON.stringify([`res-fan-${run}--${SPARE}`]), JSON.stringify(fan.body));
+  const fanL = await json("POST", "/jobs", host(`res-fanl-${run}`, {
+    fanout: true, reservation: LABEL, targets: { pool: POOL, executor: NEVER },
+  }));
+  check("fan-out carrying the label still skips it: the label alone is not a pin",
+    JSON.stringify(fanL.body?.fanout) === JSON.stringify([`res-fanl-${run}--${SPARE}`]), JSON.stringify(fanL.body));
+
+  // The dry run says why the phone is missing.
+  const dry = await json("POST", "/api/v1/jobs/validate", host(`res-dry-${run}`, { targets: { pool: POOL, executor: NEVER } }));
+  check("validate names the reserved device it left out",
+    dry.body?.valid === true && (dry.body?.warnings ?? []).some((w: string) => w.includes(PHONE) && w.includes(LABEL)),
+    JSON.stringify(dry.body?.warnings));
+
+  // Pinning it without the label is refused at the door, on both routes.
+  const pinV1 = await json("POST", "/api/v1/jobs", host(`res-pin-${run}`, { targets: { match: `device_id == '${PHONE}'`, executor: NEVER } }));
+  check("a match that pins a reserved device without the label is refused with device_reserved",
+    pinV1.status === 409 && pinV1.body?.error?.code === "device_reserved", JSON.stringify(pinV1.body));
+  const pinLegacy = await json("POST", "/jobs", host(`res-pin2-${run}`, { targets: { device_id: PHONE, executor: NEVER } }));
+  check("so is a targets.device_id pin on the older route", pinLegacy.status === 409, JSON.stringify(pinLegacy.body));
+  const wrongLabel = await json("POST", "/api/v1/jobs", host(`res-pin3-${run}`, {
+    reservation: `other-${run}`, targets: { device_id: PHONE, executor: NEVER },
+  }));
+  check("and so is a pin carrying someone else's label", wrongLabel.body?.error?.code === "device_reserved", JSON.stringify(wrongLabel.body));
+  const badField = await json("POST", "/api/v1/jobs", host(`res-bad-${run}`, { reservation: "no spaces allowed", targets: { executor: NEVER } }));
+  check("a malformed reservation is an invalid spec", badField.status === 400, JSON.stringify(badField.body));
+
+  // Routing. An unpinned job matching both phones must go to the executor
+  // holding the spare, not the one holding the reserved phone; the growth job
+  // goes to the phone's executor. EXEC_P polls first and must skip past the
+  // unpinned job to take its own.
+  const UNPINNED = `res-unpinned-${run}`, GROWTH = `res-growth-${run}`;
+  const u = await json("POST", "/jobs", host(UNPINNED, { priority: 100, targets: { match: `model == '${MODEL}'` } }));
+  const g = await json("POST", "/api/v1/jobs", host(GROWTH, {
+    priority: 100, reservation: LABEL, targets: { match: `device_id == '${PHONE}'`, exclusive: true },
+  }));
+  check("the growth job (label + pin) is accepted", u.status === 201 && g.status === 201, JSON.stringify([u.body, g.body]));
+  const p = await json("GET", `/executor/next-job?name=${EXEC_P}`);
+  check("the reserved phone's executor is not handed the unpinned job, only the growth job",
+    p.body?.job_id === GROWTH, JSON.stringify(p.body?.job_id));
+  check("and the claim carries the reservations for the executor's own device selection",
+    p.body?.reserved_devices?.[PHONE] === LABEL && p.body?.reservation === LABEL, JSON.stringify(p.body?.reserved_devices));
+  const sp = await json("GET", `/executor/next-job?name=${EXEC_S}`);
+  check("the unpinned job goes to the executor holding the unreserved phone", sp.body?.job_id === UNPINNED,
+    JSON.stringify(sp.body?.job_id));
+
+  // A device-executor agent: same rule at its own claim.
+  await json("POST", "/devices/register", { device_id: AGENT, pools: [AGENT_POOL], descriptor: { model: "Res", os: "android-14" } });
+  await json("POST", `/api/v1/devices/${AGENT}/reserve`, { label: LABEL });
+  const POOLED = `res-pooled-${run}`, MINE = `res-mine-${run}`;
+  const bench = (job_id: string, extra: Record<string, unknown>) => ({
+    schema: 1, job_id, workload: "benchmark", executor: "device", backend: "synthetic", priority: 100, ...extra,
+  });
+  await json("POST", "/jobs", bench(POOLED, { targets: { pool: AGENT_POOL } }));
+  await json("POST", "/jobs", bench(MINE, { reservation: LABEL, targets: { device_id: AGENT } }));
+  const a1 = await json("GET", `/devices/${AGENT}/next-job`);
+  check("a reserved agent passes over pool work and claims the job that holds it", a1.body?.job_id === MINE,
+    JSON.stringify(a1.body?.job_id));
+  await json("POST", "/results", { schema: 1, kind: "result", job_id: MINE, device_id: AGENT, iter: 0, final: true, ok: true });
+
+  const un = await json("POST", `/api/v1/devices/${AGENT}/unreserve`);
+  check("unreserve says what it was", un.status === 200 && un.body?.was === LABEL, JSON.stringify(un.body));
+  const a2 = await json("GET", `/devices/${AGENT}/next-job`);
+  check("and the device takes ordinary work again", a2.body?.job_id === POOLED, JSON.stringify(a2.body?.job_id));
+  const none = await json("POST", `/api/v1/devices/never-reserved-${run}/unreserve`);
+  check("unreserving a device that was not reserved is not an error", none.status === 200 && none.body?.was === null,
+    JSON.stringify(none.body));
+
+  for (const j of [GROWTH, UNPINNED, POOLED, `res-fan-${run}--${SPARE}`, `res-fanl-${run}--${SPARE}`])
+    await json("POST", `/api/jobs/${j}/cancel`, {});
+  await json("POST", `/api/v1/devices/${PHONE}/unreserve`);
+}
+
 
 // driver's error codes, and the migration path a fresh database never takes.
 runDbChecks(check);
@@ -2860,6 +2976,7 @@ runAlertChecks(check);
 // Honest green: how a job closes (done, failed, skipped), every failure saying
 // why, and the registry keeping to real things.
 runSkipChecks(check);
+await runReservationChecks(check);
 await runReasonChecks(check);
 runRegistryHygieneChecks(check);
 

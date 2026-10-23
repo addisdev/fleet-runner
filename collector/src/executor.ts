@@ -31,6 +31,7 @@ import {
 import { targetsFrom } from "./drivers/devicectl.js";
 import { describeRoku, rokuDevPassword, rokuDevices, rokuPresenceHere, rokuTarget, type RokuDevice } from "./drivers/roku.js";
 import { evalMatch } from "./match.js";
+import { reservationAllows } from "./reserved.js";
 import { keychainPassword, redact, KEYCHAIN_SERVICE } from "./secrets.js";
 import { withNetwork, withNetworkAll, restoreAttached } from "./network-shape.js";
 import {
@@ -100,6 +101,11 @@ export type Job = {
   };
   params?: Record<string, unknown>;
   lease?: { ttl_s?: number };
+  // The device reservation this job holds, and every reservation on the
+  // fleet (device id to label) as the brain sent it with the claim. See
+  // src/reserved.ts and selectTargets.
+  reservation?: string;
+  reserved_devices?: Record<string, string>;
 };
 
 // The generic XCUITest bundle lives in the iOS runner repo; one scheme tests
@@ -207,7 +213,7 @@ async function simctlDevices(): Promise<Record<string, { udid: string; name: str
  * whatever it is" -- which no descriptor field expresses honestly, because
  * `kind` is a property of how the device is attached rather than of the device.
  */
-async function selectTargets(job: Job, all: Target[]): Promise<Target[]> {
+export async function selectTargets(job: Job, all: Target[]): Promise<Target[]> {
   const t = job.targets ?? {};
   let out = all;
 
@@ -245,16 +251,53 @@ async function selectTargets(job: Job, all: Target[]): Promise<Target[]> {
     out = owned;
   }
 
+  // Descriptors cost adb, simctl and devicectl calls, so nothing is queried
+  // unless a match expression or a reservation actually needs one, and each
+  // target is described at most once. `device_id` is added because the brain
+  // evaluates `targets.match` with it: without it here, a job pinned by
+  // `device_id == '<serial>'` was routed to the right executor and then
+  // matched nothing on it.
+  let tooling: { sims: Awaited<ReturnType<typeof simctlDevices>>; ios: IosDeviceInfo[] | null } | null = null;
+  const described = new Map<string, Record<string, unknown>>();
+  const descriptorOf = async (target: Target) => {
+    tooling ??= {
+      sims: await simctlDevices(),
+      ios: out.some((x) => x.platform === "ios") ? await devicectlDevices() : null,
+    };
+    let d = described.get(target.id);
+    if (!d) {
+      d = { ...(await describeTarget(target, tooling.sims, tooling.ios)), device_id: target.id };
+      described.set(target.id, d);
+    }
+    return d;
+  };
+
+  // Reservations, before the match: a reserved device is not offered to this
+  // job at all unless it holds the reservation and names the device, which is
+  // the same rule the brain applied when it routed the claim. Without it the
+  // executor would run an `os ~ 'android'` job on every Android phone it can
+  // see, the reserved one included.
+  const reserved = job.reserved_devices ?? {};
+  if (out.some((x) => reserved[x.id])) {
+    const kept: Target[] = [];
+    const held: string[] = [];
+    for (const target of out) {
+      const label = reserved[target.id];
+      // A device_id pin needs no descriptor; a match pin does.
+      const d = label && !t.device_id && t.match ? await descriptorOf(target) : {};
+      if (reservationAllows(job, target.id, label, d)) kept.push(target);
+      else held.push(`${target.id} (reserved for ${label})`);
+    }
+    if (held.length > 0) log(`leaving out ${held.length} reserved device(s): ${held.join(", ")}`);
+    out = kept;
+  }
+
   if (t.match) {
-    // Descriptors cost adb, simctl and devicectl calls, so nothing is queried
-    // unless a match expression actually needs one.
-    const sims = await simctlDevices();
-    const ios = out.some((x) => x.platform === "ios") ? await devicectlDevices() : null;
     const kept: Target[] = [];
     for (const target of out) {
-      const d = await describeTarget(target, sims, ios);
+      const d = await descriptorOf(target);
       try {
-        if (evalMatch(t.match, d as Record<string, unknown>)) kept.push(target);
+        if (evalMatch(t.match, d)) kept.push(target);
       } catch (e) {
         // A malformed expression must not silently select everything.
         throw new Error(`targets.match is invalid: ${(e as Error).message}`);
@@ -1986,7 +2029,7 @@ type WebProfile = {
   missing?: string;
 };
 
-async function expandWebProfiles(names: string[]): Promise<WebProfile[]> {
+async function expandWebProfiles(names: string[], job: Pick<Job, "reservation" | "targets" | "reserved_devices">): Promise<WebProfile[]> {
   const out: WebProfile[] = [];
   let all: Target[] | null = null;
   const targets = async () => (all ??= await listTargets());
@@ -1994,6 +2037,11 @@ async function expandWebProfiles(names: string[]): Promise<WebProfile[]> {
     if (name === "android-device") {
       const owned: Target[] = [];
       for (const t of (await targets()).filter((t) => t.platform === "android")) {
+        // A reserved phone is not a browser for the screenshot matrix. Only a
+        // device_id pin can release one here: there is no descriptor to judge
+        // a match against, and a web-shots job is not the work it is kept for.
+        const label = job.reserved_devices?.[t.id];
+        if (label && !reservationAllows(job, t.id, label, {})) continue;
         if (await fleetOwnedTarget(t, null)) owned.push(t);
       }
       if (owned.length === 0) out.push({ profile: name, missing: `no fleet-owned Android device attached to ${NAME}` });
@@ -2214,7 +2262,7 @@ async function runWebShots(job: Job) {
   // profiles: the lease budgets one profile's capture, not the whole matrix.
   const timeoutS = leaseBudgetS(job);
 
-  const expanded = await expandWebProfiles(profiles);
+  const expanded = await expandWebProfiles(profiles, job);
 
   // Device-backed captures drive hardware the device-executor also hands work
   // to, so they hold collector locks for the whole run — a benchmark starting

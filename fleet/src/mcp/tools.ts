@@ -63,6 +63,7 @@ const NEXT: Record<string, string> = {
   invalid_spec: "fleet_workloads with name=<workload> returns a valid example; fleet_validate shows each problem.",
   no_capable_agent: "No live agent declares this workload. fleet_workloads with available_only=true lists what can run now.",
   no_matching_devices: "Nothing matches the targets. fleet_devices lists what is online and what each can run.",
+  device_reserved: "That device is kept for other work (fleet_devices shows reserved_for). Target another device; do not add the reservation to get it.",
   duplicate_job: "That job_id exists. Omit job_id to have one generated, or fleet_job to read the existing one.",
   no_build: "No artifact is published under that app name. Check app.name, or pin app.sha256.",
   not_found: "Check the id. fleet_results lists recent jobs.",
@@ -175,6 +176,10 @@ const DEVICE_OUT: Record<string, Json> = {
           platform: { type: ["string", "null"] }, kind: { type: ["string", "null"] }, model: { type: ["string", "null"] },
           os: { type: ["string", "null"] }, pools: { type: "array", items: { type: "string" } },
           capabilities: { type: ["array", "null"], items: { type: "string" } }, current_job: { type: ["string", "null"] },
+          reserved_for: {
+            type: ["string", "null"],
+            description: "Kept for one kind of work: only a job with this reservation label that pins the device by id may use it. Do not target it otherwise.",
+          },
         },
       },
     },
@@ -293,6 +298,7 @@ export const TOOLS: Tool[] = [
             model: (ds.model as string) ?? null, os: (ds.os as string) ?? null,
             ...(ds.attached_to ? { attached_to: ds.attached_to as string } : {}),
             pools: d.pools, capabilities: d.capabilities, current_job: d.current_job ?? null,
+            reserved_for: d.reserved_for ?? null,
           };
         });
       const out = { devices, total: devices.length };
