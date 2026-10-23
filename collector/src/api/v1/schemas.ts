@@ -67,7 +67,7 @@ export const SCHEMAS: Record<string, Schema> = {
             description: "Stable and machine-readable. Branch on this, not on the message.",
             enum: [
               "bad_request", "invalid_spec", "not_found", "duplicate_job", "no_capable_agent",
-              "no_matching_devices", "secret_in_spec", "no_build", "invalid_match", "invalid_dependency",
+              "no_matching_devices", "device_reserved", "secret_in_spec", "no_build", "invalid_match", "invalid_dependency",
               "unresolved_reference", "conflict", "unauthorized", "insufficient_scope", "forbidden",
               "rate_limited", "internal",
             ],
@@ -125,6 +125,10 @@ export const SCHEMAS: Record<string, Schema> = {
       pools: { ...strs, description: "Effective pools: the override when set, otherwise what the runner reported." },
       pools_reported: strs, pools_override: { type: ["array", "null"], items: str },
       capabilities: { type: ["array", "null"], items: str, description: "null: an agent that predates capabilities, offered everything." },
+      reserved_for: {
+        type: ["string", "null"],
+        description: "The reservation this device is kept for, or null. A reserved device is offered only to a job whose reservation is this label and that pins the device by id (targets.device_id, or a targets.match such as device_id == '<id>'); fan-out, pools and other matches skip it.",
+      },
       last_net: nstr, ttl_s: nint, expired: bool, platform: str, kind: nstr, simulator: bool,
       status: { enum: ["online", "stale", "offline"] }, age_s: nint, last_seen: nstr,
       beacon: ref("Beacon"), current_job: nstr,

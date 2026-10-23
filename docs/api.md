@@ -21,11 +21,12 @@ disagree: the test suite fails if they do.
 |---|---|---|
 | `GET /api/v1/health` | none | Version, auth mode, `api: "v1"` |
 | `GET /api/v1/whoami` | none | Who the collector thinks you are, and your scopes |
-| `GET /api/v1/devices` · `/devices/{id}` | read | The shelf, with status (`online`, `stale`, `offline`) and current job. The list carries `facets` (`pools`, `platforms`, `kinds`) over every device, not only the filtered ones |
+| `GET /api/v1/devices` · `/devices/{id}` | read | The shelf, with status (`online`, `stale`, `offline`), current job and `reserved_for`. The list carries `facets` (`pools`, `platforms`, `kinds`) over every device, not only the filtered ones |
+| `POST /api/v1/devices/{id}/reserve` · `/unreserve` | admin | `{label, note?}`: keep a device for jobs whose `reservation` is that label and that pin it by id; see [Reserved devices](concepts.md#reserved-devices). The device need not have registered (`registered: false`). A different label while reserved is 409 `conflict`; unreserve answers `{was}` |
 | `GET /api/v1/workloads` · `/workloads/{name}` | read | What the fleet can run: executor, params schema, a valid example spec, how many live agents can take it |
 | `GET /api/v1/templates` | read | Saved job templates |
 | `GET /api/v1/jobs` | read | Jobs; filter by `status` (`waiting`, `queued`, `claimed`, `done`, `failed`, `cancelled`, `skipped`), `workload`, `executor` (`device` or `host`), `device`, `pool`, `source`, `requested_by`, `mine=true`, `q` (substring of the job id), `from`/`to`, `has_error=true`. The list carries `facets` over the whole table: `status_counts`, `workloads`, `pools` |
-| `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs. 422 `no_capable_agent` when no live agent declares the workload (or backend), or `unresolved_reference`; 400 `no_matching_devices` when the targets match no registered device, `no_build` when `latest` names no published build, and `invalid_spec`, `invalid_match`, `invalid_dependency`, `secret_in_spec`. The OpenAPI document lists the same |
+| `POST /api/v1/jobs` | run | Enqueue. 201 with the job id, its status, and links to its summary and wait URLs. 422 `no_capable_agent` when no live agent declares the workload (or backend), or `unresolved_reference`; 400 `no_matching_devices` when the targets match no registered device, `no_build` when `latest` names no published build, and `invalid_spec`, `invalid_match`, `invalid_dependency`, `secret_in_spec`; 409 `device_reserved` when the targets pin a reserved device and the spec does not carry its `reservation`. The OpenAPI document lists the same |
 | `POST /api/v1/jobs/validate` | run | Dry run: schema errors by path, the devices it would land on, warnings. Always 200 |
 | `GET /api/v1/jobs/{id}` | read | One job, with its spec |
 | `GET /api/v1/jobs/{id}/summary` | read | The verdict across every device, per-device outcomes and artifact refs. Works for a fan-out parent |
@@ -45,7 +46,7 @@ disagree: the test suite fails if they do.
 
 **Errors** are `{error: {code, message, hint?, details?}}`. `code` is one of
 `bad_request`, `invalid_spec`, `not_found`, `duplicate_job`,
-`no_capable_agent`, `no_matching_devices`, `secret_in_spec`, `no_build`,
+`no_capable_agent`, `no_matching_devices`, `device_reserved`, `secret_in_spec`, `no_build`,
 `invalid_match`, `invalid_dependency`, `unresolved_reference`, `conflict`,
 `unauthorized`, `insufficient_scope`, `forbidden`, `rate_limited`, `internal`.
 `hint` says what to do next, for a person or an agent.

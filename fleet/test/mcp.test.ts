@@ -68,7 +68,16 @@ test("a notification gets no reply; an unknown method is method-not-found; an un
 test("fleet_devices lists the device with structured content", async () => {
   const r = await call("fleet_devices");
   assert.ok(!r.isError, r.content[0].text);
-  assert.ok(r.structuredContent.devices.some((d: { device_id: string }) => d.device_id === "mcp-phone"));
+  const phone = r.structuredContent.devices.find((d: { device_id: string }) => d.device_id === "mcp-phone");
+  assert.ok(phone);
+  assert.equal(phone.reserved_for, null, "an unreserved device says so rather than leaving the field out");
+  const post = (action: string, body?: unknown) => fetch(`${c.base}/api/v1/devices/mcp-phone/${action}`, {
+    method: "POST", headers: body ? { "content-type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined,
+  });
+  assert.equal((await post("reserve", { label: "growth-ig" })).status, 200);
+  const reserved = (await call("fleet_devices")).structuredContent.devices.find((d: { device_id: string }) => d.device_id === "mcp-phone");
+  assert.equal(reserved.reserved_for, "growth-ig");
+  assert.equal((await post("unreserve")).status, 200);
   const none = await call("fleet_devices", { platform: "roku" });
   assert.match(none.content[0].text ?? "", /No devices are online/);
 });

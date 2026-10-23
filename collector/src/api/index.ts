@@ -29,6 +29,7 @@ type MatchingDevices = (
   match?: string,
   workload?: string,
   backend?: string | null,
+  job?: { reservation?: unknown; targets?: { device_id?: string; match?: string } | null },
 ) => {
   device_id: string; pools: string; pools_override: string | null;
   descriptor: string; capabilities: string | null;

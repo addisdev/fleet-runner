@@ -16,6 +16,34 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- **Reserved devices.** `fleet device reserve <id> <label>` (and
+  `unreserve`, or `POST /api/v1/devices/{id}/reserve` · `/unreserve`, admin)
+  keeps a device for one kind of work: it is offered only to a job whose new
+  `reservation` field is that label **and** that pins the device by id
+  (`targets.device_id`, or a `targets.match` such as
+  `device_id == '<id>'`). Fan-out, pools, unpinned matches, the composer's
+  preview, device-executor claims and host-executor routing all pass it by,
+  and the host executor's own device selection applies the same rule from the
+  `reserved_devices` its claim now carries — so an `os ~ 'android'` job or the
+  explore night cannot open other apps on the growth pilot's signed-in
+  Instagram phone on ultra. A job pinning a reserved device without the label
+  is refused with the new error code `device_reserved`; validate warns when a
+  reserved device was left out. Reservations live in the brain's database, so a
+  phone can be reserved before it is cabled up. `fleet devices` gains a
+  `RESERVED` column, `fleet_devices` and `/api/v1/devices` a `reserved_for`
+  field, and `fleet run` a `--reservation` flag.
+  ([#106](https://github.com/addisdev/fleet-runner/pull/106))
+
+### Fixed
+
+- **A host job pinned by `targets.match "device_id == '<serial>'"` matched
+  nothing once claimed.** The brain evaluated `device_id` when routing it, but
+  the executor described an Android target without one, so the job reached the
+  right Mac and then skipped with no targets. The executor's descriptor now
+  carries `device_id`. ([#106](https://github.com/addisdev/fleet-runner/pull/106))
+
 ### Changed
 
 - **The reference lab's brain moved to ultra.** It answers on ultra's loopback

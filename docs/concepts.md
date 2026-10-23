@@ -97,6 +97,58 @@ published eval actually demonstrates, on a 3922 MB emulator.
 named executor; unset stays permissive, so anything not pinned is claimable by
 whichever executor is free.
 
+### Reserved devices
+
+Some hardware must only ever do one thing. The case that added this is the
+growth pilot's phone on ultra: signed in to a real Instagram account, cabled to
+a Mac whose executor also takes the explore night and any job that says
+`os ~ 'android'`. Every one of those would open its own app on top of the
+signed-in session. Pools and matches cannot prevent that, because they say what
+a job *wants*; a reservation says what the *device* accepts.
+
+```sh
+fleet device reserve 988a1b3541354f565a growth-instagram --note "Instagram pilot, signed in"
+fleet device unreserve 988a1b3541354f565a
+```
+
+A reserved device is offered only to a job that does **both**:
+
+- carries the label: `"reservation": "growth-instagram"`, and
+- names the device: `targets.device_id`, or a `targets.match` that pins its id
+  (`"device_id == '988a1b3541354f565a'"`, optionally narrowed with `&&`).
+
+```json
+{
+  "workload": "ui-test", "executor": "host", "reservation": "growth-instagram",
+  "targets": { "executor": "ultra-phone", "match": "device_id == '988a1b3541354f565a'", "exclusive": true },
+  "lease": { "max_attempts": 1 }
+}
+```
+
+Either alone fails open, which is why it is both. A label on its own would let
+a fan-out carrying it spread across the whole shelf; a pin on its own is what a
+stale script or a `fleet retry --device` already has. "Pins its id" is tested by
+behaviour, not by reading the expression: the match has to select the device,
+and has to stop selecting it once the device's id (and a `serial` equal to it)
+is swapped for any other. `device_id == 'X' || os ~ 'android'` therefore does
+not pin `X`.
+
+Everything else passes the device by. Fan-out leaves it out (and says so when
+that leaves nothing), the composer's "N devices match" does not count it, a
+device-executor agent that is reserved does not claim other work, and an
+unpinned host job is not routed to the executor holding it. The executor picks
+its own devices from what it can see, so the claim hands it every reservation
+(`reserved_devices`) and its target selection applies the same rule; the
+`web-shots` Android-Chrome profile skips a reserved phone too. A job that pins a
+reserved device without the label is refused at enqueue with `device_reserved`
+rather than left to queue or skip, and `POST /api/v1/jobs/validate` warns when
+targets would have selected a reserved device.
+
+A reservation lives in the brain's database (`device_reservations`), not on the
+device row, so a phone can be reserved before it is first cabled up and stays
+reserved when the registry forgets and re-learns it. `fleet devices` and
+`fleet_devices` show it as `reserved_for`.
+
 ## Belonging to more than one fleet
 
 An agent may register with several collectors. Two people with two collectors
@@ -210,7 +262,7 @@ while someone is typing.
 
 `"fanout": true` enqueues one child per matching device, pinned with
 `targets.device_id` and suffixed `--<device_id>`. A whole-shelf benchmark is one
-request.
+request. [Reserved devices](#reserved-devices) are never among them.
 
 `"fanout": { "distinct": "os" }` enqueues one child per distinct value of that
 descriptor field, newest-seen first. That is the canary shape: a smoke pass on
