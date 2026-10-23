@@ -4,7 +4,7 @@
   "command": [
     "bash",
     "-lc",
-    "source ~/explore/env.sh && cd ~/fleet-runner/collector && npx tsx scripts/explore-night.ts --spec examples/jobs/explore-garden-ultra.json --avd fleet-explore-1 --tunnel runner-ts:192.168.50.27:8788 --warm \"WARM_MIN_FREE_PCT=45 bash ~/harness/shelf.sh warm pilot\""
+    "source ~/explore/env.sh && cd ~/fleet-runner/collector && export FLEET_URL=http://127.0.0.1:8789 && npx tsx scripts/explore-night.ts --spec examples/jobs/explore-garden-ultra.json --avd fleet-explore-1 --warm \"WARM_MIN_FREE_PCT=45 bash ~/harness/shelf.sh warm pilot\""
   ],
   "priority": 20,
   "needs_gb": 35,

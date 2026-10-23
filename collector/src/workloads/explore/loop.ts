@@ -71,6 +71,13 @@ export type LoopDeps = {
   deadline: number;
   /** Send the app to the background once, at this share of the step budget (the "background" condition). */
   backgroundAt?: number | null;
+  /**
+   * Load the model again after the server said it has none by that name. On
+   * ultra the model shelf unloads an on-demand model it sees idle under memory
+   * pressure, and between two missions (an app reinstall) the driver is idle.
+   * Resolves true when the model is back.
+   */
+  rewarm?(why: string): Promise<boolean>;
 };
 
 /** A candidate finding: something a check saw, not yet replayed. */
@@ -106,6 +113,12 @@ export type MissionResult = {
   goal: { met: boolean | null; reason: string } | null;
   /** For bench missions: did the final screen satisfy `mission.check`? */
   bench: { passed: boolean; detail: string } | null;
+  /**
+   * Why the mission was cut off by something that is not the app or the
+   * model's driving: the model endpoint stopped answering, or the device
+   * stopped being observable. Such a mission is neither judged nor scored.
+   */
+  cutOff?: string;
   screen: { w: number; h: number };
   stats: {
     steps: number; actions: number; misses: number; refused: number; refusedByClass: Record<string, number>;
@@ -115,6 +128,22 @@ export type MissionResult = {
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * The model server answering that it has no model by that name: LM Studio
+ * through LiteLLM says `Invalid model identifier`, an OpenAI-style server
+ * `model_not_found`, LiteLLM itself `NotFoundError`, and a request caught
+ * mid-unload `Model is unloaded.`. A turn that failed this
+ * way was not the model's mistake, and loading the model again fixes it.
+ */
+export function modelGone(error: string): boolean {
+  return /invalid model identifier|model is unloaded|model_not_found|NotFoundError|no models? loaded|model .* (is )?not (found|loaded)/i.test(error);
+}
+
+/** A turn that failed in transport or at the server, rather than a reply that broke the rules. */
+export function endpointFailure(error: string | undefined): boolean {
+  return !!error && error !== "the reply had no tool call";
+}
 
 /** Numbers, hex, ids and quoted strings out of a message, so two of the same crash fingerprint alike. */
 export function normalizeMessage(s: string): string {
@@ -241,6 +270,11 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
   let prevSig = "";
   let lastObs: Observation | null = null;
   let lastScreenId: string | null = null;
+  let lastTurnError: string | undefined;
+  let rewarms = 0;
+  // Did anything touch the device after the last look? When not, that look
+  // is the end state the model answered from.
+  let actedSinceLook = false;
 
   for (let i = 1; i <= maxSteps; i++) {
     if (Date.now() > missionDeadline) { stats.endedBy = "time"; break; }
@@ -256,6 +290,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
       continue;
     }
     lastObs = obs;
+    actedSinceLook = false;
     screen = { w: obs.width, h: obs.height };
     // A device whose screenshots are blank while its tree is full of text is
     // not showing a blank app: it cannot capture its screen (an Android ATD
@@ -412,8 +447,17 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
       ...(turn.error ? { error: turn.error } : {}),
     };
 
+    lastTurnError = turn.error;
     if (turn.calls.length === 0) {
       stats.errors++;
+      // The model was unloaded under us: load it again and take the step
+      // again, twice a mission at most, without spending the step's budget or
+      // counting it against the model.
+      if (turn.error && modelGone(turn.error) && d.rewarm && rewarms < 2) {
+        rewarms++;
+        d.log(`the model server lost the model at step ${i} (${turn.error.slice(0, 120)}); loading it again`);
+        if (await d.rewarm(turn.error)) { i--; continue; }
+      }
       steps.push(step);
       if (++consecutiveErrors > 3) { stats.endedBy = "model"; break; }
       conv.say("Your last reply had no tool call. Every reply must call at least one tool.");
@@ -475,6 +519,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
           executed.push({ step: i, kind: "action", action: snapped.action, settleMs });
           step.actions.push(snapped.action);
           stats.actions++;
+          actedSinceLook = true;
           answers.push(snapped.miss ? "ok (nothing tappable at that point)" : "ok");
           if ((snapped.action.kind === "tap") && snapped.node && !snapped.miss) {
             const label = (snapped.node.label || snapped.node.text || snapped.node.id.split("/").pop() || snapped.node.cls).trim();
@@ -519,12 +564,42 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
   // --- the end state --------------------------------------------------------
   let goal: MissionResult["goal"] = null;
   let bench: MissionResult["bench"] = null;
+  // Cut off by the model server or the device, the end state is wherever the
+  // mission was left, not where the app took it: judging it would file the
+  // app for the harness's outage (10-16: two goal findings from missions that
+  // never took a step), and failing a bench card it had not finished would
+  // mark the model down for the same. A card it had already finished counts.
+  const cutOff = stats.endedBy === "device"
+    ? "the device stopped answering"
+    : stats.endedBy === "model" && endpointFailure(lastTurnError)
+      ? `the model endpoint stopped answering: ${lastTurnError!.slice(0, 200)}`
+      : undefined;
   const final = await actuator.observe().catch(() => lastObs);
   if (final) {
     writeFileSync(path.join(shotsDir, "final.png"), final.png);
     const finalScreen = d.map.identify(final.nodes, dhash(final.png), final.height, d.night).entry;
-    if (m.check) bench = benchCheck(m.check, final.nodes, finalScreen.name);
-    if (d.judge && m.success && !m.check && !d.disabledChecks?.includes("goal")) {
+    if (m.check) {
+      bench = benchCheck(m.check, final.nodes, finalScreen.name);
+      // An end state the app takes away by itself: Dozehound hides its
+      // channel bar six seconds after the last press, and the model's answer
+      // takes about four, so the final look found focus on the hidden bar's
+      // "Show channels" catcher while the model had answered, rightly, from a
+      // screen with All channels focused. If nothing touched the device after
+      // the model's last look, that look counts too.
+      if (!bench.passed && lastObs && lastObs !== final && !actedSinceLook) {
+        const seen = (lastScreenId && d.map.byId(lastScreenId)?.name) || finalScreen.name;
+        const atAnswer = benchCheck(m.check, lastObs.nodes, seen);
+        if (atAnswer.passed) bench = { passed: true, detail: `end state reached when the model last looked; gone by the final look (${bench.detail})` };
+      }
+      // A cut-off card that had not got there yet says nothing either way.
+      if (cutOff && !bench.passed) bench = null;
+    }
+    // Nor is a mission the model gave up on (four replies in a row with no
+    // tool call; Holo4 on 10-17 wrote "Scroll up to explore more" over and
+    // over from step 1): where it stopped is the agent's failure, and the judge
+    // would file it as the app's, then "reproduce" it by looking again.
+    const judgeable = !cutOff && stats.endedBy !== "model";
+    if (judgeable && d.judge && m.success && !m.check && !d.disabledChecks?.includes("goal")) {
       const g = await judgeGoal(d.judge, final.png, m.goal, m.success, final.nodes);
       goal = { met: g.met, reason: g.reason };
       if (g.met === false) {
@@ -537,7 +612,7 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
     }
   }
   d.map.save();
-  return { mission: m, steps, executed, candidates, answer, goal, bench, screen, stats };
+  return { mission: m, steps, executed, candidates, answer, goal, bench, screen, stats, ...(cutOff ? { cutOff } : {}) };
 }
 
 /** How long to let the screen settle after an action before looking again. */

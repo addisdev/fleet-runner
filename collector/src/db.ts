@@ -375,6 +375,18 @@ CREATE TABLE IF NOT EXISTS device_locks (
   acquired_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Devices only one kind of job may touch (see src/reserved.ts). A table of its
+-- own rather than a column on devices: a reservation has to exist before the
+-- phone is first cabled up, and has to outlive the registry forgetting the row
+-- -- a device that re-registered unreserved would be open to every job again.
+CREATE TABLE IF NOT EXISTS device_reservations (
+  device_id   TEXT PRIMARY KEY,
+  label       TEXT NOT NULL,
+  note        TEXT,
+  reserved_by TEXT,
+  reserved_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Pipeline event rails: publish/subscribe without an external broker. Old
 -- devices publish trigger events; capable devices subscribe, process, and
 -- publish results to a sibling topic.

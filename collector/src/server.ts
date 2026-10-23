@@ -42,7 +42,8 @@ import { firstArtifactSha, settleWaiters, type DepSettlement } from "./api/mutat
 import { announce } from "./announce.js";
 import { closingStatus, type Closing } from "./skip.js";
 import { forgetStaleSimulators, retireRokuIpDuplicate } from "./registry-hygiene.js";
-import { enqueueJob, matchingDevices, resolveLatestBuild, type JobSpec } from "./queue.js";
+import { deviceReservations, enqueueJob, matchingDevices, resolveLatestBuild, type JobSpec } from "./queue.js";
+import { reservationAllows } from "./reserved.js";
 import { authOf, authWarnings, provenanceOf, registerAuth } from "./auth.js";
 import { needsAdmin } from "./api/policy.js";
 import { registerDeprecations } from "./api/v1/deprecations.js";
@@ -222,10 +223,12 @@ type ClaimantContext = {
   descriptor: Record<string, unknown>;
   beacon: Record<string, unknown> | null;
   beaconAgeS: number | null;
+  /** The label this device is reserved for, or null. See src/reserved.ts. */
+  reservedFor: string | null;
 };
 
 function claimantContext(executor: "device" | "host", claimant: string): ClaimantContext {
-  const empty = { executor, claimant, pools: [] as string[], capabilities: null, descriptor: {}, beacon: null, beaconAgeS: null };
+  const empty = { executor, claimant, pools: [] as string[], capabilities: null, descriptor: {}, beacon: null, beaconAgeS: null, reservedFor: null };
   // A host executor has no device row: it is judged only on targets.executor.
   if (executor !== "device") return empty;
   const dev = db
@@ -239,6 +242,9 @@ function claimantContext(executor: "device" | "host", claimant: string): Claiman
         descriptor: string; last_beacon: string | null; age_s: number | null }
     | undefined;
   if (!dev) return empty;
+  const reservation = db.prepare("SELECT label FROM device_reservations WHERE device_id = ?").get(claimant) as
+    | { label: string }
+    | undefined;
   const pools = effectivePools(dev);
   const capabilities = deviceCapabilities(dev);
   let beacon: Record<string, unknown> | null = null;
@@ -253,6 +259,7 @@ function claimantContext(executor: "device" | "host", claimant: string): Claiman
     },
     beacon,
     beaconAgeS: dev.age_s ?? null,
+    reservedFor: reservation?.label ?? null,
   };
 }
 
@@ -279,11 +286,16 @@ function executorsHolding(spec: JobSpec): Set<string> {
     )
     .all() as { device_id: string; descriptor: string; age_s: number | null }[];
   const holders = new Set<string>();
+  const reserved = deviceReservations();
   for (const r of rows) {
     if (r.age_s === null || r.age_s > ONLINE_S) continue;
     if (spec.targets?.device_id && spec.targets.device_id !== r.device_id) continue;
     let d: Record<string, unknown>;
     try { d = JSON.parse(r.descriptor) as Record<string, unknown>; } catch { continue; }
+    // A reserved device draws no job to its executor unless the job may use
+    // it: otherwise an `os ~ 'android'` job would route to ultra because the
+    // growth phone is cabled there, and then skip with nothing to run on.
+    if (!reservationAllows(spec, r.device_id, reserved.get(r.device_id), d)) continue;
     if (spec.targets?.match) {
       try { if (!evalMatch(spec.targets.match, { ...d, device_id: r.device_id })) continue; } catch { continue; }
     }
@@ -308,6 +320,9 @@ function specEligibleFor(ctx: ClaimantContext, spec: JobSpec): boolean {
   }
 
   if (spec.targets?.device_id && spec.targets.device_id !== ctx.claimant) return false;
+  // Before pools and capabilities: a reserved device is not available to this
+  // job at all, whatever else it would be suited for.
+  if (!reservationAllows(spec, ctx.claimant, ctx.reservedFor, ctx.descriptor)) return false;
   const pool = spec.targets?.pool;
   if (pool && !ctx.pools.includes(pool)) return false;
   // An agent is never handed a workload it did not say it could run. This sits
@@ -599,7 +614,16 @@ app.get("/executor/next-job", async (req, reply) => {
   // beacon with) can only budget itself if it is told the real number.
   const granted = db.prepare("SELECT lease_ttl_s FROM jobs WHERE job_id = ?").get(spec.job_id) as
     { lease_ttl_s?: number } | undefined;
-  return { ...spec, lease: { ...(spec.lease ?? {}), ttl_s: granted?.lease_ttl_s ?? spec.lease?.ttl_s } };
+  return {
+    ...spec,
+    lease: { ...(spec.lease ?? {}), ttl_s: granted?.lease_ttl_s ?? spec.lease?.ttl_s },
+    // Every reservation, device id to label, handed over with the claim. The
+    // executor picks the devices it runs on itself, from what it can see, so
+    // it has to apply the same rule the brain does -- and getting the list in
+    // the claim's own answer means there is no second request to fail and no
+    // window in which it ran on a phone it should not have.
+    reserved_devices: Object.fromEntries(deviceReservations()),
+  };
 });
 
 // --- jobs ---

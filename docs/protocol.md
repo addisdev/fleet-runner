@@ -121,6 +121,12 @@ running.
 }
 ```
 
+A host executor's claim also carries `reserved_devices`, device id to label.
+An executor chooses its own devices from what it can reach, so it must leave out
+a reserved one unless the job's `reservation` is that label and the job pins the
+device by id ([Reserved devices](concepts.md#reserved-devices)). The field is
+new and optional; an executor that predates it simply does not know.
+
 **Enforce `constraints.require_charging` and `min_battery_pct` yourself, before
 you start**, and refuse with a failed result if they are not met. Those are the
 two the runner owns; the collector enforces the rest before it ever offers you

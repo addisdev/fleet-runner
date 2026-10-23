@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.addisdev.fleet-lan-forward</string>
+  <!-- The brain's LAN address on ultra. The brain (`fleet up`, role brain)
+       binds 127.0.0.1:8789 only; this carries 192.168.1.111:8789 to it.
+       ultra's application firewall is in stealth mode and drops LAN
+       connections to a Homebrew node even though `socketfilterfw` reports
+       that path as permitted (measured 2026-10-21; the entry probably holds
+       an older build's ad-hoc signature), while /usr/bin/python3 is let
+       through. See lan-forward.py.
+       The executors and runner apps on the 192.168.50.x side reach this
+       address; the laptop and ultra's own night jobs use loopback.
+       Install: copy lan-forward.py to ~/.fleet/bin/, fill __HOME__, and
+       `launchctl bootstrap gui/$(id -u)` this file. -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__HOME__/.fleet/bin/lan-forward.py</string>
+    <string>192.168.1.111:8789</string>
+    <string>127.0.0.1:8789</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <!-- Standard, not Background: a background job is throttled hard on a busy
+       Mac, and the fleet's devices long-poll through this. -->
+  <key>ProcessType</key>
+  <string>Standard</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/.fleet/logs/lan-forward.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.fleet/logs/lan-forward.log</string>
+</dict>
+</plist>

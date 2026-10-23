@@ -25,6 +25,14 @@
 # Environment:
 #   FLEET_BACKUP_KEEP     how many to keep (default 14)
 #   FLEET_HOME            where config.json lives (default ~/.fleet)
+#   FLEET_BACKUP_NO_DB    1 on a host that runs no brain but keeps the suites
+#                         (fleet-host since 2026-10-21: its executor still runs
+#                         the flows and specs). Without it, a brain that does
+#                         not answer is a failure, never a quiet suites-only run
+#   FLEET_BACKUP_OUTBOX   path to an outbox sealer (`outbox.sh <app> <stamp>
+#                         <path>`, as on ultra) to hand each backup to the
+#                         off-site pull. Unset: no off-site copy from here
+#   FLEET_BACKUP_OUTBOX_APP  the bundle name in the outbox (default fleet-brain)
 set -eu
 
 DEST="${1:-$HOME/fleet-backups}"
@@ -42,7 +50,9 @@ SYSTEM=$(curl -fsS -m 10 "http://127.0.0.1:$PORT/api/system" 2>/dev/null || true
 
 field() { printf '%s' "$SYSTEM" | sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -1; }
 DATA_DIR=$(field data_dir)
-if [ -z "$DATA_DIR" ]; then
+if [ -z "$DATA_DIR" ] && [ "${FLEET_BACKUP_NO_DB:-0}" = "1" ] && [ -z "${FLEET_DATA_DIR:-}" ]; then
+  echo "backup-brain: no brain on this host (FLEET_BACKUP_NO_DB=1); suites and config only"
+elif [ -z "$DATA_DIR" ]; then
   echo "backup-brain: the collector on port $PORT did not answer /api/system." >&2
   echo "  A brain that is down is not a reason to skip the backup, but its data" >&2
   echo "  directory has to come from somewhere. Set FLEET_DATA_DIR and re-run." >&2
@@ -61,7 +71,9 @@ mkdir -p "$OUT"
 echo "backup-brain -> $OUT"
 
 # 1. the database
-if [ -f "$DATA_DIR/fleet.db" ]; then
+if [ -z "$DATA_DIR" ]; then
+  echo "  fleet.db        none: this host runs no brain"
+elif [ -f "$DATA_DIR/fleet.db" ]; then
   sqlite3 "$DATA_DIR/fleet.db" ".backup '$OUT/fleet.db'"
   # A backup nobody checked is a file, not a backup.
   if [ "$(sqlite3 "$OUT/fleet.db" 'pragma integrity_check;')" != "ok" ]; then
@@ -83,11 +95,29 @@ fi
 {
   echo "taken     $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "host      $(hostname)"
-  echo "data_dir  $DATA_DIR"
+  echo "data_dir  ${DATA_DIR:-<none: no brain on this host>}"
   echo "flows     ${FLOWS:-<unset>}"
   echo "specs     ${SPECS:-<unset>}"
   echo "fleet     $("$FLEET_HOME/bin/fleet" version 2>/dev/null | head -1 || echo unknown)"
 } > "$OUT/MANIFEST.txt"
+
+# Off-site. The sealer encrypts and verifies; this only hands it one gzip of
+# the directory (a sqlite file shrinks a lot, and the outbox pays per byte on
+# both machines). A failed hand-off fails the run: the local copy is fine, but
+# nobody would otherwise notice the off-site one had stopped.
+if [ -n "${FLEET_BACKUP_OUTBOX:-}" ]; then
+  APP="${FLEET_BACKUP_OUTBOX_APP:-fleet-brain}"
+  TMP=$(mktemp -d "${TMPDIR:-/tmp}/fleet-outbox.XXXXXX")
+  tar -czf "$TMP/brain-$STAMP.tar.gz" -C "$DEST" "brain-$STAMP"
+  if "$FLEET_BACKUP_OUTBOX" "$APP" "$(date -u +%Y-%m-%dT%H%M%SZ)" "$TMP/brain-$STAMP.tar.gz"; then
+    echo "  outbox          sealed as $APP ($(wc -c < "$TMP/brain-$STAMP.tar.gz" | tr -d ' ') bytes before encryption)"
+    rm -rf "$TMP"
+  else
+    rm -rf "$TMP"
+    echo "backup-brain: the outbox refused the bundle; the local copy is kept" >&2
+    OUTBOX_FAILED=1
+  fi
+fi
 
 # Rotation. Sorted by name, which is sorted by time because the stamp leads.
 COUNT=$(find "$DEST" -maxdepth 1 -type d -name 'brain-*' | wc -l | tr -d ' ')
@@ -99,3 +129,4 @@ if [ "$COUNT" -gt "$KEEP" ]; then
 fi
 
 echo "  kept $(find "$DEST" -maxdepth 1 -type d -name 'brain-*' | wc -l | tr -d ' ') of $KEEP"
+[ -z "${OUTBOX_FAILED:-}" ] || exit 1

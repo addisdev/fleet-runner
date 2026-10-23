@@ -1,5 +1,5 @@
 /**
- * The work commands: `fleet devices`, `run`, `job`, `wait`, `results`...
+ * The work commands: `fleet devices`, `device`, `run`, `job`, `wait`, `results`...
  *
  * The same /api/v1 operations the MCP tools call, through the same generated
  * client, for the two users who prefer a shell: a person, and a coding agent
@@ -187,6 +187,7 @@ async function buildSpec(client: FleetClient, a: Args): Promise<JobSpecInput> {
     };
   }
   if (str(a, "backend")) spec.backend = str(a, "backend");
+  if (str(a, "reservation")) spec.reservation = str(a, "reservation");
   if (str(a, "priority")) spec.priority = num(a, "priority", 0);
   if (str(a, "id")) spec.job_id = str(a, "id");
   if (a.flags.fanout === true) spec.fanout = true;
@@ -216,11 +217,40 @@ async function devices(client: FleetClient, a: Args) {
   table(
     page.items.map((d) => {
       const ds = d.descriptor as Record<string, unknown>;
-      return [d.device_id, d.status, d.platform, String(ds.model ?? ""), String(ds.os ?? ""), d.pools.join(","), d.current_job ?? "", ago(d.last_seen)];
+      return [d.device_id, d.status, d.platform, String(ds.model ?? ""), String(ds.os ?? ""), d.pools.join(","), d.reserved_for ?? "", d.current_job ?? "", ago(d.last_seen)];
     }),
-    ["DEVICE", "STATUS", "PLATFORM", "MODEL", "OS", "POOLS", "RUNNING", "SEEN"],
+    ["DEVICE", "STATUS", "PLATFORM", "MODEL", "OS", "POOLS", "RESERVED", "RUNNING", "SEEN"],
   );
   return EXIT.passed;
+}
+
+/**
+ * `fleet device reserve <id> <label>` and `fleet device unreserve <id>`.
+ *
+ * A reserved device is given only to jobs whose `reservation` is the label and
+ * that pin the device by id; everything else -- fan-out, pools, an unpinned
+ * match, the explore night -- skips it. Admin scope, because it decides who
+ * may use a piece of hardware.
+ */
+async function device(client: FleetClient, a: Args) {
+  const [action, id, label] = a.positional;
+  if (action === "reserve") {
+    if (!id || !label) throw new UsageError("usage: fleet device reserve <device_id> <label> [--note TEXT]");
+    const r = await client.reserveDevice(id, { label, ...(str(a, "note") ? { note: str(a, "note") } : {}) });
+    if (a.flags.json) return printJson(r), EXIT.passed;
+    out(`${r.device_id} reserved for ${r.reserved_for}`);
+    out(`  only jobs with "reservation": "${r.reserved_for}" that pin it (targets.device_id, or targets.match "device_id == '${r.device_id}'") will use it`);
+    if (!r.registered) err(`  note: ${r.device_id} has not registered with this collector yet -- right if it is not cabled up, a typo otherwise`);
+    return EXIT.passed;
+  }
+  if (action === "unreserve") {
+    if (!id) throw new UsageError("usage: fleet device unreserve <device_id>");
+    const r = await client.unreserveDevice(id);
+    if (a.flags.json) return printJson(r), EXIT.passed;
+    out(r.was ? `${r.device_id} is no longer reserved (was ${r.was})` : `${r.device_id} was not reserved`);
+    return EXIT.passed;
+  }
+  throw new UsageError("usage: fleet device reserve <device_id> <label> [--note TEXT] | fleet device unreserve <device_id>");
 }
 
 async function workloads(client: FleetClient, a: Args) {
@@ -562,8 +592,10 @@ function skill(a: Args) {
 
 export const WORK_USAGE = `
   fleet devices [--all] [--platform P] [--pool P]     What is on the shelf.
+  fleet device reserve ID LABEL [--note TEXT] | fleet device unreserve ID
+                          Keep a device for jobs with "reservation": LABEL that pin it by id (admin).
   fleet workloads [NAME] [--available]                What it can run; NAME prints an example spec.
-  fleet run WORKLOAD [--device ID|--pool P|--match EXPR] [--app NAME] [--param k=v]...
+  fleet run WORKLOAD [--device ID|--pool P|--match EXPR] [--reservation LABEL] [--app NAME] [--param k=v]...
             [--spec FILE|-] [--fanout] [--validate] [--no-wait] [--timeout S]
                           Validate, queue, wait, print the verdict. Exit code is the verdict.
   fleet job ID | fleet wait ID [--timeout S]          A job's verdict, now or when it finishes.
@@ -584,7 +616,7 @@ export const WORK_USAGE = `
   Exit codes: 0 passed, 1 failed, 2 usage/invalid spec, 3 still running, 4 skipped (nothing ran), 5 refused/unreachable.
 `;
 
-export const WORK_COMMANDS = new Set(["devices", "workloads", "run", "job", "wait", "cancel", "retry", "results", "flaky", "artifact", "findings", "finding", "verdict", "login", "logout", "whoami", "token", "skill"]);
+export const WORK_COMMANDS = new Set(["devices", "device", "workloads", "run", "job", "wait", "cancel", "retry", "results", "flaky", "artifact", "findings", "finding", "verdict", "login", "logout", "whoami", "token", "skill"]);
 
 export async function workCommand(command: string, argv: string[]): Promise<number> {
   const a = parseArgs(argv);
@@ -596,6 +628,7 @@ export async function workCommand(command: string, argv: string[]): Promise<numb
     const client = connect({ url: str(a, "url"), token: str(a, "token"), source: "cli" });
     switch (command) {
       case "devices": return await devices(client, a);
+      case "device": return await device(client, a);
       case "workloads": return await workloads(client, a);
       case "run": return await run(client, a);
       case "job": return await job(client, a, false);

@@ -118,6 +118,8 @@ export type Device = {
   pools_override: string[] | null;
   /** null: an agent that predates capabilities, offered everything. */
   capabilities: string[] | null;
+  /** The reservation this device is kept for, or null. A reserved device is offered only to a job whose reservation is this label and that pins the device by id (targets.device_id, or a targets.match such as device_id == '<id>'); fan-out, pools and other matches skip it. */
+  reserved_for: string | null;
   last_net: string | null;
   ttl_s: number | null;
   expired: boolean;
@@ -195,7 +197,7 @@ export type DeviceOutcome = {
 export type Error = {
   error: {
     /** Stable and machine-readable. Branch on this, not on the message. */
-    code: "bad_request" | "invalid_spec" | "not_found" | "duplicate_job" | "no_capable_agent" | "no_matching_devices" | "secret_in_spec" | "no_build" | "invalid_match" | "invalid_dependency" | "unresolved_reference" | "conflict" | "unauthorized" | "insufficient_scope" | "forbidden" | "rate_limited" | "internal";
+    code: "bad_request" | "invalid_spec" | "not_found" | "duplicate_job" | "no_capable_agent" | "no_matching_devices" | "device_reserved" | "secret_in_spec" | "no_build" | "invalid_match" | "invalid_dependency" | "unresolved_reference" | "conflict" | "unauthorized" | "insufficient_scope" | "forbidden" | "rate_limited" | "internal";
     message: string;
     /** What to do about it, when there is something to do. */
     hint?: string;
@@ -558,6 +560,8 @@ export type JobSpecInput = {
   params?: Record<string, unknown>;
   /** Job ids this one waits for. The job is enqueued as 'waiting' and becomes 'queued' when the last of them finishes; if any of them fails or is cancelled, this one fails with last_error naming it. While waiting, a spec may reference a dependency's output: "${jobs.<id>.artifact}" resolves to the first sha256 in that job's final row, and "${jobs.<id>.metrics.<key>}" to one of its metrics. A whole-string reference keeps the value's type, so a metric stays a number. Referencing a job not listed here is refused at enqueue. */
   depends_on?: string[];
+  /** The device reservation this job holds. A device reserved with `fleet device reserve <id> <label>` is offered only to a job whose reservation is that label and that names the device explicitly: targets.device_id, or a targets.match that pins its id (device_id == '<id>'). Fan-out, pools and every other match skip it, and a job that pins a reserved device without the label is refused with device_reserved. On an unreserved device the field changes nothing. */
+  reservation?: string;
   /** Whether a higher-priority job may ask this one to step aside. When true, a beacon is answered with preempt:true once a strictly higher-priority queued job would go to the same claimant; the runner is expected to checkpoint, upload its progress, and post a final row with preempted:true. That requeues the job with params.resume_from set to the uploaded sha256 and hands the attempt back, so stepping aside never counts against max_attempts. Equal priority does not preempt. */
   preemptible?: boolean;
   /** How long a claim stays valid without proof of life. The runner renews it by posting POST /results kind=beacon with this job_id; a lapsed lease is requeued by the collector's sweep, and failed once max_attempts is spent. Omit for the defaults: 600 s, or 14400 s for drain/soak, which run for hours between beacons. */
@@ -574,9 +578,9 @@ export type JobSpecInput = {
   });
   targets?: {
     pool?: string;
-    /** pin this job to exactly one device-executor agent */
+    /** pin this job to exactly one device (a device-executor agent, or a device a host executor drives); the way to name a reserved device */
     device_id?: string;
-    /** descriptor expression, e.g. "ram_mb >= 4000 && os ~ 'android'" — fields: model, soc, ram_mb, os, app_ver, device_id, pools; ops == != < <= > >= ~(regex) && || ! ( ) */
+    /** descriptor expression, e.g. "ram_mb >= 4000 && os ~ 'android'" — fields: model, soc, ram_mb, os, app_ver, device_id, pools; a reserved device is matched only by a job carrying its reservation whose expression pins its id; ops == != < <= > >= ~(regex) && || ! ( ) */
     match?: string;
     /** host jobs: hold collector device locks on all targets while running, starving device-executor agents until release */
     exclusive?: boolean;
@@ -644,6 +648,25 @@ export type JobSummary = {
     detail: string;
     wait: string;
   };
+};
+
+export type Reservation = {
+  device_id: string;
+  /** The label. A job holds the reservation by setting `reservation` to it. */
+  reserved_for: string;
+  note: string | null;
+  /** Who reserved it, when tokens are on; otherwise the source. */
+  reserved_by: string | null;
+  reserved_at: string | null;
+  /** Whether the device has registered yet. false is allowed (reserve before cabling) but is also what a typo looks like. */
+  registered: boolean;
+};
+
+export type ReserveInput = {
+  /** What the device is kept for; jobs carry it as `reservation`. */
+  label: string;
+  /** Why, for whoever reads the shelf. */
+  note?: string | null;
 };
 
 export type Result = {
@@ -724,6 +747,12 @@ export type TemplateList = {
   per_page: number;
   total: number;
   pages: number;
+};
+
+export type Unreservation = {
+  device_id: string;
+  /** The label it was reserved for, or null. */
+  was: string | null;
 };
 
 export type Validation = {
@@ -835,6 +864,33 @@ export class FleetClient extends Transport {
    */
   getDevice(id: string, opts?: CallOptions): Promise<DeviceDetail> {
     return this.request<DeviceDetail>("GET", `/api/v1/devices/${enc(id)}`, { ...opts });
+  }
+
+  /**
+   * Keep a device for one kind of work: only jobs with this reservation label that pin the device may use it.
+   *
+   * A reserved device is skipped by fan-out, pools and every targets.match that does not pin its id, on
+   * the brain and in the host executor's own device selection. A job may use it only with `reservation`
+   * set to the label and the device named in targets.device_id or a targets.match such as device_id ==
+   * '<id>'. The device need not have registered yet, so a phone can be reserved before it is cabled up;
+   * `registered` says whether it has. Reserving again with the same label updates the note; a different
+   * label is a conflict until the device is unreserved.
+   *
+   * `POST /api/v1/devices/{id}/reserve` · scope: admin
+   */
+  reserveDevice(id: string, body: ReserveInput, opts?: CallOptions): Promise<Reservation> {
+    return this.request<Reservation>("POST", `/api/v1/devices/${enc(id)}/reserve`, { ...opts, body });
+  }
+
+  /**
+   * Give a reserved device back to the shelf: every job that matches it may use it again.
+   *
+   * Not an error when the device was not reserved; `was` says what it was reserved for, or null.
+   *
+   * `POST /api/v1/devices/{id}/unreserve` · scope: admin
+   */
+  unreserveDevice(id: string, opts?: CallOptions): Promise<Unreservation> {
+    return this.request<Unreservation>("POST", `/api/v1/devices/${enc(id)}/unreserve`, { ...opts });
   }
 
   /**

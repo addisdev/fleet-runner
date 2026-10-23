@@ -22,6 +22,7 @@ const EXPLORE_RUN_KEEP_DAYS = 7;
 type Announce = (event: { type: string; [k: string]: unknown }) => void;
 type MatchingDevices = (
   pool?: string, match?: string, workload?: string, backend?: string | null,
+  job?: { reservation?: unknown; targets?: { device_id?: string; match?: string } | null },
 ) => {
   device_id: string; pools: string; pools_override: string | null;
   descriptor: string; capabilities: string | null;
@@ -424,7 +425,7 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
     if (!requireToken(req, reply)) return;
     const body = (req.body ?? {}) as {
       targets?: { pool?: string; match?: string; device_id?: string };
-      workload?: string; backend?: string;
+      workload?: string; backend?: string; reservation?: string;
     };
     const t = body.targets ?? {};
     if (t.match && !isValidMatch(t.match))
@@ -433,7 +434,9 @@ export function registerMutations(app: FastifyInstance, announce: Announce, matc
     // The composer knows the workload it is about to enqueue, so the preview
     // counts the agents that can actually run it rather than every agent the
     // pool and match happen to select.
-    let devices = matchingDevices(t.pool, t.match, body.workload, body.backend ?? null);
+    // With the reservation the job would carry, so a reserved device is
+    // counted exactly when the job could have it.
+    let devices = matchingDevices(t.pool, t.match, body.workload, body.backend ?? null, { reservation: body.reservation, targets: t });
     if (t.device_id) devices = devices.filter((d) => d.device_id === t.device_id);
 
     return {

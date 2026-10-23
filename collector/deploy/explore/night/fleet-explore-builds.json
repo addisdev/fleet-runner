@@ -4,7 +4,7 @@
   "command": [
     "bash",
     "-lc",
-    "source ~/explore/env.sh && cd ~/fleet-runner/collector && bash deploy/explore/nightly-builds.sh --tunnel runner-ts:192.168.50.27:8788"
+    "source ~/explore/env.sh && cd ~/fleet-runner/collector && export FLEET_URL=http://127.0.0.1:8789 && bash deploy/explore/nightly-builds.sh"
   ],
   "priority": 19,
   "needs_gb": 16,

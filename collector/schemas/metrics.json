@@ -35,6 +35,7 @@
     "explore_cached_tokens_mean",
     "explore_candidates",
     "explore_cards_planned",
+    "explore_cut_off",
     "explore_findings",
     "explore_findings_new",
     "explore_minutes",

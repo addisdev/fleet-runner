@@ -195,3 +195,46 @@ test("findings, finding --flow and verdict: the morning brief and a finding beco
   const notABug = await fleet(["verdict", String(id), "not-a-bug"]);
   assert.match(notABug.stdout, /retired/);
 });
+
+test("device reserve keeps a phone for one job; devices shows it; unreserve gives it back", async () => {
+  const early = await fleet(["device", "reserve", "cli-not-cabled-yet", "growth-ig"]);
+  assert.equal(early.code, 0, early.stderr);
+  assert.match(early.stderr, /has not registered/);
+
+  const r = await fleet(["device", "reserve", "cli-phone", "growth-ig", "--note", "signed in to the pilot account"]);
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /cli-phone reserved for growth-ig/);
+
+  const list = await fleet(["devices"]);
+  assert.match(list.stdout, /RESERVED/);
+  assert.match(list.stdout.split("\n").find((l) => l.startsWith("cli-phone")) ?? "", /growth-ig/);
+  const listed = json(await fleet(["devices", "--json"])).items.find((d: { device_id: string }) => d.device_id === "cli-phone");
+  assert.equal(listed.reserved_for, "growth-ig");
+
+  const clash = await fleet(["device", "reserve", "cli-phone", "someone-else"]);
+  assert.equal(clash.code, 5);
+  assert.match(clash.stderr, /conflict/);
+
+  // Pinned without the label: the validation step refuses it before anything
+  // is queued (exit 2, like any spec the collector would not take), and
+  // queueing it anyway is refused with the code.
+  const refused = await fleet(["run", "benchmark", "--device", "cli-phone", "--timeout", "30"]);
+  assert.equal(refused.code, 2, refused.stderr);
+  assert.match(refused.stderr, /reserved for 'growth-ig'/);
+  const forced = await fleet(["run", "benchmark", "--device", "cli-phone", "--no-validate", "--no-wait"]);
+  assert.equal(forced.code, 5, forced.stderr);
+  assert.match(forced.stderr, /device_reserved/);
+
+  // With it: runs on the phone.
+  const held = await fleet(["run", "benchmark", "--device", "cli-phone", "--reservation", "growth-ig", "--timeout", "30", "--json"]);
+  assert.equal(held.code, 0, held.stderr);
+  assert.equal(json(held).verdict, "passed");
+
+  const un = await fleet(["device", "unreserve", "cli-phone"]);
+  assert.equal(un.code, 0, un.stderr);
+  assert.match(un.stdout, /no longer reserved \(was growth-ig\)/);
+  await fleet(["device", "unreserve", "cli-not-cabled-yet"]);
+
+  const usage = await fleet(["device", "reserve", "cli-phone"]);
+  assert.equal(usage.code, 2);
+});
