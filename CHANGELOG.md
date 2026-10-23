@@ -16,6 +16,12 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.2] — 2026-10-23
+
+A device can be reserved for one kind of work, so a signed-in phone is never
+lent to a job that only matched its OS. The reference lab's brain moves to
+ultra, and the explore night survives a model unloaded under it.
+
 ### Added
 
 - **Reserved devices.** `fleet device reserve <id> <label>` (and
@@ -36,14 +42,6 @@ a CI job fails when they disagree.
   field, and `fleet run` a `--reservation` flag.
   ([#106](https://github.com/addisdev/fleet-runner/pull/106))
 
-### Fixed
-
-- **A host job pinned by `targets.match "device_id == '<serial>'"` matched
-  nothing once claimed.** The brain evaluated `device_id` when routing it, but
-  the executor described an Android target without one, so the job reached the
-  right Mac and then skipped with no targets. The executor's descriptor now
-  carries `device_id`. ([#106](https://github.com/addisdev/fleet-runner/pull/106))
-
 ### Changed
 
 - **The reference lab's brain moved to ultra.** It answers on ultra's loopback
@@ -61,6 +59,11 @@ a CI job fails when they disagree.
 
 ### Fixed
 
+- **A host job pinned by `targets.match "device_id == '<serial>'"` matched
+  nothing once claimed.** The brain evaluated `device_id` when routing it, but
+  the executor described an Android target without one, so the job reached the
+  right Mac and then skipped with no targets. The executor's descriptor now
+  carries `device_id`. ([#106](https://github.com/addisdev/fleet-runner/pull/106))
 - **A model unloaded mid-night is loaded again.** On ultra the model shelf
   unloads an on-demand model it sees idle under memory pressure, and between
   two missions Holo4 is idle: on the first three 0.9.0 nights it was dropped
@@ -1578,7 +1581,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/addisdev/fleet-runner/compare/v0.7.2...v0.8.0
