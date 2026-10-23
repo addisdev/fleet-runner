@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Fleet Runner",
-    "version": "0.9.1",
+    "version": "0.9.2",
     "description": "The Fleet Runner control API.\n\nEvery list is `{items, page, per_page, total, pages}`. Every failure is\n`{error: {code, message, hint?}}`; branch on `code`. Timestamps are ISO 8601 UTC.\n\nThe usual sequence for running something: listWorkloads (pick one, copy its\nexample), validateJob (fix what it says), createJob, waitJob until\n`finished`, then read `verdict`. `skipped` means nothing ran; it is not a pass.\n\nAuth is off unless the collector runs with FLEET_AUTH=tokens. Then send\n`Authorization: Bearer <token>`; scopes are read, run (implies read), admin\n(implies run), agent (the runner protocol) and delegate (a gateway naming the\nperson it acts for in X-Fleet-Actor). Each operation's `x-fleet-scope` says\nwhich it needs. Send `X-Fleet-Source` (mcp, cli, ci...) so jobs record where\nthey came from.",
     "license": {
       "name": "MIT"
