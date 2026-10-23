@@ -34,6 +34,7 @@ a CI job fails when they disagree.
   phone can be reserved before it is cabled up. `fleet devices` gains a
   `RESERVED` column, `fleet_devices` and `/api/v1/devices` a `reserved_for`
   field, and `fleet run` a `--reservation` flag.
+  ([#106](https://github.com/addisdev/fleet-runner/pull/106))
 
 ### Fixed
 
@@ -41,7 +42,7 @@ a CI job fails when they disagree.
   nothing once claimed.** The brain evaluated `device_id` when routing it, but
   the executor described an Android target without one, so the job reached the
   right Mac and then skipped with no targets. The executor's descriptor now
-  carries `device_id`.
+  carries `device_id`. ([#106](https://github.com/addisdev/fleet-runner/pull/106))
 
 ## [0.9.1] — 2026-10-18
 
