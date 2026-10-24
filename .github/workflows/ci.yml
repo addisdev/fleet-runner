@@ -41,7 +41,7 @@ jobs:
       roku: ${{ steps.filter.outputs.roku }}
       desktop: ${{ steps.filter.outputs.desktop }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The diff below needs both ends of the range in this checkout, and
           # the default shallow clone has neither.
@@ -102,7 +102,7 @@ jobs:
     name: one version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: node scripts/version.mjs check
 
   # Also unconditional, and for the same reason as `version`: the numbers it
@@ -112,7 +112,7 @@ jobs:
     name: repo scripts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Unit tests for scripts/
         run: node --test scripts/*.test.mjs
       - name: Documented counts match the code
@@ -132,7 +132,7 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The tags and the whole of develop's history since the last one.
           fetch-depth: 0

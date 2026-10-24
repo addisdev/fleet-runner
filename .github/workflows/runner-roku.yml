@@ -15,10 +15,11 @@ jobs:
       run:
         working-directory: runner-roku
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22.13"
+          package-manager-cache: false
       # Pinned, so a new compiler release that adds a diagnostic is a change
       # somebody makes on purpose rather than a red build on an unrelated PR.
       - run: >
