@@ -182,7 +182,10 @@ jobs:
     # Without this the gate inherits the default "only if every dependency
     # succeeded", which makes a skipped suite skip the gate -- and a skipped
     # required check never reports, which is the exact bug being fixed.
-    if: always()
+    # !cancelled(), not always(): a run that cancel-in-progress superseded has no
+    # verdict to give, and always() failed the gate on its cancelled jobs (kit v1.40.4).
+    # It still runs when a job fails or times out.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Every suite green or skipped
