@@ -16,6 +16,16 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Changed
+
+- **Explore builds read Dozehound's one repo.** `nightly-builds.sh` built
+  `dozehound-tvos` and `dozehound-firetv` from clones of their own repos, which
+  were archived on 2026-10-24 when Dozehound became one repo
+  (`addisdev/dozehound`). Both now build from one checkout,
+  `~/explore/builds/dozehound`, in `tvos/` and `firetv/`, under the same app
+  names; the build is `develop-<sha>` of the last commit that touched the
+  folder, so a backend-only commit does not rebuild tvOS.
+
 ## [0.9.2] — 2026-10-23
 
 A device can be reserved for one kind of work, so a signed-in phone is never
