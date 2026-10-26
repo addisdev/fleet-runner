@@ -59,7 +59,7 @@ jobs:
       version: ${{ steps.check.outputs.version }}
       prerelease: ${{ steps.check.outputs.prerelease }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - id: check
         name: The tag, VERSION and every component agree
@@ -101,9 +101,9 @@ jobs:
     needs: gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # The floor the collector needs, not the newest available: building on
           # the oldest supported runtime is what stops a release quietly
@@ -205,7 +205,7 @@ jobs:
           (cd out && sha256sum fleet-* > SHASUMS256.txt)
           cat out/SHASUMS256.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-archives
           path: out/
@@ -221,7 +221,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # QEMU so one x86 runner can produce the arm64 image as well. It is slow
       # in general and cheap here: the Dockerfile compiles nothing, so the only
@@ -232,12 +232,12 @@ jobs:
       # faster and is what to reach for if this ever becomes slow enough to
       # notice. It is not done, because it is three more jobs to get right for a
       # build that has never run once.
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
 
       # GITHUB_TOKEN, with the `packages: write` granted above. No invented
       # secret: this token exists in every workflow run.
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -277,7 +277,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           # The repository root, because the build stage copies collector/,
           # runner-machine/ and fleet/ -- the bundle is all three.
@@ -301,9 +301,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-archives
           path: out
