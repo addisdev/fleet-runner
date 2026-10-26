@@ -55,13 +55,23 @@ jobs:
       # tray), plus what the smoke itself uses: Xvfb for a display, dbus for a
       # session bus, WebKitWebDriver for tauri-driver, ImageMagick to capture
       # the screen.
+      #
+      # WebKitWebDriver's package is webkitgtk-webdriver from Ubuntu 26.04 and
+      # webkit2gtk-driver before it, and ubuntu-latest moves between the two a
+      # runner at a time. Install whichever this image has a candidate for:
+      # `apt-cache show` is no test, since 24.04 knows the new name and has
+      # nothing to install under it.
       - name: Linux dependencies
         run: |
           sudo apt-get update
+          driver=webkit2gtk-driver
+          if apt-cache policy webkitgtk-webdriver | grep 'Candidate: [0-9]' >/dev/null; then
+            driver=webkitgtk-webdriver
+          fi
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
             libssl-dev libayatana-appindicator3-dev librsvg2-dev \
-            xvfb x11-utils dbus-x11 webkit2gtk-driver imagemagick jq
+            xvfb x11-utils dbus-x11 "$driver" imagemagick jq
       - name: Stage the fleet sidecar
         run: |
           npm --prefix collector ci
