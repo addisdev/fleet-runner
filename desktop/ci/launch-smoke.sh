@@ -154,7 +154,7 @@ fi
 
 echo "== half 2: drive the settings window through tauri-driver"
 command -v tauri-driver >/dev/null || fail "tauri-driver is not on PATH"
-command -v WebKitWebDriver >/dev/null || fail "WebKitWebDriver is not on PATH (apt: webkit2gtk-driver)"
+command -v WebKitWebDriver >/dev/null || fail "WebKitWebDriver is not on PATH (apt: webkitgtk-webdriver, or webkit2gtk-driver before Ubuntu 26.04)"
 tauri-driver --port 4444 >"$out/tauri-driver.log" 2>&1 &
 driver=$!
 for _ in $(seq 1 50); do curl -fsS http://127.0.0.1:4444/status >/dev/null 2>&1 && break; sleep 0.2; done
