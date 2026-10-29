@@ -18,7 +18,7 @@ and nothing said which of them held the iPhone.
 | **runner-host** | MacBook Pro (Mac14,10), macOS 26.7, Xcode 27 | **Nothing of Fleet Runner's, since 2026-09-22.** It runs the GitHub Actions runner farm, which is its own project | `ssh runner-host` |
 | **the dev MacBook** | M1 Pro, 16 GB, macOS 27, Xcode 27 | A machine agent and the `mac-dev` executor in pool `personal`, plus the SSH tunnel and the alert receiver. Its executor refuses heavy work above load 50 or under 2 GB of free swap (`FLEET_MAX_LOAD`, `FLEET_MIN_FREE_SWAP_MB`) | it is the machine you are on |
 | **the mini** | Mac mini M4, macOS 15.6.1, up 224 days | Nothing fleet-related | `ssh mini`, over the tailnet |
-| **ultra** | Mac Studio, M5 Ultra, 96 GB, macOS 27 | **The brain** (since 2026-10-21): `fleet up` with role `brain` on `127.0.0.1:8789`, data in `~/fleet-brain`, and a forwarder that puts it on the LAN at `192.168.1.111:8789`. Also the exploratory QA nights: the `ultra` executor, its Android emulator and Apple simulators, and the model gateway they call. Its night queue runs them, not the brain's schedules; [Running it on ultra](deploy/explore-on-ultra.md) is its runbook | `ssh ultra` (`ultra-ts` away), `http://192.168.1.111:8789` from the house |
+| **ultra** | Mac Studio, M5 Ultra, 96 GB, macOS 27 | **The brain** (since 2026-10-21): `fleet up` with role `brain` on `127.0.0.1:8789`, data in `~/fleet-brain`, and a forwarder that puts it on the LAN at `192.168.1.111:8789`. Also the exploratory QA nights: the `ultra` executor, its Android emulator and Apple simulators, and the model gateway they call. Its night queue runs them, not the brain's schedules; [Running it on ultra](deploy/explore-on-ultra.md) is its runbook. Since 2026-10-28 also the **`ultra-phone`** executor and two phones on its USB (below) | `ssh ultra` (`ultra-ts` away), `http://192.168.1.111:8789` from the house |
 
 **Why the brain moved to ultra (2026-10-21).** It was on fleet-host because
 that Mac is on the shelf's subnet and is macOS 12, which has no local-network
@@ -44,9 +44,47 @@ Two things make it work, and both are traps:
   Everyone else keeps their own port: the laptop still reaches the brain at
   `127.0.0.1:18788` through its tunnel.
 
-Executors stay where the devices are cabled: fleet-host keeps the S8+, the
-Roku and the Chrome nightlies, and reaches the brain over the LAN (macOS 12 has
-no local-network gate, so its launchd service can).
+Executors stay where the devices are cabled: fleet-host keeps the Roku and the
+Chrome nightlies, and reaches the brain over the LAN (macOS 12 has no
+local-network gate, so its launchd service can).
+
+### ultra's phones and the `ultra-phone` executor (2026-10-28)
+
+Both shelf phones moved to ultra's USB on 2026-10-28, each **reserved**:
+
+| Phone | Serial | Reservation | Used by |
+|---|---|---|---|
+| Galaxy S8+ (SM-G955U1, Android 9) | `988a1b3541354f565a` | `growth-instagram` | Taylab Social's growth phone (GreenFolio's accounts; `addisdev/taylab-social` `phone/`). Nothing else may touch it |
+| Galaxy S9 (SM-G960U1, Android 10) | `444f4b3854573398` | `nightly-phone` | `nightly-fleet-ui-smoke` and `nightly-bug-garden-regressions`, moved here from fleet-host (their flows copied to ultra `~/fleet-flows/{fleetrunner,bug-garden}`) |
+
+They are driven by a second Fleet process on ultra, the **`ultra-phone`**
+executor, beside the brain and never inside it:
+
+- LaunchAgent `com.addisdev.fleet-phone` (hand-written: `fleet service install`
+  has one fixed label, `com.addisdev.fleet`, which the brain uses), running
+  `fleet.mjs up --role executor` with `FLEET_HOME=~/.fleet-phone`, so its
+  name and config never mix with the brain's. Config
+  `~/.fleet-phone/config.json`: `executor.name ultra-phone`, collector
+  `http://127.0.0.1:8789`, `env.FLEET_FLOWS_DIR ~/fleet-flows`. Logs
+  `~/.fleet-phone/logs/`.
+- Its PATH and `JAVA_HOME` are in the plist: platform-tools
+  (`~/Library/Android/sdk/platform-tools`), Homebrew `openjdk@21` (keg-only,
+  so not on any default path), `~/.maestro/bin` (Maestro 2.8.0).
+- It loads every driver (adb, simctl, devicectl, roku) and there is no setting
+  to limit them. That is safe only because every ultra explore spec pins
+  `targets.executor: ultra` and both phones are reserved; a new unpinned job
+  could land on it.
+- Proof 2026-10-28: `s9-proof-ui-smoke-214023` passed on the S9 in 60 s through
+  `ultra-phone`, and the executor logged "leaving out 1 reserved device(s):
+  988a1b3541354f565a (reserved for growth-instagram)".
+
+Restart it with `launchctl kickstart -k gui/$(id -u)/com.addisdev.fleet-phone`;
+disable it by renaming the plist to `.plist.disabled` (see below).
+
+**Do not run `fleet up --help` on a machine whose brain is running.** `up`
+ignores `--help` and starts a second brain, which crash-loops on the taken port
+five times and gives up. Harmless, but it looks alarming in `brain.log`; read
+the options in `fleet/src/cli.ts` instead.
 
 **Why runner-host was taken off the fleet.** It is the only Mac here with a
 current Xcode, and it was running every iOS and web nightly — alongside forty
@@ -229,8 +267,8 @@ Six enabled. All times local to the brain (ultra, America/New_York; fleet-host w
 |---|---|---|---|
 | `nightly-synthetic-shelf` | 02:00 | fanout, pool `machines` | A machine's throughput moved, or an agent is not claiming. This is the comparison table |
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
-| `nightly-fleet-ui-smoke` | 02:30 | `fleet-host`, an Android device | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The Galaxy S8+ is plugged in again but still has a PIN (WB-195): the flow ran against its lock screen and failed `"Fleet Runner" is visible`. From the release after 0.9.0 the executor wakes a phone and swipes its lock screen away, and a PIN makes the run `skipped` with that reason instead |
-| `nightly-bug-garden-regressions` | 02:45 | `fleet-host`, an Android device | Bug garden's smoke flow, then every bug-garden finding marked real and then fixed, replayed as a regression test. The garden's defects are planted, so finding #18 (BG-01, marked fixed on purpose) comes back every night and reopens: that is the run working. `skipped:` while the S8+ is locked with a PIN (WB-195). Proved once on ultra's emulator on 2026-10-18 (`bg-regression-proof-1`) |
+| `nightly-fleet-ui-smoke` | 02:30 | `ultra-phone`, the S9 (`nightly-phone`) since 2026-10-28 (fleet-host before) | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The S8+ then had a PIN (WB-195). Green again 2026-10-28 on the S9 (`s9-proof-ui-smoke-214023`, 60 s). From 0.9.1 the executor wakes a phone and swipes its lock screen away, and a PIN makes the run `skipped` with that reason instead |
+| `nightly-bug-garden-regressions` | 02:45 | `ultra-phone`, the S9 (`nightly-phone`) since 2026-10-28 (fleet-host before) | Bug garden's smoke flow, then every bug-garden finding marked real and then fixed, replayed as a regression test. The garden's defects are planted, so finding #18 (BG-01, marked fixed on purpose) comes back every night and reopens: that is the run working. Runs on the S9 since 2026-10-28. Proved once on ultra's emulator on 2026-10-18 (`bg-regression-proof-1`) |
 | `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | Green. The baseline was re-accepted on 2026-09-22 from fleet-host's own captures, after Aliquant's sign-in page gained a "Forgot password?" link; the old one had diverged 2.7% on desktop and 6.1% on mobile since 09-10. The `webkit` and `mobile-safari` baselines are still the August ones, because nothing runs those projects now |
 | `nightly-tvloop-hardware` | 05:00 | `fleet-host`, the Roku, exclusive | tvloop's doctor, install, contract tests and flow replay. `skipped:` until the Roku password is in fleet-host's Keychain (status `skipped` from 0.9). Red from doctor means the Roku is asleep, off the network, or out of developer mode |
 
