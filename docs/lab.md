@@ -54,8 +54,14 @@ Both shelf phones moved to ultra's USB on 2026-10-28, each **reserved**:
 
 | Phone | Serial | Reservation | Used by |
 |---|---|---|---|
-| Galaxy S8+ (SM-G955U1, Android 9) | `988a1b3541354f565a` | `growth-instagram` | Taylab Social's growth phone (GreenFolio's accounts; `addisdev/taylab-social` `phone/`). Nothing else may touch it |
-| Galaxy S9 (SM-G960U1, Android 10) | `444f4b3854573398` | `nightly-phone` | `nightly-fleet-ui-smoke` and `nightly-bug-garden-regressions`, moved here from fleet-host (their flows copied to ultra `~/fleet-flows/{fleetrunner,bug-garden}`) |
+| Galaxy S9 (SM-G960U1) | `444f4b3854573398` | `growth-instagram` | Taylab Social's growth phone (GreenFolio's accounts; `addisdev/taylab-social` `phone/`). Nothing else may touch it |
+| Galaxy S8+ (SM-G955U1, Android 9) | `988a1b3541354f565a` | `nightly-phone` | `nightly-fleet-ui-smoke` and `nightly-bug-garden-regressions`, moved here from fleet-host (their flows copied to ultra `~/fleet-flows/{fleetrunner,bug-garden}`) |
+
+**The phones swapped roles on 2026-10-29.** The S9 was factory reset by mistake, so it became the growth phone
+(a clean device is what growth needs) and the S8+ took the nightlies (it already carries the Fleet Runner and
+bug-garden apps). Reservations and both schedules' `targets.match` were changed on the brain; backups in ultra
+`~/fleet-backups/*-pre-swap-20261029135311.json`. The S8+ still has a lock-screen PIN: until it is removed the
+executor reports both nightlies `skipped` (a PIN cannot be swiped away).
 
 They are driven by a second Fleet process on ultra, the **`ultra-phone`**
 executor, beside the brain and never inside it:
@@ -267,8 +273,8 @@ Six enabled. All times local to the brain (ultra, America/New_York; fleet-host w
 |---|---|---|---|
 | `nightly-synthetic-shelf` | 02:00 | fanout, pool `machines` | A machine's throughput moved, or an agent is not claiming. This is the comparison table |
 | `nightly-self-check` | 02:15 | fanout, pool `machines` | Disk, clock drift, a tool that vanished, or the agent is not supervised |
-| `nightly-fleet-ui-smoke` | 02:30 | `ultra-phone`, the S9 (`nightly-phone`) since 2026-10-28 (fleet-host before) | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The S8+ then had a PIN (WB-195). Green again 2026-10-28 on the S9 (`s9-proof-ui-smoke-214023`, 60 s). From 0.9.1 the executor wakes a phone and swipes its lock screen away, and a PIN makes the run `skipped` with that reason instead |
-| `nightly-bug-garden-regressions` | 02:45 | `ultra-phone`, the S9 (`nightly-phone`) since 2026-10-28 (fleet-host before) | Bug garden's smoke flow, then every bug-garden finding marked real and then fixed, replayed as a regression test. The garden's defects are planted, so finding #18 (BG-01, marked fixed on purpose) comes back every night and reopens: that is the run working. Runs on the S9 since 2026-10-28. Proved once on ultra's emulator on 2026-10-18 (`bg-regression-proof-1`) |
+| `nightly-fleet-ui-smoke` | 02:30 | `ultra-phone`, the S8+ (`nightly-phone`) since 2026-10-29 (the S9 on 10-28, fleet-host before) | **Red since 2026-08-21.** From 09-16 to early October it was `no targets attached`. The S8+ then had a PIN (WB-195). Green again 2026-10-28 on the S9 (`s9-proof-ui-smoke-214023`, 60 s). From 0.9.1 the executor wakes a phone and swipes its lock screen away, and a PIN makes the run `skipped` with that reason instead |
+| `nightly-bug-garden-regressions` | 02:45 | `ultra-phone`, the S8+ (`nightly-phone`) since 2026-10-29 (the S9 on 10-28, fleet-host before) | Bug garden's smoke flow, then every bug-garden finding marked real and then fixed, replayed as a regression test. The garden's defects are planted, so finding #18 (BG-01, marked fixed on purpose) comes back every night and reopens: that is the run working. Runs on the S9 since 2026-10-28. Proved once on ultra's emulator on 2026-10-18 (`bg-regression-proof-1`) |
 | `nightly-aliquant-shots` | 04:15 | `fleet-host`, `chromium` and `mobile-chrome` | Green. The baseline was re-accepted on 2026-09-22 from fleet-host's own captures, after Aliquant's sign-in page gained a "Forgot password?" link; the old one had diverged 2.7% on desktop and 6.1% on mobile since 09-10. The `webkit` and `mobile-safari` baselines are still the August ones, because nothing runs those projects now |
 | `nightly-tvloop-hardware` | 05:00 | `fleet-host`, the Roku, exclusive | tvloop's doctor, install, contract tests and flow replay. `skipped:` until the Roku password is in fleet-host's Keychain (status `skipped` from 0.9). Red from doctor means the Roku is asleep, off the network, or out of developer mode |
 
