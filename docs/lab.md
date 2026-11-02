@@ -37,7 +37,9 @@ Two things make it work, and both are traps:
   `/usr/bin/python3` gets through (the Homelab Map's page server on ultra
   relies on the same thing). `com.addisdev.fleet-lan-forward` runs
   [`collector/deploy/lan-forward.py`](https://github.com/addisdev/fleet-runner/blob/develop/collector/deploy/lan-forward.py),
-  a byte pipe from `192.168.1.111:8789` to `127.0.0.1:8789`. A side effect:
+  a byte pipe from `192.168.1.111:8789` to `127.0.0.1:8789`. The script lives
+  in `~/.fleet/forward/`, because `install.sh` replaces `~/.fleet/bin` on every
+  update. A side effect:
   every LAN client registers from `127.0.0.0/24`, so `last_net` no longer
   tells the house from loopback on this brain.
 - **Port 8789, not 8788.** ultra's `127.0.0.1:8788` belongs to another project.
