@@ -16,6 +16,13 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An update no longer cuts the shelf off from the brain on ultra.**
+  `install.sh` replaces `~/.fleet/bin`, which also deleted the LAN forwarder
+  installed there, so every executor on the `192.168.50.x` side lost the brain
+  until someone noticed. The plist now runs it from `~/.fleet/forward/`.
+
 ## [0.9.2] — 2026-10-23
 
 A device can be reserved for one kind of work, so a signed-in phone is never

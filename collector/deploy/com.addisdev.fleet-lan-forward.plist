@@ -13,12 +13,13 @@
        through. See lan-forward.py.
        The executors and runner apps on the 192.168.50.x side reach this
        address; the laptop and ultra's own night jobs use loopback.
-       Install: copy lan-forward.py to ~/.fleet/bin/, fill __HOME__, and
-       `launchctl bootstrap gui/$(id -u)` this file. -->
+       Install: copy lan-forward.py to ~/.fleet/forward/, fill __HOME__, and
+       `launchctl bootstrap gui/$(id -u)` this file. Not ~/.fleet/bin:
+       install.sh replaces that folder on every update. -->
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
-    <string>__HOME__/.fleet/bin/lan-forward.py</string>
+    <string>__HOME__/.fleet/forward/lan-forward.py</string>
     <string>192.168.1.111:8789</string>
     <string>127.0.0.1:8789</string>
   </array>
