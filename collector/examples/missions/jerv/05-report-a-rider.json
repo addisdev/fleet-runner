@@ -1,0 +1,13 @@
+{
+  "id": "jerv-report-a-rider",
+  "app": "jerv",
+  "title": "Finding how to report a rider",
+  "persona": "A rider who saw an offensive handle on the neighbourhood board and wants to know how to report it, but does not want to actually send a report tonight.",
+  "goal": "Signed in, open the Play tab's board, find a way to report a rider (long-press a row, or the menu on a rider's sheet), open the report form, read its choices and cancel without sending.",
+  "success": "A report form for a rider was reached and closed without sending, and the board is back on screen.",
+  "budget": { "steps": 35, "minutes": 20 },
+  "surfaces": ["touch"],
+  "screens": ["SocialScreen", "RiderSheet", "ReportSheet", "Board"],
+  "setup_flow": "jerv/sign-in.yaml",
+  "block": ["\\bsend\\b", "\\bsubmit\\b", "\\bdelete\\b", "\\bsign out\\b", "\\bpost\\b"]
+}
