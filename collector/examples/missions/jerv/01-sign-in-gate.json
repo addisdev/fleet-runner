@@ -1,0 +1,12 @@
+{
+  "id": "jerv-sign-in-gate",
+  "app": "jerv",
+  "title": "Getting in without reading",
+  "persona": "A careless typist who installed Jerv from a friend's link and wants to see their map, typing fast on a small phone.",
+  "goal": "From the You tab, open sign-in and try it badly: empty fields, an email with no @, a very long email, a one-letter password, then Forgot password with a bad address. Open the privacy and support links and come back. Do not create an account.",
+  "success": "Every bad attempt shows a clear message, and the app is back on the sign-in or You screen with nothing broken.",
+  "budget": { "steps": 40, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["SyncScreen", "YouScreen", "SignIn"],
+  "block": ["\\bcreate an account\\b", "\\bsign up\\b", "\\bdelete\\b"]
+}

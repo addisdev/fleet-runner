@@ -1,0 +1,12 @@
+{
+  "id": "jerv-play-signed-out",
+  "app": "jerv",
+  "title": "Is anyone else out there?",
+  "persona": "A curious newcomer, signed out, who wants to know whether other people and the city's locals are on the map before deciding to sign up.",
+  "goal": "Signed out, open the Play tab and look at everything it offers: locals, races, boards, crews. Go back to the map and look for other people's light and the locals. Try to race someone and see what it asks.",
+  "success": "Locals or other riders' light are visible signed out, and anything that needs an account says so plainly instead of failing silently.",
+  "budget": { "steps": 40, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["SocialScreen", "RaceViews", "LocalsSheet", "MapScreen"],
+  "block": ["\\bcreate an account\\b", "\\bsign up\\b", "\\bdelete\\b", "\\bsend\\b", "\\bpost\\b", "\\bshare\\b", "\\breport\\b", "\\bbuy\\b", "\\bsubscribe\\b"]
+}
