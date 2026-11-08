@@ -16,6 +16,24 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- **Web suites can sign in.** `web-shots` and `web-test` now honour
+  `suite.credentials` the way `ui-test` does: the job names the account, the
+  executor reads the password from its login Keychain (`fleet-ui-test`). A
+  `shots.json` `signin` block (selectors for the form) signs each page in
+  before its capture; `"signedIn": false` captures a page signed out, and
+  `settle_ms` is now honoured. Before this both web paths accepted
+  `suite.credentials` and ignored it, so a spec asking to sign in captured the
+  signed-out page and passed. Now a manifest and a job that disagree (an
+  account with no `signin` block, or a `signin` block with no account) fail
+  before a browser launches. Device profiles (`android-device`,
+  `ios-sim-safari`) refuse to sign in. After a signed-in run, traces and
+  videos are withheld from the store because they hold the typed password,
+  and text debris is redacted. First suite: `web-specs/jerv` (the
+  owner-only ride panel on my.jerv.app, signed in and signed out). A page's
+  `waitFor` now waits up to 30 s, not 15.
+
 ### Changed
 
 - **Explore builds read Dozehound's one repo.** `nightly-builds.sh` built
