@@ -18,7 +18,7 @@ a CI job fails when they disagree.
 
 ### Added
 
-- **Web suites can sign in.** `web-shots` and `web-test` now honour
+- **Web suites can sign in** (#123). `web-shots` and `web-test` now honour
   `suite.credentials` the way `ui-test` does: the job names the account, the
   executor reads the password from its login Keychain (`fleet-ui-test`). A
   `shots.json` `signin` block (selectors for the form) signs each page in
