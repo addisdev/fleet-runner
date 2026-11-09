@@ -16,6 +16,11 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.3] — 2026-11-08
+
+Web suites can sign in: `web-shots` and `web-test` read the account's password
+from the executor's Keychain, so an owner-only page can be captured.
+
 ### Added
 
 - **Web suites can sign in** (#123). `web-shots` and `web-test` now honour
@@ -36,13 +41,20 @@ a CI job fails when they disagree.
 
 ### Changed
 
-- **Explore builds read Dozehound's one repo.** `nightly-builds.sh` built
+- **Explore builds read Dozehound's one repo** (#115). `nightly-builds.sh` built
   `dozehound-tvos` and `dozehound-firetv` from clones of their own repos, which
   were archived on 2026-10-24 when Dozehound became one repo
   (`addisdev/dozehound`). Both now build from one checkout,
   `~/explore/builds/dozehound`, in `tvos/` and `firetv/`, under the same app
   names; the build is `develop-<sha>` of the last commit that touched the
   folder, so a backend-only commit does not rebuild tvOS.
+
+### Fixed
+
+- **An update no longer cuts the shelf off from the brain on ultra** (#121).
+  `install.sh` replaces `~/.fleet/bin`, which also deleted the LAN forwarder
+  installed there, so every executor on the `192.168.50.x` side lost the brain
+  until someone noticed. The plist now runs it from `~/.fleet/forward/`.
 
 ## [0.9.2] — 2026-10-23
 
@@ -1609,7 +1621,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...HEAD
+[0.9.3]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/addisdev/fleet-runner/compare/v0.8.0...v0.9.0
