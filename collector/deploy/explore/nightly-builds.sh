@@ -3,9 +3,19 @@
 #
 # The explore nights ask for `"sha256": "latest"`, which the brain resolves to
 # the newest artifact uploaded under an app name. CI on ultra keeps reports,
-# not installable builds, so this builds them here: one checkout per app under
-# ~/explore/builds, reset to origin/develop, built for the emulator or the
-# simulator, uploaded with the app name and `develop-<short sha>` as the build.
+# not installable builds, so this builds them here: one checkout per repo under
+# ~/explore/builds, reset to origin/develop, the app's folder built for the
+# emulator or the simulator, uploaded with the app name and `develop-<short sha>`
+# as the build.
+#
+# Dozehound is one repo (addisdev/dozehound) since 2026-10-24: its tvOS and
+# Fire TV apps build from tvos/ and firetv/ of one checkout,
+# ~/explore/builds/dozehound, and the sha is the last commit that touched that
+# folder, so a backend-only commit does not rebuild tvOS. The app names, which
+# the brain keys builds by, stay dozehound-tvos and dozehound-firetv. The old
+# per-app clones of the archived repos are no longer read. First time:
+#
+#   git clone https://github.com/addisdev/dozehound.git ~/explore/builds/dozehound
 #
 # A build that fails is reported and skipped, and the night that needs it
 # skips too (explore-night.ts --fresh-build) rather than testing an old build
@@ -74,9 +84,9 @@ upload() {
 # refuses to start otherwise; plain http is allowed to loopback), and no
 # request from an explored build can reach a production backend. Collector
 # keys stay empty, so no telemetry leaves either.
-# xcode_build <dir> <scheme> <sdk> <destination> <out zip>
+# xcode_build <dir> <scheme> <sdk> <destination> <out zip> <build log>
 xcode_build() {
-  local dir="$1" scheme="$2" sdk="$3" dest="$4" zip="$5" derived="$1/.derived" t
+  local dir="$1" scheme="$2" sdk="$3" dest="$4" zip="$5" blog="$6" derived="$1/.derived" t
   for t in "$dir"/*/Config/Secrets.xcconfig.template; do
     [ -f "$t" ] || continue
     sed -E -e 's#^(SUPABASE_URL *=).*#\1 http:/$()/127.0.0.1:9#' \
@@ -88,7 +98,7 @@ xcode_build() {
   # the phone's SDK too, and it fails on WatchKit.
   xcodebuild -project "$dir/$(cd "$dir" && ls -d *.xcodeproj | head -1)" -scheme "$scheme" \
     -destination "$dest" -configuration Debug -derivedDataPath "$derived" \
-    CODE_SIGNING_ALLOWED=NO build >"$dir.build.log" 2>&1 || { tail -30 "$dir.build.log"; return 1; }
+    CODE_SIGNING_ALLOWED=NO build >"$blog" 2>&1 || { tail -30 "$blog"; return 1; }
   local app
   app=$(ls -d "$derived/Build/Products/Debug-$sdk/"*.app | grep -v -i -e watch -e widget -e topshelf | head -1)
   [ -d "$app" ] || return 1
@@ -96,19 +106,38 @@ xcode_build() {
 }
 
 failed=0
+synced=" "   # checkouts already reset to origin/develop in this run
 for name in "${apps[@]}"; do
-  dir="$BUILDS/$name"
-  [ -d "$dir/.git" ] || { log "$name: no checkout at $dir"; failed=1; continue; }
-  # Three tries: the home gateway sometimes refuses new connections for a
-  # few minutes at a time.
-  fetched=0
-  for try in 1 2 3; do
-    git -C "$dir" fetch -q origin develop 2>"$dir.fetch.log" && { fetched=1; break; }
-    sleep $(( try * 20 ))
-  done
-  [ $fetched = 1 ] && git -C "$dir" reset -q --hard origin/develop || { log "$name: fetch failed: $(tail -1 "$dir.fetch.log")"; failed=1; continue; }
-  sha=$(git -C "$dir" rev-parse --short=10 HEAD)
+  # <checkout> <folder>: the app's repo under $BUILDS and where in it the app lives.
+  case "$name" in
+    dozehound-tvos) repo="$BUILDS/dozehound" folder=tvos ;;
+    dozehound-firetv) repo="$BUILDS/dozehound" folder=firetv ;;
+    *) repo="$BUILDS/$name" folder=. ;;
+  esac
+  dir="$repo/$folder"
+  [ -d "$repo/.git" ] || { log "$name: no checkout at $repo"; failed=1; continue; }
+  case "$synced" in
+    *" $repo "*) ;;
+    *)
+      # Three tries: the home gateway sometimes refuses new connections for a
+      # few minutes at a time.
+      fetched=0
+      for try in 1 2 3; do
+        git -C "$repo" fetch -q origin develop 2>"$BUILDS/$name.fetch.log" && { fetched=1; break; }
+        sleep $(( try * 20 ))
+      done
+      [ $fetched = 1 ] && git -C "$repo" reset -q --hard origin/develop || { log "$name: fetch failed: $(tail -1 "$BUILDS/$name.fetch.log")"; failed=1; continue; }
+      synced="$synced$repo "
+      ;;
+  esac
+  [ -d "$dir" ] || { log "$name: no $folder/ in $repo"; failed=1; continue; }
+  if [ "$folder" = . ]; then
+    sha=$(git -C "$repo" rev-parse --short=10 HEAD)
+  else
+    sha=$(git -C "$repo" rev-list -1 --abbrev-commit --abbrev=10 HEAD -- "$folder")
+  fi
   build="develop-$sha"
+  blog="$BUILDS/$name.build.log"
   case "$name" in
     dozehound-firetv) file="$dir/app/build/outputs/apk/debug/app-debug.apk"; platform=android ;;
     greenfolio-ios) file="$BUILDS/$name-$sha.zip"; platform=ios ;;
@@ -127,11 +156,11 @@ for name in "${apps[@]}"; do
   started=$(date +%s)
   case "$name" in
     dozehound-firetv)
-      ( cd "$dir" && ./gradlew -q --no-daemon :app:assembleDebug >"$dir.build.log" 2>&1 ) || { tail -30 "$dir.build.log"; log "$name: build failed"; failed=1; continue; } ;;
+      ( cd "$dir" && ./gradlew -q --no-daemon :app:assembleDebug >"$blog" 2>&1 ) || { tail -30 "$blog"; log "$name: build failed"; failed=1; continue; } ;;
     greenfolio-ios)
-      xcode_build "$dir" GreenFolio iphonesimulator "generic/platform=iOS Simulator" "$file" || { log "$name: build failed"; failed=1; continue; } ;;
+      xcode_build "$dir" GreenFolio iphonesimulator "generic/platform=iOS Simulator" "$file" "$blog" || { log "$name: build failed"; failed=1; continue; } ;;
     dozehound-tvos)
-      xcode_build "$dir" Dozehound appletvsimulator "generic/platform=tvOS Simulator" "$file" || { log "$name: build failed"; failed=1; continue; } ;;
+      xcode_build "$dir" Dozehound appletvsimulator "generic/platform=tvOS Simulator" "$file" "$blog" || { log "$name: build failed"; failed=1; continue; } ;;
   esac
   log "$name: built in $(( $(date +%s) - started )) s"
   upload "$name" "$platform" "$file" "$build" && echo "$build" >"$STATE/$name" || failed=1

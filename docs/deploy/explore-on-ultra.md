@@ -45,7 +45,7 @@ explore night can never push those past 07:30.
 
 | Job | Priority | What it does |
 |---|---|---|
-| `fleet-explore-builds` | 19 | `deploy/explore/nightly-builds.sh`: resets `~/explore/builds/{greenfolio-ios,dozehound-tvos}` to `origin/develop`, builds a simulator `.app` (zipped) and uploads it to the brain as app `<name>`, build `develop-<sha>`. An unchanged sha is not rebuilt but is uploaded again, so the brain shows it as tonight's; a failed build leaves the previous one as `latest`, and the TV and Apple nights skip rather than test it again |
+| `fleet-explore-builds` | 19 | `deploy/explore/nightly-builds.sh`: resets `~/explore/builds/{greenfolio-ios,dozehound}` to `origin/develop`, builds a simulator `.app` (zipped; Dozehound's from `tvos/` of its one repo since 2026-10-24) and uploads it to the brain as app `<name>` (`greenfolio-ios`, `dozehound-tvos`), build `develop-<sha>` (for Dozehound, the last commit that touched the app's folder). An unchanged sha is not rebuilt but is uploaded again, so the brain shows it as tonight's; a failed build leaves the previous one as `latest`, and the TV and Apple nights skip rather than test it again |
 | `fleet-explore` | 20 | The bug garden on `fleet-explore-1` (unchanged) |
 | `fleet-explore-tv` | 85 | Dozehound tvOS on simulator `fleet-explore-tvos` (tvOS 26.5) with its stub catalog: the 10 bench cards with Holo4, the same cards with the resident `vision` model (phase 3's 20 navigation missions), then the every-button explorer |
 | `fleet-explore-apple` | 86 | GreenFolio iOS offline on simulator `fleet-explore-ios` (iOS 26.5): the first real-build night, phase 2's precision bar, and phase 4 |
