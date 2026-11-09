@@ -409,6 +409,32 @@ are only comparable to pixels rendered by the same host. A page over its
 A page with no baseline **passes** with a "new: no baseline" note until somebody
 accepts a shot.
 
+### Signed-in pages
+
+A page behind a sign-in is captured by naming the account in the job and the
+form in the manifest:
+
+```json
+"suite": { "kind": "playwright", "flows": "jerv",
+           "credentials": { "account": "showcase@example.com" } }
+```
+
+```json
+"signin": { "path": "/", "email": "#email", "password": "#password",
+            "submit": "#signin-submit", "waitFor": "#dash:not([hidden])" }
+```
+
+The executor reads the password from its own login Keychain (service
+`fleet-ui-test`, added with
+`security add-generic-password -s fleet-ui-test -a <account> -w`, which
+prompts). It never travels in the spec. Each page signs in through the form
+before its capture, unless it sets `"signedIn": false`, which is how the
+signed-out view of the same link is shot. A job and a manifest that disagree
+(an account with no `signin` block, or the reverse) fail before a browser
+launches. Device profiles cannot sign in and fail their slot. After a
+signed-in run, traces and videos stay on the executor, because they hold the
+typed password.
+
 ### Real phone screens
 
 Two profile names expand to real hardware attached to the claiming executor, one

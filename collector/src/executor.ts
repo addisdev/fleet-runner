@@ -33,6 +33,7 @@ import { describeRoku, rokuDevPassword, rokuDevices, rokuPresenceHere, rokuTarge
 import { evalMatch } from "./match.js";
 import { reservationAllows } from "./reserved.js";
 import { keychainPassword, redact, KEYCHAIN_SERVICE } from "./secrets.js";
+import { debrisKind, shotsSigninEnv, shotsSigninProblem, webTestSigninEnv, type WebCreds } from "./web-signin.js";
 import { withNetwork, withNetworkAll, restoreAttached } from "./network-shape.js";
 import {
   restoreAttachedState, unmanageableReason, withState,
@@ -1871,6 +1872,11 @@ async function runWebTest(job: Job) {
     return;
   }
 
+  // A site's own suite signs in with the names the job gives it. Resolved
+  // here, after the browser check, so a host that cannot run the suite never
+  // reads the Keychain for it.
+  const creds = job.suite ? await resolveCredentials(job.suite, NAME) : null;
+
   // Which config projects to run: one name, an array run in sequence, or "all".
   // "all" asks Playwright for the resolved config rather than keeping a copy of
   // the project names here — a copy is how a project added to the config would
@@ -1894,7 +1900,7 @@ async function runWebTest(job: Job) {
   let allOk = true;
   for (const [i, project] of projects.entries()) {
     if (i > 0) await postBeacon(job.job_id, `web:${project}`, {}).catch(() => {});
-    const ok = await runWebProject(job, url, specDir, project, timeoutS);
+    const ok = await runWebProject(job, url, specDir, project, timeoutS, creds);
     if (!ok) allOk = false;
   }
   await postResult({ job_id: job.job_id, device_id: `host:${NAME}`, iter: 0, final: true, ok: allOk });
@@ -1910,6 +1916,22 @@ function walkFiles(dir: string, rel: string): { file: string; name: string }[] {
     else if (e.isFile()) found.push({ file: abs, name: r });
   }
   return found;
+}
+
+/**
+ * Whether a file Playwright left behind may go to the artifact store, and
+ * under what name. After a signed-in run a trace or video is withheld (it
+ * holds the typed password and cannot be scrubbed) and a text file is
+ * redacted in place first; see debrisKind.
+ */
+async function uploadableDebris(f: { file: string; name: string }, creds: WebCreds | null): Promise<string | null> {
+  const kind = debrisKind(f.name, creds !== null);
+  if (kind === "withhold") {
+    log(`withheld ${f.name}: a signed-in run's trace or video holds the password`);
+    return null;
+  }
+  if (kind === "redact" && creds) writeFileSync(f.file, redact(readFileSync(f.file, "utf8"), [creds.password]));
+  return f.name.replace(/\//g, "_");
 }
 
 /** The project names playwright.config.ts resolves to, via --list. */
@@ -1930,7 +1952,7 @@ async function listWebProjects(): Promise<string[]> {
 
 /** One config project against the URL; posts its own result row. */
 async function runWebProject(
-  job: Job, url: string, specDir: string, project: string, timeoutS: number,
+  job: Job, url: string, specDir: string, project: string, timeoutS: number, creds: WebCreds | null = null,
 ): Promise<boolean> {
   const deviceId = `web:${project}`;
   const out = mkdtempSync(path.join(os.tmpdir(), `web-${job.job_id}-${project}-`));
@@ -1951,7 +1973,7 @@ async function runWebProject(
     const { stdout } = await exec("npx", args, {
       cwd: playwrightDir(),
       timeout: timeoutS * 1000,
-      env: { ...process.env, PLAYWRIGHT_BASE_URL: url, CI: "1" },
+      env: { ...process.env, PLAYWRIGHT_BASE_URL: url, CI: "1", ...webTestSigninEnv(creds) },
     });
     // Playwright's JSON reporter puts the counts in stats; a non-zero exit is
     // a failing suite, not a broken run, so both paths report rather than throw.
@@ -1971,6 +1993,7 @@ async function runWebProject(
       failed = failed || 1;
     }
   }
+  if (creds) detail = redact(detail, [creds.password]);
 
   // A trace or screenshot is the whole reason a failing web test is
   // debuggable later, so upload whatever Playwright left behind.
@@ -1980,9 +2003,11 @@ async function runWebProject(
   // debuggable, so walk the tree and name each file by its relative path.
   const artifacts: string[] = [];
   for (const f of (existsSync(out) ? walkFiles(out, "") : [])) {
+    const name = await uploadableDebris(f, creds);
+    if (!name) continue;
     // The project is part of the name: two projects failing the same test
     // otherwise upload artifacts under identical names.
-    artifacts.push(await uploadArtifact(f.file, `${job.job_id}-${project}-${f.name.replace(/\//g, "_")}`));
+    artifacts.push(await uploadArtifact(f.file, `${job.job_id}-${project}-${name}`));
   }
 
   await postResult({
@@ -1998,9 +2023,11 @@ type ShotsManifest = {
   profiles?: string[];
   threshold_pct?: number;
   freeze_time?: string;
+  // How the capture spec signs in (selectors only); see web-signin.ts.
+  signin?: unknown;
   pages?: {
     name?: string; path?: string; waitFor?: string; mask?: string[];
-    fullPage?: boolean; threshold_pct?: number; settle_ms?: number;
+    fullPage?: boolean; threshold_pct?: number; settle_ms?: number; signedIn?: boolean;
   }[];
 };
 
@@ -2239,6 +2266,13 @@ async function runWebShots(job: Job) {
     return;
   }
 
+  // The manifest and the job must agree on signing in before anything runs:
+  // an account with nothing to use it captures the signed-out page and
+  // passes, which is the vacuous green suite.credentials used to produce here.
+  const signinProblem = shotsSigninProblem(manifest, Boolean(job.suite?.credentials?.account));
+  if (signinProblem) throw new Error(signinProblem);
+  const creds = manifest.signin && job.suite ? await resolveCredentials(job.suite, NAME) : null;
+
   // The job may override the manifest's profiles; same forms as web-test.
   const asked = job.params?.browser ?? manifest.profiles ?? "chromium";
   const profiles = asked === "all"
@@ -2286,6 +2320,18 @@ async function runWebShots(job: Job) {
       log(`web-shots ${url} (${profile}): ${entry.missing}`);
       continue;
     }
+    // Real phones are driven over adb and simctl, which have no sign-in
+    // step: fail the slot plainly rather than capture it signed out.
+    if (entry.target && creds) {
+      allOk = false;
+      await postResult({
+        job_id: job.job_id, device_id: `web:${profile}`, iter: 0, ok: false,
+        test: { passed: 0, failed: pages.length, artifacts: [] },
+        error: "signed-in captures run on browser profiles only; this device profile cannot sign in",
+      });
+      log(`web-shots ${url} (${profile}): refused, signed-in shots are browser-only`);
+      continue;
+    }
     // Locked hardware is skipped, not failed — the precedent every other
     // host-driven workload sets.
     if (entry.target && granted && !granted.has(entry.target.id)) {
@@ -2326,6 +2372,7 @@ async function runWebShots(job: Job) {
             env: {
               ...process.env, CI: "1", PLAYWRIGHT_BASE_URL: url,
               SHOTS_MANIFEST: manifestPath, SHOTS_OUT: outDir,
+              ...shotsSigninEnv(creds),
             },
             maxBuffer: 64 * 1024 * 1024,
           },
@@ -2335,6 +2382,7 @@ async function runWebShots(job: Job) {
       // A non-zero exit is some pages failing to capture; the per-page rows
       // below say which. Keep the message for pages with nothing better.
       detail = ((e as Error).message ?? String(e)).slice(0, 300);
+      if (creds) detail = redact(detail, [creds.password]);
     }
 
     // Per-page verdict: captured, and within threshold of the accepted
@@ -2414,7 +2462,8 @@ async function runWebShots(job: Job) {
     const debris: string[] = [];
     if (captured < pages.length && existsSync(testResults)) {
       for (const f of walkFiles(testResults, "")) {
-        debris.push(await uploadArtifact(f.file, `${job.job_id}-${profile}-debris-${f.name.replace(/\//g, "_")}`));
+        const name = await uploadableDebris(f, creds);
+        if (name) debris.push(await uploadArtifact(f.file, `${job.job_id}-${profile}-debris-${name}`));
       }
     }
 

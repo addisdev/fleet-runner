@@ -1,0 +1,27 @@
+{
+  "profiles": ["chromium"],
+  "signin": {
+    "path": "/",
+    "email": "#email",
+    "password": "#password",
+    "submit": "#signin-submit",
+    "waitFor": "#dash:not([hidden])"
+  },
+  "pages": [
+    {
+      "name": "ride-panel",
+      "path": "/#ride=246",
+      "waitFor": "#ride-map:not([hidden])",
+      "settle_ms": 8000,
+      "fullPage": false,
+      "mask": ["#promo", "#wake-line"]
+    },
+    {
+      "name": "ride-signed-out",
+      "path": "/#ride=246",
+      "waitFor": "#signin-form",
+      "signedIn": false,
+      "fullPage": false
+    }
+  ]
+}

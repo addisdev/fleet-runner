@@ -23,6 +23,7 @@ import { runAlertChecks } from "../src/alerts.test.js";
 import { runSkipChecks } from "../src/skip.test.js";
 import { runReservationChecks } from "../src/reserved.test.js";
 import { runReasonChecks } from "../src/result-reason.test.js";
+import { runWebSigninChecks } from "../src/web-signin.test.js";
 import { runRegistryHygieneChecks } from "../src/registry-hygiene.test.js";
 import { runBrowserChecks } from "../src/browser.test.js";
 import { runDescribeChecks } from "../src/describe.test.js";
@@ -2978,6 +2979,8 @@ runAlertChecks(check);
 runSkipChecks(check);
 await runReservationChecks(check);
 await runReasonChecks(check);
+// Web sign-in: the manifest and the job agree before a browser launches.
+runWebSigninChecks(check);
 runRegistryHygieneChecks(check);
 
 // Where a host's Playwright lives and which Chromium it drives: the two
