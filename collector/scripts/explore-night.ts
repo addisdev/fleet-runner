@@ -19,7 +19,20 @@
 //      this executor's name, with `minutes` cut to what is left of the night;
 //   5. runs an executor in this process until that job is done, failed or
 //      cancelled;
-//   6. shuts down only what it booted.
+//   6. shuts down only what it booted -- also when it is stopped by a signal
+//      or crashes (from 2026-11-12; see src/workloads/explore/night-devices.ts).
+//
+// Emulators it boots are written down (`~/.fleet/explore-night/booted.json`,
+// with the emulator's boot id). A night that finds its own earlier boot still
+// up with no live owner adopts it and shuts it down at its end; an emulator
+// with no record is someone else's and is never shut down.
+//
+//   npx tsx scripts/explore-night.ts --sweep [--dry-run]
+//
+// is the morning backstop (launchd `com.addisdev.fleet-explore-sweep`, 06:00
+// and hourly through the day): it stops recorded emulators whose night is over
+// -- the night's process gone and no brain job on the device -- with
+// `adb emu kill`, and forgets records whose emulator is gone or was replaced.
 //
 // A spec that cannot run tonight -- no build for tonight, no time left, a
 // model the host has no room to load -- is posted to the brain as a skip
@@ -57,6 +70,10 @@ import {
   NIGHT, buildMissing, fetchedSince, lastLine, nightEnd, nightManifestMinutes, nightStart, planSpecs,
   warmRefusedForMemory, type BrainBuild,
 } from "../src/workloads/explore/night.js";
+import {
+  adoptable, deviceBusy, readRecords, stateFile, sweepAction, withRecord, withoutSerial, writeRecords,
+  type BootRecord, type Seen,
+} from "../src/workloads/explore/night-devices.js";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -84,9 +101,54 @@ async function emulatorFor(avd: string): Promise<string | null> {
   return null;
 }
 
+/** The AVD name and kernel boot id of what runs on `serial`, or null when nothing answers. */
+async function seenOn(serial: string): Promise<Seen> {
+  const avd = await run(ADB, ["-s", serial, "emu", "avd", "name"], { timeout: 15_000 }).then((r) => r.stdout.split("\n")[0].trim(), () => "");
+  if (!avd) return null;
+  const bootId = await run(ADB, ["-s", serial, "shell", "cat", "/proc/sys/kernel/random/boot_id"], { timeout: 15_000 })
+    .then((r) => r.stdout.trim(), () => "");
+  return { avd, boot_id: bootId };
+}
+
+/** Whether `pid` is a live explore-night process (not just any process that reused the pid). */
+async function ownerAlive(pid: number): Promise<boolean> {
+  if (!(pid > 0) || pid === process.pid) return pid === process.pid;
+  try { process.kill(pid, 0); } catch { return false; }
+  const cmd = await run("ps", ["-o", "command=", "-p", String(pid)]).then((r) => r.stdout, () => "");
+  return cmd.includes("explore-night");
+}
+
+const STATE = stateFile();
+const record = (rec: BootRecord) => writeRecords(STATE, withRecord(readRecords(STATE), rec));
+const forget = (serial: string) => writeRecords(STATE, withoutSerial(readRecords(STATE), serial));
+
+/** Ask the emulator to quit (`adb emu kill`) and wait until adb no longer lists it. */
+async function stopEmulator(serial: string, waitS = 60): Promise<boolean> {
+  await run(ADB, ["-s", serial, "emu", "kill"], { timeout: 15_000 }).catch(() => {});
+  for (let i = 0; i < waitS / 2; i++) {
+    await sleep(2000);
+    const { stdout } = await run(ADB, ["devices"]).catch(() => ({ stdout: "" }));
+    if (!stdout.split("\n").some((l) => l.split("\t")[0] === serial)) return true;
+  }
+  return false;
+}
+
 async function bootEmulator(avd: string): Promise<{ serial: string; booted: boolean }> {
   const running = await emulatorFor(avd);
-  if (running) return { serial: running, booted: false };
+  if (running) {
+    const seen = await seenOn(running);
+    const alive = new Map<number, boolean>();
+    for (const r of readRecords(STATE)) alive.set(r.owner_pid, await ownerAlive(r.owner_pid));
+    const mine = adoptable(readRecords(STATE), running, seen, (pid) => alive.get(pid) ?? false);
+    if (mine) {
+      log(`${avd} is already up as ${running}, booted by an earlier night (pid ${mine.owner_pid}) that is gone; ` +
+        "adopting it, so it is shut down when this night ends");
+      record({ ...mine, owner_pid: process.pid });
+      return { serial: running, booted: true };
+    }
+    log(`${avd} is already up as ${running} and this night did not boot it; it is left up afterwards`);
+    return { serial: running, booted: false };
+  }
   log(`booting ${avd}`);
   const child = spawn(path.join(SDK, "emulator/emulator"), ["-avd", avd, "-no-window", "-no-audio", "-no-snapshot-save", "-no-boot-anim"],
     { detached: true, stdio: "ignore" });
@@ -96,7 +158,12 @@ async function bootEmulator(avd: string): Promise<{ serial: string; booted: bool
     const serial = await emulatorFor(avd);
     if (serial) {
       const done = await run(ADB, ["-s", serial, "shell", "getprop", "sys.boot_completed"]).then((r) => r.stdout.trim(), () => "");
-      if (done === "1") { log(`${avd} is up as ${serial}`); return { serial, booted: true }; }
+      if (done === "1") {
+        log(`${avd} is up as ${serial}`);
+        const seen = await seenOn(serial);
+        record({ kind: "emulator", avd, serial, boot_id: seen?.boot_id ?? "", owner_pid: process.pid, booted_at: new Date().toISOString() });
+        return { serial, booted: true };
+      }
     }
   }
   throw new Error(`${avd} did not finish booting in ten minutes`);
@@ -265,7 +332,40 @@ async function warmUp(cmd: string, untilMs: number): Promise<{ ok: true } | { ok
   }
 }
 
+/**
+ * The morning backstop: stop every recorded emulator whose night is over.
+ * Asks the brain whether a job is on the device first; a brain that does not
+ * answer keeps the emulator up (the next sweep tries again).
+ */
+async function sweep(dry: boolean): Promise<void> {
+  const records = readRecords(STATE);
+  if (!records.length) { log(`sweep: no emulator booted by a night is on record (${STATE})`); return; }
+  let bad = 0;
+  for (const rec of records) {
+    const seen = await seenOn(rec.serial);
+    const alive = seen ? await ownerAlive(rec.owner_pid) : false;
+    let busy: string | null = null;
+    if (seen && !alive) {
+      busy = await fetch(`${BASE}/api/devices/${encodeURIComponent(rec.serial)}`, { signal: AbortSignal.timeout(15_000) })
+        .then(async (r) => (r.status === 404 ? null : r.ok ? deviceBusy(await r.json() as { current_job?: string | null; lock?: unknown })
+          : `the brain answered ${r.status} for the device, so it may be in use`),
+        (e: Error) => `the brain did not answer (${e.message}), so it may be in use`);
+    }
+    const act = sweepAction(rec, seen, { ownerAlive: alive, busy });
+    log(`sweep: ${act.action}: ${act.why}`);
+    if (dry) continue;
+    if (act.action === "forget") forget(rec.serial);
+    if (act.action === "stop") {
+      if (await stopEmulator(rec.serial)) { log(`sweep: ${rec.avd} (${rec.serial}) is down`); forget(rec.serial); }
+      else { log(`sweep: ${rec.avd} (${rec.serial}) still listed a minute after emu kill; the next sweep tries again`); bad++; }
+    }
+  }
+  if (dry) log("sweep: dry run, nothing stopped or forgotten");
+  process.exit(bad ? 1 : 0);
+}
+
 async function main() {
+  if (a.includes("--sweep")) return sweep(a.includes("--dry-run"));
   // Several --spec flags run one after another on the same device, sharing
   // the tunnel and the executor: a night can drive Holo4 and then the
   // resident model through the same bench, or a TV bench and its explorers.
@@ -368,6 +468,32 @@ async function main() {
   // --- devices and the executor -------------------------------------------
   let emulator: { serial: string; booted: boolean } | null = null;
   let simulator: { udid: string; booted: boolean } | null = null;
+  let executor: { stop: () => void } | null = null;
+  // Shut down only what this night booted (or adopted), once, however it
+  // ends: normally, on the night queue's SIGTERM at max_minutes (it waits 30 s
+  // before SIGKILL), or on a crash. On 11-02 an unhandled fetch failure took
+  // the old `finally` with it and the emulator stayed up for nine days.
+  let shutting: Promise<void> | null = null;
+  const shutDown = () => shutting ??= (async () => {
+    executor?.stop();
+    if (emulator?.booted) {
+      log(`shutting down ${avd}`);
+      if (await stopEmulator(emulator.serial, 20)) forget(emulator.serial);
+      else log(`${avd} (${emulator.serial}) is still listed after emu kill; the morning sweep stops it`);
+    }
+    if (simulator?.booted) {
+      log(`shutting down simulator ${sim?.split(":")[0]}`);
+      await run("xcrun", ["simctl", "shutdown", simulator.udid]).catch(() => {});
+    }
+  })();
+  const bail = (why: string, code: number) => {
+    log(why);
+    void shutDown().finally(() => process.exit(code));
+  };
+  for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"] as const) process.once(sig, () => bail(`${sig}: stopping the night`, 143));
+  process.once("unhandledRejection", (e) => bail(`crashed: ${(e as Error)?.message ?? String(e)}`, 1));
+  process.once("uncaughtException", (e) => bail(`crashed: ${e.message}`, 1));
+
   if (avd) emulator = await bootEmulator(avd);
   if (sim) simulator = await bootSimulator(sim);
   const deviceId = emulator?.serial ?? simulator?.udid;
@@ -380,7 +506,7 @@ async function main() {
   // again when the server says it has no such model.
   if (warm) process.env.FLEET_EXPLORE_WARM = warm;
   const { startExecutor } = await import("../src/executor.js");
-  const executor = await startExecutor();
+  executor = await startExecutor();
 
   try {
     for (const item of items) {
@@ -413,15 +539,7 @@ async function main() {
       outcomes.push(`${jobId}: ${final.status}`);
     }
   } finally {
-    executor.stop();
-    if (emulator?.booted) {
-      log(`shutting down ${avd}`);
-      await run(ADB, ["-s", emulator.serial, "emu", "kill"]).catch(() => {});
-    }
-    if (simulator?.booted) {
-      log(`shutting down simulator ${sim?.split(":")[0]}`);
-      await run("xcrun", ["simctl", "shutdown", simulator.udid]).catch(() => {});
-    }
+    await shutDown();
   }
   finish();
 }
