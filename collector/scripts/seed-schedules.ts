@@ -210,9 +210,9 @@ const SCHEDULES: Record<string, Schedule> = {
     "template": {
       "schema": 1, "workload": "archive", "executor": "host",
       // app_id is Apple's numeric identifier (App Store Connect -> App
-      // Information -> Apple ID). The placeholder fails with a clear message
-      // rather than silently pulling nothing.
-      "params": { "source": "asc", "app": "greenfolio", "app_id": "SET-ME-numeric-app-id" },
+      // Information -> Apple ID): GreenFolio's, as in the Launch Kit's
+      // products.json (store.asc_app_id) and greenfolio.app's App Store link.
+      "params": { "source": "asc", "app": "greenfolio", "app_id": "6788582076" },
       "targets": { "executor": "mac-xcode" },
       "lease": { "ttl_s": 600 }
     }

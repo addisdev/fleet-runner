@@ -16,6 +16,12 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Fixed
+
+- `daily-reviews-asc-greenfolio` names GreenFolio's App Store id (6788582076)
+  instead of the `SET-ME` placeholder, so the daily review pull can reach App
+  Store Connect once the schedule is re-seeded and enabled.
+
 ## [0.9.3] — 2026-11-08
 
 Web suites can sign in: `web-shots` and `web-test` read the account's password
