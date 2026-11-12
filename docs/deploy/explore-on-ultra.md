@@ -101,6 +101,37 @@ itself into `~/.fleet/explore/derived` on first use. Xcode builds use
 Xcode update, `sudo xcodebuild -runFirstLaunch` has to run once before any
 simulator test will; the night command checks for it and fails until it has.
 
+### The emulator is down by day (from 12 November 2026)
+
+On 11-02 at 23:33 the brain went away mid-night, a failed fetch crashed the
+night command before it shut anything down, and `fleet-explore-1` (~7 GB) stayed
+up. Every later night found it running, took it for someone else's and left it
+up again: nine days and sixteen hours, by day, while ultra was out of memory.
+
+- The night command writes each emulator it boots to
+  `~/.fleet/explore-night/booted.json`, with the emulator's kernel boot id and
+  its own pid, and shuts it down (`adb -s <serial> emu kill`, then waits until
+  adb no longer lists it) however the night ends: normally, on the night
+  queue's SIGTERM at `max_minutes` (30 s before SIGKILL), or on a crash.
+- A night that finds its own earlier boot still up, with the night that booted
+  it gone, adopts it and shuts it down at its end. An emulator with no record,
+  or another boot of the same AVD, is someone else's and is left up.
+- The backstop is the LaunchAgent `com.addisdev.fleet-explore-sweep`
+  (`collector/deploy/explore/com.addisdev.fleet-explore-sweep.plist`, at 06:00
+  and hourly to 21:05): `explore-night.ts --sweep` stops each recorded emulator
+  whose night is over (owner gone, no job or lock on the device at the brain)
+  and forgets records whose emulator is gone. A brain that does not answer
+  keeps the emulator up until the next sweep. `--sweep --dry-run` says what it
+  would do. Log: `~/Library/Logs/fleet-explore-sweep.log`.
+
+Install the sweep once, from the ultra checkout:
+
+```bash
+sed "s|__HOME__|$HOME|g" ~/fleet-runner/collector/deploy/explore/com.addisdev.fleet-explore-sweep.plist \
+  > ~/Library/LaunchAgents/com.addisdev.fleet-explore-sweep.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.addisdev.fleet-explore-sweep.plist
+```
+
 ### Measured on 8 October 2026
 
 | Measure | Holo4 35B-A3B (GGUF Q4_K_M, LM Studio) | Bar |
