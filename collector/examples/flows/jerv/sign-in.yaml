@@ -7,7 +7,9 @@
 # (service fleet-ui-test); neither is in this file or a job spec.
 appId: ${APP_ID}
 ---
-- launchApp
+- launchApp:
+    arguments:
+      taylab_lab: true
 - runFlow:
     when:
       visible: "While using the app"
