@@ -1,0 +1,33 @@
+# Jerv sign-in, for the explore card that starts signed in (jerv-report-a-rider).
+#
+# Run it only against the screenshots build (com.taylab.jerv.shots): it is the
+# release app on the production backend with every write refused in
+# SupabaseClient, so a night of exploring cannot change a real account. The
+# account and password arrive as -e variables from the executor's Keychain
+# (service fleet-ui-test); neither is in this file or a job spec.
+appId: ${APP_ID}
+---
+- launchApp:
+    arguments:
+      taylab_lab: true
+- runFlow:
+    when:
+      visible: "While using the app"
+    commands:
+      - tapOn: "While using the app"
+- extendedWaitUntil:
+    visible: "You"
+    timeout: 25000
+- tapOn: "You"
+- tapOn: "Sign in"
+- tapOn: "Email"
+- inputText: ${JERV_TEST_EMAIL}
+- tapOn: "Password"
+- inputText: ${JERV_TEST_PASSWORD}
+- hideKeyboard
+- tapOn:
+    text: "Sign in"
+    index: 1
+- extendedWaitUntil:
+    notVisible: "Password"
+    timeout: 30000
