@@ -80,6 +80,13 @@ reached at all.
   a different state of the app.
 - **Conditions** add their own: a language condition on iOS adds
   `-AppleLanguages (<tag>) -AppleLocale <locale>`.
+- **The lab flag comes first, on every card:** `taylab_lab=true` on Android,
+  `-TaylabLab YES` on Apple platforms, nothing on Roku. It rides every launch,
+  relaunch and replay flow, so an app on the Taylab SDK marks the night's
+  installs `lab: true` and leaves them out of its funnel. A card does not add
+  it; a setup flow that calls `launchApp` again must pass
+  `arguments: { taylab_lab: true }` itself (see
+  [Add your app](../integration/add-your-app.md#tell-the-app-it-is-in-the-lab)).
 
 ## Setup flows
 

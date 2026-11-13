@@ -55,22 +55,26 @@ export function toMaestro(opts: {
   if (opts.title) lines.push(`name: ${yamlString(opts.title)}`);
   lines.push("---");
   const args = (opts.launchArgs ?? []).map((a) => /^([A-Za-z_][\w.]*)=(.*)$/.exec(a)).filter(Boolean) as RegExpExecArray[];
-  const launch = () => {
+  // Every launch carries the arguments, a relaunch too: Maestro's launchApp
+  // stops the app first, and a process started without them is a different
+  // app state (and, without taylab_lab, a real person to the funnel).
+  const launch = (clear: boolean) => {
+    if (!clear && !args.length) { lines.push("- launchApp"); return; }
     lines.push("- launchApp:");
-    lines.push("    clearState: true");
+    if (clear) lines.push("    clearState: true");
     if (args.length) {
       lines.push("    arguments:");
       for (const m of args) lines.push(`      ${m[1]}: ${yamlString(m[2])}`);
     }
   };
-  launch();
+  launch(true);
   if (opts.setupFlow) lines.push(`- runFlow: ${yamlString(opts.setupFlow)}`);
   const steps = opts.executed.slice(0, opts.upTo ?? opts.executed.length);
   let lastStep = -1;
   for (const e of steps) {
     if (e.step !== lastStep) { lines.push(`# step ${e.step}`); lastStep = e.step; }
-    if (e.kind === "relaunch") { lines.push("- launchApp"); continue; }
-    if (e.kind === "home") { lines.push("- pressKey: Home", "- launchApp"); continue; }
+    if (e.kind === "relaunch") { launch(false); continue; }
+    if (e.kind === "home") { lines.push("- pressKey: Home"); launch(false); continue; }
     const a = e.action;
     switch (a.kind) {
       case "tap":

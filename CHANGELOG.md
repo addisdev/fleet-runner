@@ -16,6 +16,17 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- Every launch the collector makes itself tells the app it is a lab run:
+  `taylab_lab=true` (an Android string extra) or `-TaylabLab YES` (Apple
+  process arguments) goes first on explore missions, their relaunches and
+  replay flows, and on `launchApp` and `cold-start`. Apps on the Taylab SDK
+  then send `lab: true`, so night QA no longer counts as new users. A replay
+  flow's relaunch now carries the mission's launch arguments too, instead of a
+  bare `launchApp` that dropped them. Maestro flows still pass it themselves
+  (`arguments: { taylab_lab: true }`); the Jerv example flow does.
+
 ### Fixed
 
 - `daily-reviews-asc-greenfolio` names GreenFolio's App Store id (6788582076)
