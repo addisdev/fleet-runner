@@ -2,7 +2,7 @@
 // over, in each launch state. Why only Android gets a number is on run() below.
 import { amStartProblem, parseAmStart } from "../../am-start.js";
 import { exec, NoTargetsError } from "../../fleet-client.js";
-import { ADB, hasApp } from "../device.js";
+import { ADB, asExtras, hasApp, labLaunchArgs } from "../device.js";
 import type { Job, Target, WorkloadCtx } from "../types.js";
 
 const LAUNCH_STATES = ["cold", "warm", "hot"] as const;
@@ -51,7 +51,7 @@ async function androidLaunchOnce(target: Target, component: string, appId: strin
     await new Promise((r) => setTimeout(r, 1200));
   }
   const { stdout } = await exec(
-    ADB, ["-s", target.id, "shell", "am", "start", "-W", "-n", component],
+    ADB, ["-s", target.id, "shell", "am", "start", "-W", "-n", component, ...asExtras(labLaunchArgs("android"))],
     { timeout: 90_000 },
   );
   return parseAmStart(stdout);

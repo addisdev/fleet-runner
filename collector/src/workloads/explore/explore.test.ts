@@ -28,6 +28,7 @@ import { benchCheck, confirm, endpointFailure, fingerprint, modelGone, normalize
 import { changedWords, orderMissions } from "./missions.js";
 import { convertCall, elementHints, parseInlineCalls, parseToolCalls } from "./model.js";
 import { toMaestro, type Executed } from "./replay.js";
+import { asExtras, labLaunchArgs } from "../device.js";
 import { ScreenMap, jaccard, screenTokens } from "./screenmap.js";
 import type { Action, Actuator, ActuatorCaps, CrashReport, Mission, Observation } from "./types.js";
 import type { Target } from "../types.js";
@@ -230,8 +231,22 @@ export async function runExploreChecks(check: Check): Promise<void> {
   ];
   const yaml = toMaestro({ appId: "com.x", executed: ex, screen: { w: 1080, h: 2400 }, setupFlow: "bug-garden/sign-in.yaml", launchArgs: ["garden_defects=false"] });
   check("explore: the Maestro file taps in percentages, types, relaunches and presses D-pad keys",
-    yaml.includes('point: "50%,50%"') && yaml.includes('inputText: "Fern"') && yaml.includes("- launchApp\n")
+    yaml.includes('point: "50%,50%"') && yaml.includes('inputText: "Fern"')
     && yaml.includes("Remote Dpad Down") && yaml.includes("garden_defects: \"false\"") && yaml.includes("clearState: true"), yaml);
+  // Maestro's launchApp stops the app first, so a relaunch without the
+  // arguments would start a different app state (and an unmarked lab run).
+  check("explore: a relaunch in the Maestro file carries the launch arguments, without clearing state",
+    yaml.split("- launchApp:").length === 3 && yaml.split("clearState: true").length === 2
+    && yaml.split("garden_defects: \"false\"").length === 3, yaml);
+  const bare = toMaestro({ appId: "com.x", executed: ex, screen: { w: 1080, h: 2400 } });
+  check("explore: with no launch arguments a relaunch is a bare launchApp", bare.includes("- launchApp\n"), bare);
+  check("explore: every launch the lab makes says it is the lab's (taylab_lab, -TaylabLab YES)",
+    JSON.stringify(labLaunchArgs("android")) === '["taylab_lab=true"]'
+    && JSON.stringify(labLaunchArgs("ios")) === '["-TaylabLab","YES"]'
+    && JSON.stringify(labLaunchArgs("tvos")) === '["-TaylabLab","YES"]'
+    && labLaunchArgs("roku").length === 0 && labLaunchArgs("web").length === 0
+    && JSON.stringify(asExtras(labLaunchArgs("android"))) === '["--es","taylab_lab","true"]'
+    && JSON.stringify(launchExtras(labLaunchArgs("android"))) === '["--es","taylab_lab","true"]');
 
   // --- candidates ---------------------------------------------------------------
   const scr = { id: "s", name: "S", tokens: [], hash: null, firstSeen: "", lastSeen: "", visits: 1, nights: [] };

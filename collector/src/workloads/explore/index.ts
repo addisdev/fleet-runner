@@ -29,6 +29,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { BASE, NoTargetsError } from "../../fleet-client.js";
 import { keychainPassword } from "../../secrets.js";
+import { labLaunchArgs } from "../device.js";
 import { resolveFlow } from "../flows.js";
 import type { Job, Target, WorkloadCtx } from "../types.js";
 import { HostNotReadyError } from "./actuators/apple.js";
@@ -385,7 +386,9 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
         try { cond = await conditionFor(condName, t); }
         catch (e) { missionLog.push({ id: m.id, condition: condName, skipped: (e as Error).message }); continue; }
         const mission: Mission = {
-          ...m, launch_args: [...(m.launch_args ?? []), ...cond.launchArgs],
+          // The lab's own arguments first (device.ts), so every launch, relaunch
+          // and replay flow of this mission says it is a lab run.
+          ...m, launch_args: [...labLaunchArgs(t.platform), ...(m.launch_args ?? []), ...cond.launchArgs],
           ...(p.steps ? { budget: { ...(m.budget ?? {}), steps: Math.min(p.steps, m.budget?.steps ?? p.steps) } } : {}),
         };
         const runDir = path.join(work, t.id.replace(/[^\w.-]/g, "_"), `${String(k + 1).padStart(2, "0")}-${m.id}`);
