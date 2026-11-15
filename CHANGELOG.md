@@ -16,6 +16,17 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Roku discovery searches every LAN the host is on.** The SSDP M-SEARCH left
+  only by the default route's interface, so a host on two networks (ultra: en0
+  on 192.168.1.x, en1 on the Roku's 192.168.50.x) never found the Roku, though
+  ECP to its address worked. The search now goes out once per IPv4 interface.
+- **Aliquant's home shot waits for the page, not its loading screen.**
+  `waitFor: "main"` matched the "Loading…" frame too, so a mobile capture could
+  fire mid-load (3% diff between two runs a minute apart). It now waits for
+  "See an example", which only the loaded home shows.
+
 ## [0.9.3] — 2026-11-08
 
 Web suites can sign in: `web-shots` and `web-test` read the account's password

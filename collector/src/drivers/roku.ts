@@ -56,6 +56,7 @@
  * `runDriverChecks`; the socket code is not exercised by anything.
  */
 import dgram from "node:dgram";
+import os from "node:os";
 import { log } from "../fleet-client.js";
 import { keychainPassword, type KeychainResult } from "../secrets.js";
 import type { Target } from "../workloads/types.js";
@@ -303,18 +304,64 @@ export async function discoverEndpoints(timeoutMs = DISCOVERY_MS): Promise<RokuD
     });
 
     socket.bind(() => {
-      try {
-        // Bound to an ephemeral port and sending to the group: the replies come
-        // back UNICAST to that port, so there is no group membership to join.
-        // Adding one would also receive every other device's announcements,
-        // which is noise this driver has no use for.
-        socket.send(mSearchDatagram(), SSDP_PORT, SSDP_ADDR);
-      } catch (e) {
-        log(`roku: could not send SSDP M-SEARCH (${(e as Error).message})`);
-        finish();
-      }
+      // Bound to an ephemeral port and sending to the group: the replies come
+      // back UNICAST to that port, so there is no group membership to join.
+      // Adding one would also receive every other device's announcements,
+      // which is noise this driver has no use for.
+      //
+      // The search goes out once per IPv4 interface, not once. A multicast
+      // send leaves by the interface the routing table picks for the group --
+      // the default route -- so a host with a leg on two LANs only ever
+      // searched the first one. ultra has en0 on 192.168.1.x and en1 on the
+      // 192.168.50.x LAN the Roku sits on; its single search left by en0 and
+      // the Roku never heard it, though ECP to its address worked fine.
+      const ifaces = multicastInterfaces();
+      const datagram = mSearchDatagram();
+      let sent = 0;
+      const sendOn = (i: number) => {
+        if (i >= ifaces.length) {
+          if (!sent) {
+            log("roku: could not send SSDP M-SEARCH on any interface");
+            finish();
+          }
+          return;
+        }
+        const addr = ifaces[i];
+        try {
+          if (addr) socket.setMulticastInterface(addr);
+          socket.send(datagram, SSDP_PORT, SSDP_ADDR, (err) => {
+            if (err) log(`roku: SSDP M-SEARCH via ${addr ?? "default"} failed (${err.message})`);
+            else sent++;
+            sendOn(i + 1);
+          });
+        } catch (e) {
+          log(`roku: could not send SSDP M-SEARCH via ${addr ?? "default"} (${(e as Error).message})`);
+          sendOn(i + 1);
+        }
+      };
+      sendOn(0);
     });
   });
+}
+
+/**
+ * The local IPv4 addresses an M-SEARCH should leave from: every interface that
+ * is up and not loopback. An empty list means "let the OS pick" (`[undefined]`),
+ * which is what discovery did before it learned about hosts on two LANs.
+ *
+ * Interfaces that cannot carry multicast (a tailnet's utun) are left in: the
+ * send on them fails or goes nowhere, is logged, and the other interfaces still
+ * search. Filtering them by name would be a guess about someone else's network.
+ */
+export function multicastInterfaces(
+  nets: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces(),
+): (string | undefined)[] {
+  const addrs = Object.values(nets)
+    .flat()
+    .filter((a): a is os.NetworkInterfaceInfo => !!a && a.family === "IPv4" && !a.internal)
+    .map((a) => a.address);
+  const unique = [...new Set(addrs)];
+  return unique.length ? unique : [undefined];
 }
 
 /**
