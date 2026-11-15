@@ -262,6 +262,7 @@ export async function runExploreChecks(check: Check): Promise<void> {
 
   // --- a whole mission against a fake device and a fake model -----------------
   await missionChecks(check);
+  await firstLookChecks(check);
 
   // --- the model server dropped the model, the host's Xcode needs installing ---
   const LMSTUDIO_GONE = 'model endpoint 400: {"error":{"message":"litellm.NotFoundError: Lm_studioException - Invalid model identifier \\"holo4-35b-a3b-gguf\\". Please specify a valid downloaded model';
@@ -426,6 +427,46 @@ function droppingModel(state: { loaded: boolean; asked: number }): Promise<{ ser
       resolve({ server, url: `http://127.0.0.1:${typeof a === "object" && a ? a.port : 0}` });
     });
   });
+}
+
+/**
+ * The first look: an app whose first screen fades in is blank for a moment while its tree
+ * already has text. That is not a device that cannot capture its screen, and must not stop the
+ * run; a device still blank after the retries must.
+ */
+async function firstLookChecks(check: Check) {
+  class FadesIn extends FakeApp {
+    looks = 0;
+    constructor(private blankLooks: number) { super(); }
+    override async observe(): Promise<Observation> {
+      const o = await super.observe();
+      const flat = new PNG({ width: 108, height: 240 });
+      flat.data.fill(230);
+      return ++this.looks <= this.blankLooks ? { ...o, png: PNG.sync.write(flat) } : o;
+    }
+  }
+  const { server, url } = await fakeModel([{ name: "answer", args: { content: "Saw the garden." } }]);
+  try {
+    const run = async (app: FadesIn) => {
+      const dir = mkdtempSync(path.join(os.tmpdir(), "explore-first-"));
+      const deps: LoopDeps = {
+        actuator: app, appId: "com.fake", appName: "Garden", appFile: null,
+        model: { baseUrl: url, model: "fake" }, judge: null,
+        map: new ScreenMap("fake", path.join(dir, "map")), runDir: dir, night: "n1",
+        log: () => {}, canRunFlows: false, deadline: Date.now() + 60_000, firstLookRetryMs: [5, 5],
+      };
+      const m: Mission = { id: "f", app: "fake", title: "Look", persona: "a new user", goal: "look", budget: { steps: 3 } };
+      return runMission(m, deps).then((r) => ({ r, err: null as string | null }), (e: Error) => ({ r: null, err: e.message }));
+    };
+    const fading = new FadesIn(1);
+    const a = await run(fading);
+    check("explore(loop): a first screen still fading in is looked at again, not refused", a.err === null && fading.looks >= 2, a.err ?? "");
+    const never = new FadesIn(99);
+    const b = await run(never);
+    check("explore(loop): a device still blank after the retries is refused as before", !!b.err && b.err.includes("returns blank screenshots"), b.err ?? "ran");
+  } finally {
+    server.close();
+  }
 }
 
 async function cutOffChecks(check: Check) {

@@ -69,6 +69,8 @@ export type LoopDeps = {
   canRunFlows: boolean;
   /** Epoch ms when the night ends; the mission stops early when it comes. */
   deadline: number;
+  /** Waits before taking a blank first look again; default FIRST_LOOK_RETRY_MS. Tests shorten it. */
+  firstLookRetryMs?: number[];
   /** Send the app to the background once, at this share of the step budget (the "background" condition). */
   backgroundAt?: number | null;
   /**
@@ -224,6 +226,14 @@ const ISSUE_TO_CHECK: Record<string, { check: CheckName; cls?: string }> = {
   other: { check: "visual" },
 };
 
+/** Waits before the first look is taken again, when it was blank but the tree had text. */
+export const FIRST_LOOK_RETRY_MS = [1500, 3000];
+
+/** A blank picture over a tree with readable text: a screen that has not drawn, or cannot be captured. */
+function blankWithText(obs: Observation): boolean {
+  return isBlank(obs.png).blank && (obs.nodes ?? []).filter((n) => (n.text || n.label).trim()).length >= 3;
+}
+
 export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult> {
   const { actuator, appId } = d;
   const caps = actuator.caps;
@@ -289,15 +299,31 @@ export async function runMission(m: Mission, d: LoopDeps): Promise<MissionResult
       await sleep(2000);
       continue;
     }
-    lastObs = obs;
-    actedSinceLook = false;
-    screen = { w: obs.width, h: obs.height };
     // A device whose screenshots are blank while its tree is full of text is
     // not showing a blank app: it cannot capture its screen (an Android ATD
     // image does exactly this). A model driving it would see nothing all night.
-    if (i === 1 && isBlank(obs.png).blank && (obs.nodes ?? []).filter((n) => (n.text || n.label).trim()).length >= 3) {
-      throw new Error(`${actuator.target.id} returns blank screenshots while its UI tree has text; it cannot be explored by sight (an ATD emulator image? use google_apis)`);
+    //
+    // **Look again before believing it.** The first look comes the instant the
+    // app launches, and an app whose first screen fades in shows exactly this
+    // for a moment: Compose Navigation's default enter transition is a 700 ms
+    // fade, so the picture is the bare background while the tree already holds
+    // the screen's text. Aliquant's first lab run stopped here on a phone that
+    // captures its screen perfectly well (aliquant-lab-finish-line-2,
+    // 2026-11-14). A device that really cannot capture is still blank seconds
+    // later.
+    if (i === 1 && blankWithText(obs)) {
+      for (const wait of d.firstLookRetryMs ?? FIRST_LOOK_RETRY_MS) {
+        await sleep(wait);
+        obs = await actuator.observe();
+        if (!blankWithText(obs)) break;
+      }
+      if (blankWithText(obs)) {
+        throw new Error(`${actuator.target.id} returns blank screenshots while its UI tree has text; it cannot be explored by sight (an ATD emulator image? use google_apis)`);
+      }
     }
+    lastObs = obs;
+    actedSinceLook = false;
+    screen = { w: obs.width, h: obs.height };
     const shotName = `${String(i).padStart(3, "0")}.png`;
     writeFileSync(path.join(shotsDir, shotName), obs.png);
     // The tree beside the picture: the pointing bench (B1) harvests its
