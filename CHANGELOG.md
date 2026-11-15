@@ -32,6 +32,17 @@ a CI job fails when they disagree.
 - `daily-reviews-asc-greenfolio` names GreenFolio's App Store id (6788582076)
   instead of the `SET-ME` placeholder, so the daily review pull can reach App
   Store Connect once the schedule is re-seeded and enabled.
+- **`explore` looks again before calling a device blind.** The first look comes
+  the instant the app launches, and an app whose first screen fades in (Compose
+  Navigation's default 700 ms fade) is a blank picture over a tree full of text
+  for a moment. That stopped a run as "returns blank screenshots while its UI
+  tree has text" on a phone that captures perfectly well. The first look is now
+  taken again after 1.5 s and 3 s; a device still blank then is refused as
+  before.
+- **`explore` installs an APK published without `platform`.** The download was
+  named `.zip` unless the job said `app.platform: "android"` or the app's name
+  held "apk", and `adb install` refuses a file not named `.apk`. Now it is `.apk`
+  whenever every targeted device is Android.
 
 ## [0.9.3] — 2026-11-08
 

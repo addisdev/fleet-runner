@@ -283,7 +283,11 @@ export async function run_(job: Job, ctx: WorkloadCtx): Promise<void> {
   const work = mkdtempSync(path.join(os.tmpdir(), `fleet-explore-${job.job_id}-`));
   let appFile: string | null = null;
   if (job.app?.sha256) {
-    appFile = path.join(work, `app-${job.app.sha256.slice(0, 12)}${job.app.platform === "android" || /apk/i.test(job.app.name) ? ".apk" : ".zip"}`);
+    // adb refuses a file not named .apk, and an app published without
+    // `platform` (the publish contract needs only x-artifact-app) is still an
+    // APK when every device it will be installed on is Android.
+    const android = job.app.platform === "android" || /apk/i.test(job.app.name) || targets.every((t) => t.platform === "android");
+    appFile = path.join(work, `app-${job.app.sha256.slice(0, 12)}${android ? ".apk" : ".zip"}`);
     await ctx.fetchArtifact(job.app.sha256, appFile);
   }
   let previousFile: string | null = null;
