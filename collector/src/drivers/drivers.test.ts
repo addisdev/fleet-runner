@@ -14,7 +14,7 @@
 import { parseAdbDevices } from "./adb.js";
 import { bootedFrom } from "./simctl.js";
 import { targetsFrom } from "./devicectl.js";
-import { parseSsdpLocation, parseDeviceInfo, rokuTargetId, mSearchDatagram, isRokuReply } from "./roku.js";
+import { parseSsdpLocation, parseDeviceInfo, rokuTargetId, mSearchDatagram, isRokuReply, multicastInterfaces } from "./roku.js";
 import { dedupe, listAllTargets, driverNamed, DRIVERS } from "./index.js";
 import { applePlatform, simulatorPlatform, physicalApple, type IosDeviceInfo } from "../targets.js";
 import { devicePlatform, deviceKind } from "../api/shared.js";
@@ -119,6 +119,23 @@ export function runDriverChecks(check: Check) {
   ].join("\r\n");
   check("roku: LOCATION yields ip and port", parseSsdpLocation(ssdp)?.ip === "192.168.1.44");
   check("roku: a roku:ecp reply is a Roku", isRokuReply(ssdp));
+  {
+    const v4 = (address: string, internal = false) =>
+      ({ address, family: "IPv4", internal, netmask: "255.255.255.0", mac: "00:00:00:00:00:00", cidr: null }) as const;
+    const ifs = multicastInterfaces({
+      lo0: [v4("127.0.0.1", true)],
+      en0: [v4("192.168.1.111"), { ...v4("fe80::1"), family: "IPv6" } as never],
+      en1: [v4("192.168.50.77")],
+    } as never);
+    check(
+      "roku: M-SEARCH goes out on every IPv4 LAN, not only the default route's",
+      JSON.stringify(ifs) === JSON.stringify(["192.168.1.111", "192.168.50.77"]),
+    );
+    check(
+      "roku: with no usable interface, the OS picks (one send, as before)",
+      JSON.stringify(multicastInterfaces({ lo0: [v4("127.0.0.1", true)] } as never)) === JSON.stringify([null]),
+    );
+  }
   // What a Hue bridge sends back to a roku:ecp search. It registered as a Roku
   // the first night presence was on.
   const hue = [

@@ -1,0 +1,9 @@
+{
+  "profiles": ["chromium", "mobile-chrome"],
+  "pages": [
+    { "name": "home", "path": "/", "waitFor": ".brand", "settle_ms": 1500, "fullPage": false },
+    { "name": "ride", "path": "/#ride", "waitFor": "#ride img", "settle_ms": 1500, "fullPage": false },
+    { "name": "race", "path": "/#race", "waitFor": "#race img", "settle_ms": 1500, "fullPage": false },
+    { "name": "numbers", "path": "/#numbers", "waitFor": "#numbers img", "settle_ms": 1500, "fullPage": false }
+  ]
+}
