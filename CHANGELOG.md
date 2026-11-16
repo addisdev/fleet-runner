@@ -16,16 +16,44 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.4] — 2026-11-16
+
+Roku discovery works from a host on two networks, so the Roku nightly can move
+to ultra; lab launches mark themselves as lab runs.
+
+### Added
+
+- Every launch the collector makes itself tells the app it is a lab run (#130):
+  `taylab_lab=true` (an Android string extra) or `-TaylabLab YES` (Apple
+  process arguments) goes first on explore missions, their relaunches and
+  replay flows, and on `launchApp` and `cold-start`. Apps on the Taylab SDK
+  then send `lab: true`, so night QA no longer counts as new users. A replay
+  flow's relaunch now carries the mission's launch arguments too, instead of a
+  bare `launchApp` that dropped them. Maestro flows still pass it themselves
+  (`arguments: { taylab_lab: true }`); the Jerv example flow does.
+- **A jerv-landing web suite** (#127): shots of the jerv.app landing page for
+  `web-shots`.
+
 ### Fixed
 
-- **Roku discovery searches every LAN the host is on.** The SSDP M-SEARCH left
+- **Roku discovery searches every LAN the host is on** (#134). The SSDP M-SEARCH left
   only by the default route's interface, so a host on two networks (ultra: en0
   on 192.168.1.x, en1 on the Roku's 192.168.50.x) never found the Roku, though
   ECP to its address worked. The search now goes out once per IPv4 interface.
-- **Aliquant's home shot waits for the page, not its loading screen.**
+- **Aliquant's home shot waits for the page, not its loading screen** (#134).
   `waitFor: "main"` matched the "Loading…" frame too, so a mobile capture could
   fire mid-load (3% diff between two runs a minute apart). It now waits for
   "See an example", which only the loaded home shows.
+- `daily-reviews-asc-greenfolio` names GreenFolio's App Store id (#129) (6788582076)
+  instead of the `SET-ME` placeholder, so the daily review pull can reach App
+  Store Connect once the schedule is re-seeded and enabled.
+- **Night QA shuts down the emulators it booted, however the night ends**
+  (#128). Each boot is recorded with its boot id and owner pid; the night stops
+  it on a signal, a crash or in `finally`, adopts its own orphan from an earlier
+  night, and `explore-night.ts --sweep` (LaunchAgent
+  `com.addisdev.fleet-explore-sweep`, 06:00 and hourly to 21:05) stops a
+  recorded emulator whose night is over. Unrecorded emulators are never touched.
+  One left up after a brain outage had run for 9 days 16 h.
 
 ## [0.9.3] — 2026-11-08
 
@@ -1632,7 +1660,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...HEAD
+[0.9.4]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/addisdev/fleet-runner/compare/v0.9.0...v0.9.1

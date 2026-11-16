@@ -10,7 +10,7 @@
  * skip and exits 0 before it touches either.
  */
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -19,6 +19,9 @@ import {
   buildMissing, fetchedSince, lastLine, nextClock, nightEnd, nightManifestMinutes, nightStart, planSpecs,
   shortNightNote, warmRefusedForMemory,
 } from "./night.js";
+import {
+  adoptable, deviceBusy, readRecords, sweepAction, withRecord, withoutSerial, writeRecords, type BootRecord,
+} from "./night-devices.js";
 
 type Check = (name: string, cond: boolean, detail?: string) => void;
 
@@ -114,6 +117,137 @@ export async function runNightChecks(check: Check) {
   check("the reason is the last line", lastLine(`a\n${oct14}\n\n`) === oct14);
 
   await runNightCommandChecks(check);
+  runNightDeviceChecks(check);
+  await runSweepCommandChecks(check);
+}
+
+const REC: BootRecord = {
+  kind: "emulator", avd: "fleet-explore-1", serial: "emulator-5554", boot_id: "b007-1d", owner_pid: 4242, booted_at: "2026-11-02T22:15:19-05:00",
+};
+
+/** Which emulators a night may shut down, and what the morning sweep does (11-02: one stayed up nine days). */
+function runNightDeviceChecks(check: Check) {
+  const up = { avd: "fleet-explore-1", boot_id: "b007-1d" };
+  check("sweep: the night's own boot, owner gone, no job: stop", sweepAction(REC, up, { ownerAlive: false, busy: null }).action === "stop");
+  check("sweep: its night still running: keep (the night stops it itself)", sweepAction(REC, up, { ownerAlive: true, busy: null }).action === "keep");
+  check("sweep: a brain job on it: keep", sweepAction(REC, up, { ownerAlive: false, busy: "the brain has job x on it" }).action === "keep");
+  check("sweep: nothing on the serial: forget, touch nothing", sweepAction(REC, null, { ownerAlive: false, busy: null }).action === "forget");
+  check("sweep: same AVD, another boot (someone else started it): forget, never stop",
+    sweepAction(REC, { avd: "fleet-explore-1", boot_id: "other" }, { ownerAlive: false, busy: null }).action === "forget");
+  check("sweep: another AVD on the serial (CI's): forget, never stop",
+    sweepAction(REC, { avd: "ci-ultra-greenfolio-android-2", boot_id: "b007-1d" }, { ownerAlive: false, busy: null }).action === "forget");
+  check("sweep: a record without a boot id matches nothing",
+    sweepAction({ ...REC, boot_id: "" }, { avd: "fleet-explore-1", boot_id: "" }, { ownerAlive: false, busy: null }).action === "forget");
+
+  check("adopt: an earlier night's boot whose night is gone", adoptable([REC], "emulator-5554", up, () => false)?.owner_pid === 4242);
+  check("adopt: not while that night is still running", adoptable([REC], "emulator-5554", up, () => true) === null);
+  check("adopt: not an emulator with no record (another session's)", adoptable([], "emulator-5554", up, () => false) === null);
+  check("adopt: not a different boot of the same AVD", adoptable([REC], "emulator-5554", { ...up, boot_id: "x" }, () => false) === null);
+
+  check("busy: a current job", deviceBusy({ current_job: "explore-garden-1" })?.includes("explore-garden-1") === true);
+  check("busy: a lock", deviceBusy({ current_job: null, lock: { job_id: "x" } }) !== null);
+  check("busy: neither", deviceBusy({ current_job: null, lock: null }) === null && deviceBusy(null) === null);
+
+  const dir = mkdtempSync(path.join(os.tmpdir(), "fleet-night-state-"));
+  const file = path.join(dir, "sub", "booted.json");
+  check("no state file: no records", readRecords(file).length === 0);
+  writeRecords(file, withRecord([], REC));
+  writeRecords(file, withRecord(readRecords(file), { ...REC, boot_id: "newer", owner_pid: 7 }));
+  const back = readRecords(file);
+  check("one record per serial, the newest kept", back.length === 1 && back[0].boot_id === "newer" && back[0].owner_pid === 7, JSON.stringify(back));
+  check("forgetting a serial removes it", withoutSerial(back, "emulator-5554").length === 0);
+  writeFileSync(file, "{not json");
+  check("a broken state file reads as no records, not a crash", readRecords(file).length === 0);
+}
+
+/**
+ * `explore-night.ts --sweep` with a fake adb and a fake brain: it stops the
+ * night's own orphan with `adb emu kill`, and leaves alone a different boot,
+ * a device with a job on it, and anything it has no record of.
+ */
+async function runSweepCommandChecks(check: Check) {
+  if (process.platform === "win32") return; // the fake adb is a shell script; the sweep runs on ultra
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+  const dir = mkdtempSync(path.join(os.tmpdir(), "fleet-sweep-"));
+  const sdk = path.join(dir, "sdk");
+  mkdirSync(path.join(sdk, "platform-tools"), { recursive: true });
+  const calls = path.join(dir, "adb-calls");
+  const gone = path.join(dir, "killed");
+  // emulator-5554 runs fleet-explore-1 (boot b007-1d) until it is sent `emu kill`;
+  // emulator-5556 runs CI's AVD and emulator-5558 runs fleet-explore-2 (another boot).
+  writeFileSync(path.join(sdk, "platform-tools", "adb"), `#!/bin/bash
+echo "$*" >> "${calls}"
+if [ "$1" = devices ]; then
+  echo "List of devices attached"
+  [ -f "${gone}" ] || printf 'emulator-5554\tdevice\n'
+  printf 'emulator-5556\tdevice\nemulator-5558\tdevice\n'
+  exit 0
+fi
+s="$2"; shift 2
+if [ "$s" = emulator-5554 ] && [ -f "${gone}" ]; then echo "error: device not found" >&2; exit 1; fi
+case "$s $*" in
+  "emulator-5554 emu avd name") printf 'fleet-explore-1\r\nOK\r\n' ;;
+  "emulator-5556 emu avd name") printf 'ci-ultra-greenfolio-android-2\r\nOK\r\n' ;;
+  "emulator-5558 emu avd name") printf 'fleet-explore-2\r\nOK\r\n' ;;
+  "emulator-5554 shell cat /proc/sys/kernel/random/boot_id") echo b007-1d ;;
+  "emulator-5556 shell cat /proc/sys/kernel/random/boot_id") echo c1-boot ;;
+  "emulator-5558 shell cat /proc/sys/kernel/random/boot_id") echo started-by-someone-else ;;
+  "emulator-5554 emu kill") touch "${gone}"; echo "OK: killing emulator, bye bye" ;;
+  *) exit 1 ;;
+esac
+`);
+  chmodSync(path.join(sdk, "platform-tools", "adb"), 0o755);
+
+  let busy: string | null = null;
+  const server = createServer((req, res) => {
+    const url = req.url ?? "";
+    const send = (code: number, o: unknown) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
+    if (url.startsWith("/api/devices/")) return send(200, { device_id: decodeURIComponent(url.split("/")[3]), current_job: busy, lock: null });
+    send(404, { error: "not here" });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const port = (server.address() as { port: number }).port;
+  const state = path.join(dir, "booted.json");
+  const sweep = (extra: string[] = []) => new Promise<{ code: number; out: string }>((resolve) => {
+    const p = spawn(process.execPath, [path.join(root, "node_modules/tsx/dist/cli.mjs"), "scripts/explore-night.ts", "--sweep", ...extra], {
+      cwd: root, env: { ...process.env, ANDROID_HOME: sdk, FLEET_URL: `http://127.0.0.1:${port}`, FLEET_EXPLORE_STATE: state },
+    });
+    let out = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.stderr.on("data", (d) => (out += d));
+    p.on("exit", (code) => resolve({ code: code ?? -1, out }));
+  });
+  const killed = () => existsSync(calls) && readFileSync(calls, "utf8").split("\n").filter((l) => / emu kill$/.test(l));
+  // A pid that is certainly not a live explore-night: this test's own parent is not one, and 999999 is unused.
+  const dead = 999_999;
+  try {
+    const r0 = await sweep();
+    check("sweep with no records: nothing to do, exit 0", r0.code === 0 && /no emulator booted by a night is on record/.test(r0.out), r0.out);
+
+    writeRecords(state, [
+      { ...REC, owner_pid: dead },
+      { ...REC, avd: "fleet-explore-2", serial: "emulator-5558", boot_id: "our-old-boot", owner_pid: dead },
+    ]);
+    busy = "explore-jerv-1";
+    const r1 = await sweep();
+    check("a brain job on the night's emulator keeps it up", r1.code === 0 && /keep: fleet-explore-1: the brain has job explore-jerv-1/.test(r1.out), r1.out);
+    check("and nothing was killed", (killed() || []).length === 0, String(killed()));
+    check("a replaced boot is forgotten, not stopped", /forget: emulator-5558 now runs fleet-explore-2/.test(r1.out) && readRecords(state).length === 1, r1.out);
+
+    const dry = await sweep(["--dry-run"]);
+    busy = null;
+    const r2dry = await sweep(["--dry-run"]);
+    check("a dry sweep says it would stop the orphan, and does not", /stop: fleet-explore-1 on emulator-5554/.test(r2dry.out) && (killed() || []).length === 0, `${dry.out}
+${r2dry.out}`);
+
+    const r2 = await sweep();
+    const kills = killed() || [];
+    check("the night's orphan is stopped with adb emu kill on its own serial", kills.length === 1 && kills[0] === "-s emulator-5554 emu kill", String(kills));
+    check("and only it: CI's emulator and the other boot were never sent a kill", !kills.some((k) => /5556|5558/.test(k)));
+    check("the sweep waits until adb no longer lists it, then forgets it", r2.code === 0 && /fleet-explore-1 \(emulator-5554\) is down/.test(r2.out) && readRecords(state).length === 0, r2.out);
+  } finally {
+    server.close();
+  }
 }
 
 /** explore-night.ts against a fake brain: what it posts, and that it never reaches the device. */

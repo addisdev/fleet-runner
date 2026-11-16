@@ -48,6 +48,31 @@ Then:
 `exclusive` takes a device lock, because two suites tapping the same phone is
 not a test.
 
+### Tell the app it is in the lab
+
+Every launch the fleet makes itself (an explore mission, its relaunches and
+replay flows, `drain`, `app-soak`, `upgrade-test`, the locale and accessibility captures,
+`cold-start`) passes a lab flag first: the string extra `taylab_lab=true` on
+Android, `-TaylabLab YES` on iOS, tvOS and the other Apple platforms. An app on
+the Taylab SDK (1.16 or later) then marks its analytics `lab: true`, so a
+night of exploring does not show up as a crowd of new users. An app that does
+not read the flag never sees a difference.
+
+A Maestro flow launches the app itself, so it has to pass the flag on each
+`launchApp` of the app under test:
+
+```yaml
+- launchApp:
+    clearState: true
+    arguments:
+      taylab_lab: true
+```
+
+On Android that arrives as a boolean extra; on iOS a flow can pass
+`-TaylabLab YES` through its XCUITest or `TAYLAB_LAB=1` in the environment.
+The monkey fallback (an app with no resolvable launcher activity) carries no
+extras, so a launch that way is not marked.
+
 !!! tip "Accessibility identifiers are the real cost, not the tests"
 
     Two of the three apps this was first built for had **none**, and the third's

@@ -100,17 +100,47 @@ export async function ensureAwake(target: Target): Promise<string | null> {
 }
 
 /**
+ * What every launch the fleet makes itself passes, so the app knows it is in
+ * the lab and not in a person's hand.
+ *
+ * Apps on the Taylab SDK read these (`TaylabTelemetry.isLabLaunch` on both
+ * platforms, SDK 1.16+): their envelopes then carry `lab: true` (and, from
+ * 1.19, `harness: lab`), and the first-week funnel leaves the install out.
+ * Without it a night of exploring is a stream of new users who all tried,
+ * most of whom stayed. An app that does not read them never sees a difference:
+ * an unknown intent extra or `-Key Value` pair is ignored.
+ *
+ * Android takes `key=value` (a string extra, `--es`); Apple platforms take
+ * process arguments. Roku and the web have neither, so get nothing. A Maestro
+ * flow launches the app itself and needs its own
+ * `arguments: { taylab_lab: true }` on each `launchApp`.
+ */
+export function labLaunchArgs(platform: string): string[] {
+  if (platform === "android") return ["taylab_lab=true"];
+  if (["ios", "tvos", "watchos", "visionos", "macos"].includes(platform)) return ["-TaylabLab", "YES"];
+  return [];
+}
+
+/** `key=value` launch arguments as `am start` string extras. */
+export const asExtras = (args: string[]): string[] =>
+  args.flatMap((a) => {
+    const i = a.indexOf("=");
+    return i > 0 ? ["--es", a.slice(0, i), a.slice(i + 1)] : [];
+  });
+
+/**
  * Launch the app, three ways, because three platforms.
  *
  * `args` reach a simulator or a real iPhone as process arguments, which is how
  * a launch argument like -AppleLanguages reaches an app without touching the
  * device's own language at all. Android has no equivalent -- `am start` extras
  * are not read as preferences -- so the Android path ignores them rather than
- * pretending otherwise.
+ * pretending otherwise. Every platform gets `labLaunchArgs` first.
  */
 export async function launchApp(target: Target, appId: string, args: string[] = []) {
+  const lab = labLaunchArgs(target.platform);
   if (target.platform === "ios" && target.kind === "device") {
-    await exec("xcrun", ["devicectl", "device", "process", "launch", "--device", target.id, appId, ...args], { timeout: 60_000 });
+    await exec("xcrun", ["devicectl", "device", "process", "launch", "--device", target.id, appId, ...lab, ...args], { timeout: 60_000 });
     return;
   }
   if (target.platform === "android") {
@@ -123,13 +153,14 @@ export async function launchApp(target: Target, appId: string, args: string[] = 
       );
       const component = stdout.trim().split("\n").pop()?.trim();
       if (!component || !component.includes("/")) throw new Error(`unresolvable: ${stdout}`);
-      await exec(ADB, ["-s", target.id, "shell", "am", "start", "-n", component], { timeout: 30_000 });
+      await exec(ADB, ["-s", target.id, "shell", "am", "start", "-n", component, ...asExtras(lab)], { timeout: 30_000 });
     } catch {
+      // monkey carries no extras: a launch this way is not marked as the lab's.
       await exec(ADB, ["-s", target.id, "shell", "monkey", "-p", appId, "-c",
         "android.intent.category.LAUNCHER", "1"], { timeout: 30_000 });
     }
   } else {
-    await exec("xcrun", ["simctl", "launch", target.id, appId, ...args], { timeout: 60_000 });
+    await exec("xcrun", ["simctl", "launch", target.id, appId, ...lab, ...args], { timeout: 60_000 });
   }
 }
 

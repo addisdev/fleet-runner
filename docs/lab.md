@@ -85,6 +85,23 @@ executor, beside the brain and never inside it:
 - Proof 2026-10-28: `s9-proof-ui-smoke-214023` passed on the S9 in 60 s through
   `ultra-phone`, and the executor logged "leaving out 1 reserved device(s):
   988a1b3541354f565a (reserved for growth-instagram)".
+- **It is also ultra's web executor (since 2026-11-08, v0.9.3)**, for web jobs
+  that must sign in. The password stays off fleet-host, which is Liz's managed
+  Mac. The Aliquant nightlies stay pinned to fleet-host, whose baselines they
+  diff against. Settings in its config `env`: `FLEET_WEB=1`,
+  `FLEET_PLAYWRIGHT_DIR=~/fleet-web/current/collector` and
+  `FLEET_WEB_SPECS_DIR=<that>/examples/web-specs`. `~/fleet-web/current` is
+  the v0.9.3 source tarball with `npm ci` run in `collector/`; Playwright
+  1.62.1 and Chromium 1243 are already on ultra. **`current` must be a real
+  directory, not a symlink:** Playwright resolves its test folder to the real
+  path, the executor passes the spec path as given, and the two never match
+  ("No tests found", the job fails in 1 s). Test accounts are in ultra's login
+  Keychain under service `fleet-ui-test`. A process over SSH cannot write
+  there until the keychain is unlocked in the same session. Jerv's showcase
+  rider went in with `~/Desktop/Jerv/store-showcase-password-ultra.sh` on the
+  dev Mac. Pin these jobs with `targets.executor: ultra-phone`. Proof:
+  `jerv-ride-panel-shots-20261108b` passed (Jerv's ride panel signed in and
+  signed out).
 
 Restart it with `launchctl kickstart -k gui/$(id -u)/com.addisdev.fleet-phone`;
 disable it by renaming the plist to `.plist.disabled` (see below).
