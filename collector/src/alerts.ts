@@ -290,23 +290,35 @@ export function evaluate(now = new Date(), sizes: { dbBytes: number; logBytes: n
   }
 
   // --- schedules ---
-  for (const s of db.prepare("SELECT id, cron, last_run FROM schedules WHERE enabled = 1").all() as {
+  for (const s of db.prepare("SELECT id, cron, last_run, template FROM schedules WHERE enabled = 1").all() as {
     id: string;
     cron: string;
     last_run: string | null;
+    template: string;
   }[]) {
     const prev = prevRun(s.cron, now);
     // A schedule that has never run has no history to be late against, so a
     // freshly enabled one does not immediately alarm.
     if (!prev || s.last_run == null) continue;
     const lateS = (now.getTime() - prev.getTime()) / 1000;
-    if (s.last_run !== minuteKey(prev) && lateS > THRESHOLDS.scheduleLateS)
+    // Missed means last_run is OLDER than the firing it should have made, not
+    // merely different. prevRun is strictly before the current minute, so in
+    // the minute a schedule fires, prev is yesterday's firing while last_run
+    // already says today's -- and `!==` called that a day late. Every nightly
+    // raised a schedule-missed in the minute it ran and resolved it the next:
+    // 42 banners in the week to 2026-11-16, none of them a missed run.
+    // minuteKey is fixed-width, so comparing the strings compares the times.
+    if (s.last_run < minuteKey(prev) && lateS > THRESHOLDS.scheduleLateS) {
+      // Named, so a receiver told that a host is off on purpose can stay quiet.
+      const executor = parse<{ targets?: { executor?: unknown } } | null>(s.template, null)?.targets?.executor;
+      const where = typeof executor === "string" && executor ? ` on ${executor}` : "";
       out.push({
         rule: "schedule-missed",
         subject: s.id,
         severity: "warning",
-        message: `schedule ${s.id} should have fired at ${minuteKey(prev)} and did not`,
+        message: `schedule ${s.id}${where} should have fired at ${minuteKey(prev)} and did not`,
       });
+    }
   }
 
   // A schedule that keeps skipping. Its jobs are no longer counted as passes,

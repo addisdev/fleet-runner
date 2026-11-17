@@ -210,4 +210,36 @@ export function runAlertChecks(check: Check) {
     db.prepare("UPDATE schedules SET enabled = 0 WHERE id = 'nightly-fan'").run();
     check("stale skip: a disabled schedule is not watched", !skipping().some((f) => f.subject === "nightly-fan"));
   });
+  // The minute a nightly fires. prevRun is strictly before the current minute,
+  // so at 02:00:52 it is YESTERDAY's 02:00 while the scheduler has already
+  // written today's into last_run. `!==` read that as a day late: every
+  // nightly opened a schedule-missed in the minute it ran and resolved it the
+  // next, 42 banners in the week to 2026-11-16 and not one missed run.
+  inTempDir((dir) => {
+    const db = openDb(dir);
+    const at = (d: number, h: number, m: number, s = 0) => new Date(2026, 10, d, h, m, s);
+    const key = (t: Date) => {
+      const p = (n: number) => String(n).padStart(2, "0");
+      return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}T${p(t.getHours())}:${p(t.getMinutes())}`;
+    };
+    const schedule = (id: string, lastRun: Date, executor?: string) =>
+      db.prepare("INSERT INTO schedules (id, cron, template, enabled, last_run) VALUES (?, '0 2 * * *', ?, 1, ?)")
+        .run(id, JSON.stringify(executor ? { targets: { executor } } : {}), key(lastRun));
+    schedule("fired-just-now", at(17, 2, 0), "ultra-phone");
+    schedule("really-missed", at(15, 2, 0), "fleet-host");
+    schedule("really-missed-anywhere", at(15, 2, 0));
+
+    const missed = evaluate(at(17, 2, 0, 52), NO_SIZES).filter((f) => f.rule === "schedule-missed");
+    const bySubject = new Map(missed.map((f) => [f.subject, f]));
+    check("schedule-missed: a schedule that fired this minute is not a day late",
+      !bySubject.has("fired-just-now"), JSON.stringify(missed.map((f) => f.message)));
+    check("schedule-missed: one whose last run is older than its firing still is",
+      bySubject.has("really-missed") && bySubject.has("really-missed-anywhere"));
+    check("schedule-missed: names the executor it was meant for",
+      bySubject.get("really-missed")?.message === "schedule really-missed on fleet-host should have fired at 2026-11-16T02:00 and did not",
+      bySubject.get("really-missed")?.message);
+    check("schedule-missed: and says nothing of one it was not given",
+      bySubject.get("really-missed-anywhere")?.message === "schedule really-missed-anywhere should have fired at 2026-11-16T02:00 and did not",
+      bySubject.get("really-missed-anywhere")?.message);
+  });
 }

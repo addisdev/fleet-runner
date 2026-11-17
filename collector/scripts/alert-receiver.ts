@@ -20,12 +20,18 @@
  * is still open in the dashboard and still in the JSONL below when the link
  * comes back. Losing a notification is acceptable; losing the alert is not, and
  * that is the collector's job rather than this one's.
+ *
+ * **How loud.** At most one banner per alert kind per hour, a sound only for
+ * thermal-critical and job-stuck, and nothing for a host listed in
+ * `FLEET_ALERT_QUIET_HOSTS` (see alert-throttle.ts). Every alert is still
+ * logged, with `shown: true | false | "folded"`, so the banners can be counted.
  */
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
+import { AlertThrottle, parseQuietHosts, type Banner, type Summary } from "./alert-throttle.js";
 
 const PORT = Number(process.env.FLEET_ALERT_PORT ?? 8790);
 const LOG = process.env.FLEET_ALERT_LOG ?? path.join(homedir(), "Library/Logs/fleet-alerts.jsonl");
@@ -49,18 +55,29 @@ function osaString(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function notify(title: string, message: string, critical: boolean) {
+function notify(title: string, message: string, sound: boolean) {
   // Truncated: Notification Center silently drops an over-long body, which
   // would turn a loud failure into a quiet one.
   const body = message.length > 240 ? message.slice(0, 237) + "…" : message;
   const script =
     `display notification "${osaString(body)}" ` +
     `with title "${osaString(title)}"` +
-    (critical ? ` sound name "Basso"` : "");
+    (sound ? ` sound name "Basso"` : "");
   execFile("/usr/bin/osascript", ["-e", script], (err) => {
     if (err) record({ kind: "notify-failed", error: String(err) });
   });
 }
+
+const QUIET_HOSTS = parseQuietHosts(process.env.FLEET_ALERT_QUIET_HOSTS);
+
+const throttle = new AlertThrottle({
+  quietHosts: QUIET_HOSTS,
+  show: (b: Banner, why: { rule: string; summary?: Summary }) => {
+    if (why.summary)
+      record({ kind: "summary", rule: why.rule, title: b.title, body: b.message, folded: why.summary.folded, shown: true });
+    notify(b.title, b.message, b.sound);
+  },
+});
 
 createServer((req, res) => {
   if (req.method !== "POST") {
@@ -78,11 +95,11 @@ createServer((req, res) => {
     // headers, so read those and fall back to something honest.
     const title = String(req.headers["title"] ?? "fleet");
     const priority = String(req.headers["priority"] ?? "default");
-    record({ kind: "alert", title, priority, body });
-    notify(title, body || "(no message)", priority === "high");
+    const outcome = throttle.receive({ title, body, priority });
+    record({ kind: "alert", title, priority, body, rule: outcome.rule, shown: outcome.shown, ...(outcome.reason ? { reason: outcome.reason } : {}) });
     res.writeHead(204).end();
   });
 }).listen(PORT, "127.0.0.1", () => {
-  record({ kind: "listening", port: PORT });
+  record({ kind: "listening", port: PORT, quiet_hosts: QUIET_HOSTS });
   console.log(`fleet alert receiver on 127.0.0.1:${PORT}, logging to ${LOG}`);
 });
