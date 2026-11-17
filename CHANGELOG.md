@@ -19,16 +19,16 @@ a CI job fails when they disagree.
 ### Changed
 
 - The macOS alert receiver raises at most one banner per alert kind per hour
-  (#PRNUM): the first at once, the rest of the hour folded into one
+  (#137): the first at once, the rest of the hour folded into one
   `fleet: <kind> ×N in the last hour` banner. Only `thermal-critical` and
   `job-stuck` make a sound. `FLEET_ALERT_QUIET_HOSTS` names hosts that are off
   on purpose, whose `schedule-missed` and `device-offline` raise nothing. Every
   alert is still logged, now with `shown: true | false | "folded"`.
-- `schedule-missed` names the executor a schedule targets (#PRNUM).
+- `schedule-missed` names the executor a schedule targets (#137).
 
 ### Fixed
 
-- `schedule-missed` no longer fires in the minute a schedule runs (#PRNUM).
+- `schedule-missed` no longer fires in the minute a schedule runs (#137).
   `prevRun` is strictly before the current minute, so at the firing minute it
   was yesterday's firing while `last_run` already held today's, and `!==` read
   that as a day late. Every nightly opened the alert and resolved it a minute
