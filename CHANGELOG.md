@@ -16,6 +16,24 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Changed
+
+- The macOS alert receiver raises at most one banner per alert kind per hour
+  (#PRNUM): the first at once, the rest of the hour folded into one
+  `fleet: <kind> ×N in the last hour` banner. Only `thermal-critical` and
+  `job-stuck` make a sound. `FLEET_ALERT_QUIET_HOSTS` names hosts that are off
+  on purpose, whose `schedule-missed` and `device-offline` raise nothing. Every
+  alert is still logged, now with `shown: true | false | "folded"`.
+- `schedule-missed` names the executor a schedule targets (#PRNUM).
+
+### Fixed
+
+- `schedule-missed` no longer fires in the minute a schedule runs (#PRNUM).
+  `prevRun` is strictly before the current minute, so at the firing minute it
+  was yesterday's firing while `last_run` already held today's, and `!==` read
+  that as a day late. Every nightly opened the alert and resolved it a minute
+  later: 42 notifications in the week to 2026-11-16, none a missed run.
+
 ## [0.9.4] — 2026-11-16
 
 Roku discovery works from a host on two networks, so the Roku nightly can move
