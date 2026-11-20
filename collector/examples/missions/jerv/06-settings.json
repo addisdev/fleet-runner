@@ -1,0 +1,12 @@
+{
+  "id": "jerv-settings-tinkerer",
+  "app": "jerv",
+  "title": "Every switch in Settings",
+  "persona": "A tinkerer who opens every settings page of a new app, flips every switch and changes units, then puts things back.",
+  "goal": "Open You, then Settings. Visit every section: Privacy, Notifications, Intelligence, Sounds & haptics, Units, Basemap, Fog look, Map performance. Switch units to the other system and back. Look for anything about Pro, purchases or offline maps.",
+  "success": "Every section opens and closes cleanly, units switched and returned, and no Pro, paywall or price appears anywhere.",
+  "budget": { "steps": 50, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["SettingsScreen", "YouScreen", "PaywallScreen", "OfflineMapsScreen"],
+  "block": ["\\bcreate an account\\b", "\\bsign up\\b", "\\bdelete\\b", "\\bsend\\b", "\\bpost\\b", "\\bshare\\b", "\\breport\\b", "\\bbuy\\b", "\\bsubscribe\\b"]
+}

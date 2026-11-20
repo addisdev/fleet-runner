@@ -1,0 +1,12 @@
+{
+  "id": "jerv-known-ground",
+  "app": "jerv",
+  "title": "A second ride on the same block",
+  "persona": "A commuter who rode this way yesterday, standing still at a desk, opening Jerv to see what a ride over known ground gives.",
+  "goal": "Start a ride, keep it running for about two minutes without moving, look at the goal line and any round offered, then stop and read the receipt. Open Ride history and the newest ride.",
+  "success": "The receipt names a distance or a re-lit count instead of '+0 streets lit', and Ride history opens the ride.",
+  "budget": { "steps": 40, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["RideScreen", "RideSummary", "RideHistory", "RideCard"],
+  "block": ["\\bcreate an account\\b", "\\bsign up\\b", "\\bdelete\\b", "\\bsend\\b", "\\bpost\\b", "\\bshare\\b", "\\breport\\b", "\\bbuy\\b", "\\bsubscribe\\b"]
+}
