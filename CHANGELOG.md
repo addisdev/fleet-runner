@@ -16,6 +16,21 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Fixed
+
+- A Maestro flow's `takeScreenshot` images reach the collector again. Maestro
+  2.x writes them under `~/.maestro/tests/<timestamp>/<flow>/takeScreenshot/`
+  rather than the working directory, so `ui-test` uploaded only its JUnit
+  report and `locale-shots` reported `no screenshot captured` for flows that
+  took eleven. Every flow run now passes `--test-output-dir` (Maestro 1.40 or
+  later) and reads the shots from there: `ui-test` uploads each one as
+  `<job>-<device>-<name>.png`, plus a failing step's shot as
+  `<job>-<device>-screenshots/<file>.png`, and `locale-shots`, `app-soak`,
+  `a11y-audit`, `upgrade-test`, regressions and explore setup flows find them
+  in their own folders as before. Maestro's logs and `commands.json` (which
+  holds every typed value) go to a temp folder that is deleted after the run,
+  and are never uploaded.
+
 ### Changed
 
 - The macOS alert receiver raises at most one banner per alert kind per hour

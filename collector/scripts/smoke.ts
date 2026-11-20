@@ -33,6 +33,7 @@ import { runTvloopChecks } from "../src/workloads/tvloop/tvloop.test.js";
 import { runColdStartChecks } from "../src/workloads/cold-start/cold-start.test.js";
 import { runFindingsChecks } from "../src/findings.test.js";
 import { runRegressionChecks } from "../src/workloads/regressions.test.js";
+import { runFlowChecks } from "../src/workloads/flows.test.js";
 import { runDeviceChecks } from "../src/workloads/device.test.js";
 import { referenceDigest } from "./conformance.js";
 import { redact, keychainPassword } from "../src/secrets.js";
@@ -3013,6 +3014,10 @@ await runFindingsChecks(check);
 // The ui-test side of regression tests: which app, a stored flow made
 // runnable, the crash-buffer judgement, and what each run reports.
 await runRegressionChecks(check);
+
+// Where a Maestro flow's screenshots end up: the 2.x output tree, ui-test's
+// upload names, and runFlow against a fake Maestro.
+await runFlowChecks(check);
 runDeviceChecks(check);
 
 // --- night-QA findings, over HTTP ---
