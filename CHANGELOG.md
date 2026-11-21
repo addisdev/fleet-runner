@@ -18,7 +18,7 @@ a CI job fails when they disagree.
 
 ### Fixed
 
-- A Maestro flow's `takeScreenshot` images reach the collector again. Maestro
+- A Maestro flow's `takeScreenshot` images reach the collector again (#138). Maestro
   2.x writes them under `~/.maestro/tests/<timestamp>/<flow>/takeScreenshot/`
   rather than the working directory, so `ui-test` uploaded only its JUnit
   report and `locale-shots` reported `no screenshot captured` for flows that
