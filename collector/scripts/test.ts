@@ -196,6 +196,11 @@ if (!(await run(process.execPath, [TSX, "scripts/check-workloads.ts"]))) failed 
 step("documented counts read the catalog right");
 if (!(await run(process.execPath, [TSX, "scripts/check-counts.ts"]))) failed = true;
 
+// The macOS alert receiver's banner budget, on a fake clock: no hardware, no
+// screen, no collector.
+step("alert receiver: one banner per kind per hour");
+if (!(await run(process.execPath, [TSX, "scripts/check-alert-receiver.ts"]))) failed = true;
+
 // The shelf picks each device's drawing from its model string; the real
 // fleet's strings are the fixtures, so a regex change cannot quietly redraw
 // a device that is actually on the shelf.

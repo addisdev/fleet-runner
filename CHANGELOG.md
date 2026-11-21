@@ -16,6 +16,41 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.5] — 2026-11-21
+
+### Fixed
+
+- A Maestro flow's `takeScreenshot` images reach the collector again (#138). Maestro
+  2.x writes them under `~/.maestro/tests/<timestamp>/<flow>/takeScreenshot/`
+  rather than the working directory, so `ui-test` uploaded only its JUnit
+  report and `locale-shots` reported `no screenshot captured` for flows that
+  took eleven. Every flow run now passes `--test-output-dir` (Maestro 1.40 or
+  later) and reads the shots from there: `ui-test` uploads each one as
+  `<job>-<device>-<name>.png`, plus a failing step's shot as
+  `<job>-<device>-screenshots/<file>.png`, and `locale-shots`, `app-soak`,
+  `a11y-audit`, `upgrade-test`, regressions and explore setup flows find them
+  in their own folders as before. Maestro's logs and `commands.json` (which
+  holds every typed value) go to a temp folder that is deleted after the run,
+  and are never uploaded.
+
+### Changed
+
+- The macOS alert receiver raises at most one banner per alert kind per hour
+  (#137): the first at once, the rest of the hour folded into one
+  `fleet: <kind> ×N in the last hour` banner. Only `thermal-critical` and
+  `job-stuck` make a sound. `FLEET_ALERT_QUIET_HOSTS` names hosts that are off
+  on purpose, whose `schedule-missed` and `device-offline` raise nothing. Every
+  alert is still logged, now with `shown: true | false | "folded"`.
+- `schedule-missed` names the executor a schedule targets (#137).
+
+### Fixed
+
+- `schedule-missed` no longer fires in the minute a schedule runs (#137).
+  `prevRun` is strictly before the current minute, so at the firing minute it
+  was yesterday's firing while `last_run` already held today's, and `!==` read
+  that as a day late. Every nightly opened the alert and resolved it a minute
+  later: 42 notifications in the week to 2026-11-16, none a missed run.
+
 ## [0.9.4] — 2026-11-16
 
 Roku discovery works from a host on two networks, so the Roku nightly can move
@@ -1660,7 +1695,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...v0.9.2

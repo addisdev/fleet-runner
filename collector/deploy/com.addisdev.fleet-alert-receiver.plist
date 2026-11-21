@@ -22,6 +22,14 @@
     <string>scripts/alert-receiver.ts</string>
   </array>
 
+  <!-- Hosts that are off on purpose, comma-separated: a schedule-missed or
+       device-offline alert naming one raises no banner (it is still logged). -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>FLEET_ALERT_QUIET_HOSTS</key>
+    <string></string>
+  </dict>
+
   <key>WorkingDirectory</key>
   <string>__FLEET_HOME__</string>
 

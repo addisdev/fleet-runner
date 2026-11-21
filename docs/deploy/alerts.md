@@ -96,6 +96,16 @@ host. Point `FLEET_ALERT_WEBHOOK` at the collector's own loopback port and let
 [the tunnel's](networking.md) reverse forward deliver it — loopback at both ends,
 so the alert never crosses the LAN and never leaves the house.
 
+The receiver keeps the banners few. At most **one banner per alert kind per
+hour**: the first shows at once, later ones in that hour are counted and come
+out as one banner when the hour ends (`fleet: job-failed ×6 in the last hour`,
+with the latest alert's text). Only `thermal-critical` and `job-stuck` make a
+sound. `FLEET_ALERT_QUIET_HOSTS` (comma-separated) names hosts that are off on
+purpose: a `schedule-missed` or `device-offline` naming one is not shown.
+Every alert is still a line in `~/Library/Logs/fleet-alerts.jsonl`, with
+`shown: true`, `false` or `"folded"`, and each hourly banner is a `summary`
+line with its count.
+
 ## Reading them
 
 The Alerts screen, `GET /api/v1/alerts` (`?state=open,acked,snoozed,resolved`;
