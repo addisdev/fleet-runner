@@ -16,7 +16,9 @@ import type { Target } from "./types.js";
 type Check = (name: string, cond: boolean, detail?: string) => void;
 
 const PNG = Buffer.from("89504e470d0a1a0a", "hex");
-const FLOW = "CT1: first open of the release build, signed out, no location grant (what a new tester sees)";
+// The real CT1 flow's folder, colon and all. Windows cannot name a folder with
+// a colon, so there the fixture drops it; the walk does not care either way.
+const FLOW = `CT1${process.platform === "win32" ? "" : ":"} first open of the release build, signed out, no location grant (what a new tester sees)`;
 
 /** The tree Maestro 2.8.0 leaves under --test-output-dir for one flow. */
 function maestroTree(root: string, opts: { flow?: string; shots?: string[]; failure?: string } = {}) {
