@@ -1,7 +1,7 @@
 // Host executor: claims executor:"host" jobs and drives attached Android
 // devices from outside via adb + Maestro. Runs on the Mac next to the
 // collector (iOS support arrives in Phase 3 via devicectl/XCUITest).
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
@@ -53,7 +53,7 @@ import { countBySeverity, uploadReport, type Finding } from "./web/shared.js";
 import { ADB, batteryPct, ensureAwake, hasApp, launchApp, processAlive } from "./workloads/device.js";
 // Moved out so a workload directory can run a flow without importing the
 // executor, which would start a second poll loop. Same move device.ts made.
-import { FLOWS_DIR, MAESTRO, resolveFlow, runFlow } from "./workloads/flows.js";
+import { FLOWS_DIR, MAESTRO, MAESTRO_OUTPUT_FLAG, resolveFlow, runFlow, uploadFlowShots } from "./workloads/flows.js";
 import { discoverWorkloads, resolveRun, type LoadedWorkload } from "./workloads/registry.js";
 import { bundledNames } from "./workloads/static.js";
 import { prepareInstallable } from "./workloads/install/index.js";
@@ -663,6 +663,11 @@ async function runUiTest(job: Job) {
     }
     const outDir = mkdtempSync(path.join(os.tmpdir(), "fleet-junit-"));
     const report = path.join(outDir, "report.xml");
+    // Where Maestro puts this run's screenshots and logs, deleted with outDir
+    // once the shots are uploaded. Without the flag they land in
+    // ~/.maestro/tests/<timestamp>/ and a passing run uploads no picture of
+    // what it passed on.
+    const maestroOut = path.join(outDir, "maestro");
     let failedToRun = false;
     // Why Maestro produced no report, when it did not: its exit code and the
     // last thing it said. Never the error's message, which is the command
@@ -680,6 +685,7 @@ async function runUiTest(job: Job) {
           await exec(
             MAESTRO,
             ["--device", serial, "test", "--format", "junit", "--output", report,
+             MAESTRO_OUTPUT_FLAG, maestroOut,
              ...(appId ? ["-e", `APP_ID=${appId}`] : []),
              ...(creds
                ? ["-e", `${creds.emailVar}=${creds.account}`, "-e", `${creds.passwordVar}=${creds.password}`]
@@ -718,6 +724,19 @@ async function runUiTest(job: Job) {
       if (creds) writeFileSync(report, redact(xml, [creds.password]));
       artifacts.push(await uploadArtifact(report, `${job.job_id}-${serial}-junit.xml`));
     }
+    // The flow's own `takeScreenshot` images, then whatever Maestro captured at
+    // a failing step under screenshots/. Uploaded whether the flow passed or
+    // not: a pass is exactly what the shots are the proof of. Only PNGs leave
+    // the host; commands.json beside them holds every typed value.
+    if (flows) {
+      const up = await uploadFlowShots(maestroOut, `${job.job_id}-${serial}`, uploadArtifact,
+        (line) => log(`ui-test on ${serial}: ${line}`));
+      artifacts.push(...up.shas);
+      if (up.shots || up.failures) {
+        log(`ui-test on ${serial}: ${up.shots} screenshot(s)${up.failures ? `, ${up.failures} failure shot(s)` : ""}`);
+      }
+    }
+    rmSync(outDir, { recursive: true, force: true });
     const suiteError = shapeError
       ? `params.network: ${shapeError}`
       : failedToRun
