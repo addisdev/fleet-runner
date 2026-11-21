@@ -16,6 +16,8 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.5] — 2026-11-21
+
 ### Fixed
 
 - A Maestro flow's `takeScreenshot` images reach the collector again (#138). Maestro
@@ -1693,7 +1695,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.5...HEAD
+[0.9.5]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/addisdev/fleet-runner/compare/v0.9.1...v0.9.2
