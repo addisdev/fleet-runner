@@ -16,6 +16,25 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- A `web-shots` manifest for HomeLake's product site, `homelake-site`: homelake.app's
+  landing, security, compare (index, Home Assistant, Exist, Cozi), agents and privacy
+  pages on `chromium` and `mobile-chrome`, each waiting for its `h1`.
+
+### Fixed
+
+- `web-shots` no longer fails every page of a site whose Content Security Policy
+  forbids inline styles (homelake.app: `default-src 'self'`). The capture spec's
+  motion-killing style tag is refused there; the shot now goes on without it,
+  with an annotation, since reduced motion and `animations: "disabled"` still
+  apply. The CSP is not bypassed: a page with its CSP off is not the page a
+  visitor gets.
+- `web-shots` waits for every image to load and decode before the shot, and
+  loads `loading="lazy"` ones too. Two captures of homelake.app a minute apart
+  differed by 0.5% to 5%: an example image below the fold empty in one and
+  drawn in the other, and the home page's hero image blank once.
+
 ## [0.9.5] — 2026-11-21
 
 ### Fixed

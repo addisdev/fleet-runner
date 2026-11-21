@@ -1,0 +1,14 @@
+{
+  "_comment": "HomeLake's product site, homelake.app: the landing page, the security and compare pages (MP0/MP2, homelake#683), agents and privacy. Static pages, so no freeze_time. The home page is a viewport shot: on mobile-chrome it is over 20,000 CSS px tall, where Chromium cuts a full-page capture off at a different point each run.",
+  "profiles": ["chromium", "mobile-chrome"],
+  "pages": [
+    { "name": "home", "path": "/", "waitFor": "h1", "fullPage": false },
+    { "name": "security", "path": "/security", "waitFor": "h1", "fullPage": true },
+    { "name": "compare", "path": "/compare", "waitFor": "h1", "fullPage": true },
+    { "name": "compare-home-assistant", "path": "/compare/home-assistant", "waitFor": "h1", "fullPage": true },
+    { "name": "compare-exist", "path": "/compare/exist", "waitFor": "h1", "fullPage": true },
+    { "name": "compare-cozi", "path": "/compare/cozi", "waitFor": "h1", "fullPage": true },
+    { "name": "agents", "path": "/agents", "waitFor": "h1", "fullPage": true },
+    { "name": "privacy", "path": "/privacy", "waitFor": "h1", "fullPage": true }
+  ]
+}
