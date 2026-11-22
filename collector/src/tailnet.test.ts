@@ -32,7 +32,7 @@ export function runTailnetChecks(check: Check) {
   check("100.6.x.x is NOT the tailnet", !isTailnetAddress("100.6.1.1"), "a string prefix would admit this");
   check("100.63.x.x is below the range", !isTailnetAddress("100.63.255.255"));
   check("100.128.x.x is above the range", !isTailnetAddress("100.128.0.1"));
-  check("a LAN address is not the tailnet", !isTailnetAddress("192.168.50.27"));
+  check("a LAN address is not the tailnet", !isTailnetAddress("192.168.50.21"));
   check("nonsense is not an address", !isTailnetAddress("100.64.0"), "a short address must not parse");
 
   // --- and the other family ---------------------------------------------
@@ -112,9 +112,9 @@ export function runTailnetChecks(check: Check) {
 
   // The other half of the design: this fences the tailnet, not the house.
   check("a LAN peer is still admitted under the existing posture",
-    admit("192.168.50.27", LIST, null).admit,
+    admit("192.168.50.21", LIST, null).admit,
     "fencing the LAN too would mean enabling this broke every phone on the shelf");
   check("loopback is always admitted", admit("127.0.0.1", LIST, null).admit);
   check("the LAN decision says which posture applies",
-    /LAN posture/.test(admit("192.168.50.27", LIST, null).why));
+    /LAN posture/.test(admit("192.168.50.21", LIST, null).why));
 }

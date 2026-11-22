@@ -56,14 +56,14 @@ export async function runDescribeChecks(check: Check) {
   // --- a Roku is a Roku ------------------------------------------------------
   // It used to fall through to the iOS fallback and register as an iPhone.
   const express = {
-    ip: "192.168.50.218", port: 8060, serial: "YJ00AB123456", modelName: "Roku Express 4K+",
+    ip: "192.168.50.20", port: 8060, serial: "YJ00AB123456", modelName: "Roku Express 4K+",
     deviceType: "STB", softwareVersion: "15.1.4", developerEnabled: true,
   };
   const r1 = await describeTarget(
     { id: "roku-YJ00AB123456", platform: "roku", kind: "device", driver: "roku" } as never, null, null, [express]);
   check("a Roku registers under its own model and firmware",
     r1.model === "Roku Express 4K+" && r1.os === "roku-15.1.4", JSON.stringify(r1));
-  check("and carries the address tvloop is pointed at", r1.ip === "192.168.50.218" && r1.developer_enabled === true,
+  check("and carries the address tvloop is pointed at", r1.ip === "192.168.50.20" && r1.developer_enabled === true,
     JSON.stringify(r1));
   check("and is attached to this host, which host routing follows", typeof r1.attached_to === "string");
   const r2 = await describeTarget({ id: "roku-gone", platform: "roku", kind: "device" } as never, null, null, []);

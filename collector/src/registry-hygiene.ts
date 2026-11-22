@@ -3,7 +3,7 @@
  *
  * Two kinds of row outlive what they describe, and both were on the live brain
  * in October 2026: thirteen offline iOS rows that were simulator UUIDs from
- * runs long gone, and a Roku listed twice -- `roku-ip-192-168-50-218`, from a
+ * runs long gone, and a Roku listed twice -- `roku-ip-192-168-50-20`, from a
  * sweep where the box answered SSDP but not device-info, offline beside the
  * `roku-X01600EMFRJ9` it really is. A fan-out with no pool reaches every row,
  * and a shelf where a third of the entries are ghosts is a shelf nobody reads.
@@ -63,7 +63,7 @@ export function forgetStaleSimulators(days = simulatorTtlDays()): string[] {
   return gone;
 }
 
-/** `roku-ip-192-168-50-218` for 192.168.50.218: the id the executor gives a Roku it knows only by address. */
+/** `roku-ip-192-168-50-20` for 192.168.50.20: the id the executor gives a Roku it knows only by address. */
 export function rokuIpId(ip: string): string {
   return `roku-ip-${ip.replace(/\./g, "-")}`;
 }

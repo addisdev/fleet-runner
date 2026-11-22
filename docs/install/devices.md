@@ -114,7 +114,7 @@ Right**. Then, from a machine with a keyboard:
 security add-generic-password -s fleet-roku-dev -a rokudev -w   # once, prompts
 
 cd runner-roku
-./build.sh --install 192.168.1.44 --launch http://fleet-host.local:8788 --device-id roku-den
+./build.sh --install 192.168.1.21 --launch http://fleet-host.local:8788 --device-id roku-den
 ```
 
 That packages the channel, installs it over ECP, and launches it **with the
