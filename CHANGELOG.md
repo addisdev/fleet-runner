@@ -29,6 +29,7 @@ a CI job fails when they disagree.
   host's own address; `collector/deploy/install-agent.sh` takes it from
   `FLEET_LAN_ADDRESS` and refuses without it. Addresses in the docs, tests and
   older entries here are now placeholders from the same private ranges.
+  ([#143](https://github.com/addisdev/fleet-runner/pull/143))
 
 ### Fixed
 
