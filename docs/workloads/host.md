@@ -213,7 +213,6 @@ index merges them.
 
 ```json
 { "schema": 1, "job_id": "atlas-homelake-0.9.76-ios", "workload": "atlas", "executor": "host",
-  "app": { "name": "homelake-ios", "build": "local", "sha256": "none", "platform": "ios" },
   "params": { "checkout": "~/src/homelake", "recipe": "lab/atlas/homelake.json", "version": "0.9.76",
               "baseline": "0.9.75", "store": "ultra:mnt/photos/atlas", "catalog": "ultra:screen-atlas" },
   "targets": { "match": "os ~ 'ios'", "exclusive": true }, "lease": { "ttl_s": 900 } }

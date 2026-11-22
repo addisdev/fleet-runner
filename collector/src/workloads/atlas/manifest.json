@@ -53,8 +53,8 @@
     }
   },
   "example": {
-    "app": { "name": "homelake-ios", "build": "local", "sha256": "none", "platform": "ios" },
     "params": {
+      "platform": "ios",
       "checkout": "~/src/homelake",
       "recipe": "lab/atlas/homelake.json",
       "version": "0.9.76",
