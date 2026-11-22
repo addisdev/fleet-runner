@@ -68,6 +68,14 @@ async function signIn(page: Page, s: Signin) {
   await page.goto("about:blank");
 }
 
+// Runs in the page. Images that fail to load are left as they are: a broken
+// image is part of the page, and the diff will show it.
+const LOAD_IMAGES = async () => {
+  const imgs = Array.from(document.images);
+  for (const img of imgs) if (img.loading === "lazy") img.loading = "eager";
+  await Promise.all(imgs.map((img) => img.decode().catch(() => undefined)));
+};
+
 for (const p of manifest.pages ?? []) {
   test(`shot: ${p.name}`, async ({ page }) => {
     if (!outDir) throw new Error("SHOTS_OUT is not set");
@@ -82,11 +90,27 @@ for (const p of manifest.pages ?? []) {
     await page.goto(p.path, { waitUntil: "load" });
     if (p.waitFor) await page.locator(p.waitFor).first().waitFor({ timeout: 30_000 });
     if (p.settle_ms) await page.waitForTimeout(Math.min(p.settle_ms, 30_000));
-    await page.addStyleTag({
-      content: "*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }",
-    });
+    // A site whose CSP forbids inline styles (homelake.app: `default-src
+    // 'self'`) refuses this tag. The shot goes on without it rather than with
+    // bypassCSP: reduced motion above and `animations: "disabled"` below still
+    // stop CSS motion, and a page with its CSP switched off is not the page a
+    // visitor gets. The annotation says the extra guard was missing.
+    await page
+      .addStyleTag({
+        content: "*, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }",
+      })
+      .catch((e: Error) => {
+        if (!/Content Security Policy/i.test(e.message)) throw e;
+        test.info().annotations.push({ type: "motion style blocked by the page's CSP", description: e.message.split("\n")[0] });
+      });
     // A shot taken mid font-swap diffs against itself forever.
     await page.evaluate(() => document.fonts.ready.then(() => undefined));
+    // Images still loading or decoding make a shot differ from run to run:
+    // homelake.app/agents on mobile-chrome was captured once with its
+    // below-the-fold `loading="lazy"` example empty and once filled, and its
+    // home page's hero phone image once blank, a minute apart. Load and decode
+    // them all first, so the page is the same page every run.
+    await page.evaluate(LOAD_IMAGES);
     await page.screenshot({
       path: path.join(outDir, `${p.name}.png`),
       fullPage: p.fullPage ?? true,

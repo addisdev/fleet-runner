@@ -16,6 +16,37 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.6] — 2026-11-22
+
+### Added
+
+- A `web-shots` manifest for HomeLake's product site, `homelake-site`: homelake.app's
+  landing, security, compare (index, Home Assistant, Exist, Cozi), agents and privacy
+  pages on `chromium` and `mobile-chrome`, each waiting for its `h1`
+  ([#141](https://github.com/addisdev/fleet-runner/pull/141)).
+
+### Changed
+
+- `com.addisdev.fleet-lan-forward.plist` no longer carries a LAN address. It
+  listens on `__FLEET_LAN_ADDRESS__:8789`, which you fill with the brain
+  host's own address; `collector/deploy/install-agent.sh` takes it from
+  `FLEET_LAN_ADDRESS` and refuses without it. Addresses in the docs, tests and
+  older entries here are now placeholders from the same private ranges.
+  ([#143](https://github.com/addisdev/fleet-runner/pull/143))
+
+### Fixed
+
+- `web-shots` no longer fails every page of a site whose Content Security Policy
+  forbids inline styles (homelake.app: `default-src 'self'`). The capture spec's
+  motion-killing style tag is refused there; the shot now goes on without it,
+  with an annotation, since reduced motion and `animations: "disabled"` still
+  apply. The CSP is not bypassed: a page with its CSP off is not the page a
+  visitor gets.
+- `web-shots` waits for every image to load and decode before the shot, and
+  loads `loading="lazy"` ones too. Two captures of homelake.app a minute apart
+  differed by 0.5% to 5%: an example image below the fold empty in one and
+  drawn in the other, and the home page's hero image blank once.
+
 ## [0.9.5] — 2026-11-21
 
 ### Fixed
@@ -550,7 +581,7 @@ desktop app, each for the first time.
   unaffected. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
 - **A Roku seen first by address and later by serial was listed twice.** A
   sweep where the box answered SSDP but not device-info left a
-  `roku-ip-192-168-50-218` row offline beside `roku-X01600EMFRJ9`. A
+  `roku-ip-192-168-50-20` row offline beside `roku-X01600EMFRJ9`. A
   serial-named registration now retires the IP-named row at the same address. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
 - **`fleet service install` on Windows had never started anything.** The
   scheduled task's command kept the backslashes of a `\"` escaping meant for a
@@ -781,7 +812,7 @@ the lint change.
 - **A Hue bridge registered as a Roku.** Roku discovery sends an M-SEARCH for
   `roku:ecp` and trusted every reply, and a Philips Hue bridge answers every
   M-SEARCH whatever it asks for. The first night Roku presence was on, it
-  joined the shelf as `roku-ip-192-168-50-100` -- and a `tvloop` job matching
+  joined the shelf as `roku-ip-192-168-50-24` -- and a `tvloop` job matching
   `os ~ 'roku'` would have pointed tvloop at a light bridge and gone red on
   its doctor. Only replies naming `roku:ecp` in their ST or USN count now.
 
@@ -1695,7 +1726,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/addisdev/fleet-runner/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...v0.9.3

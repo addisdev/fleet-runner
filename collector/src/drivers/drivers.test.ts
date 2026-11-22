@@ -113,23 +113,23 @@ export function runDriverChecks(check: Check) {
     "HTTP/1.1 200 OK",
     "Cache-Control: max-age=3600",
     "ST: roku:ecp",
-    "Location: http://192.168.1.44:8060/",
+    "Location: http://192.168.1.21:8060/",
     "USN: uuid:roku:ecp:P0A070000007",
     "",
   ].join("\r\n");
-  check("roku: LOCATION yields ip and port", parseSsdpLocation(ssdp)?.ip === "192.168.1.44");
+  check("roku: LOCATION yields ip and port", parseSsdpLocation(ssdp)?.ip === "192.168.1.21");
   check("roku: a roku:ecp reply is a Roku", isRokuReply(ssdp));
   {
     const v4 = (address: string, internal = false) =>
       ({ address, family: "IPv4", internal, netmask: "255.255.255.0", mac: "00:00:00:00:00:00", cidr: null }) as const;
     const ifs = multicastInterfaces({
       lo0: [v4("127.0.0.1", true)],
-      en0: [v4("192.168.1.111"), { ...v4("fe80::1"), family: "IPv6" } as never],
-      en1: [v4("192.168.50.77")],
+      en0: [v4("192.168.1.20"), { ...v4("fe80::1"), family: "IPv6" } as never],
+      en1: [v4("192.168.50.23")],
     } as never);
     check(
       "roku: M-SEARCH goes out on every IPv4 LAN, not only the default route's",
-      JSON.stringify(ifs) === JSON.stringify(["192.168.1.111", "192.168.50.77"]),
+      JSON.stringify(ifs) === JSON.stringify(["192.168.1.20", "192.168.50.23"]),
     );
     check(
       "roku: with no usable interface, the OS picks (one send, as before)",
@@ -141,7 +141,7 @@ export function runDriverChecks(check: Check) {
   const hue = [
     "HTTP/1.1 200 OK",
     "CACHE-CONTROL: max-age=100",
-    "LOCATION: http://192.168.50.100:80/description.xml",
+    "LOCATION: http://192.168.50.24:80/description.xml",
     "SERVER: Hue/1.0 UPnP/1.0 IpBridge/1.65.0",
     "hue-bridgeid: 001788FFFE24F970",
     "ST: upnp:rootdevice",
@@ -153,7 +153,7 @@ export function runDriverChecks(check: Check) {
   check("roku: the ECP port is read, not assumed", parseSsdpLocation(ssdp)?.port === 8060);
   check(
     "roku: a header spelled LOCATION is the same header",
-    parseSsdpLocation(ssdp.replace("Location:", "LOCATION:"))?.ip === "192.168.1.44",
+    parseSsdpLocation(ssdp.replace("Location:", "LOCATION:"))?.ip === "192.168.1.21",
   );
   check(
     "roku: an SSDP reply from something else is not a Roku",
@@ -176,7 +176,7 @@ export function runDriverChecks(check: Check) {
   <software-version>13.0.0</software-version>
   <developer-enabled>false</developer-enabled>
 </device-info>`;
-  const info = parseDeviceInfo(DEVICE_INFO, { ip: "192.168.1.44", port: 8060 });
+  const info = parseDeviceInfo(DEVICE_INFO, { ip: "192.168.1.21", port: 8060 });
   check("roku: the serial is read", info.serial === "P0A070000007", String(info.serial));
   check("roku: model-name and model-number are different fields", info.modelName === "Roku Ultra" && info.modelNumber === "4660X");
   check("roku: device-type carries Roku's own form factor word", info.deviceType === "STB");
@@ -193,7 +193,7 @@ export function runDriverChecks(check: Check) {
   // serial, because that name can silently become a different device's.
   check(
     "roku: a device with no serial falls back to a clearly-marked address id",
-    rokuTargetId({ ip: "192.168.1.44", port: 8060 }) === "roku-ip-192-168-1-44",
+    rokuTargetId({ ip: "192.168.1.21", port: 8060 }) === "roku-ip-192-168-1-21",
   );
   check("roku: the driver is registered", driverNamed("roku")?.name === "roku");
   check(

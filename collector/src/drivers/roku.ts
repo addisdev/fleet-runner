@@ -164,7 +164,7 @@ export function mSearchDatagram(): Buffer {
  * The search asks for `ST: roku:ecp`, but asking is not filtering: some
  * devices answer every M-SEARCH whatever it asked for. A Philips Hue bridge
  * does, and the first night Rokus were registered it joined the shelf as
- * `roku-ip-192-168-50-100`, a "Roku" with no model that never answered ECP.
+ * `roku-ip-192-168-50-24`, a "Roku" with no model that never answered ECP.
  * A real Roku says `roku:ecp` in its ST or its USN.
  */
 export function isRokuReply(message: string): boolean {
