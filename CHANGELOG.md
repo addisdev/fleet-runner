@@ -18,6 +18,8 @@ a CI job fails when they disagree.
 
 ### Added
 
+- A **Team use** issue form and a README line that links to it, for teams
+  running Fleet Runner to say what they would need (#142).
 - A `web-shots` manifest for HomeLake's product site, `homelake-site`: homelake.app's
   landing, security, compare (index, Home Assistant, Exist, Cozi), agents and privacy
   pages on `chromium` and `mobile-chrome`, each waiting for its `h1`.
