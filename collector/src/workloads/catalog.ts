@@ -44,6 +44,7 @@ import webAudit from "../../examples/jobs/web-audit.json" with { type: "json" };
 import webShots from "../../examples/jobs/web-shots.json" with { type: "json" };
 import webTest from "../../examples/jobs/web-test.json" with { type: "json" };
 import webUnfurl from "../../examples/jobs/web-unfurl.json" with { type: "json" };
+import atlasManifest from "./atlas/manifest.json" with { type: "json" };
 import coldStartManifest from "./cold-start/manifest.json" with { type: "json" };
 import enrolManifest from "./enrol/manifest.json" with { type: "json" };
 import exploreManifest from "./explore/manifest.json" with { type: "json" };
@@ -132,6 +133,7 @@ export const CATALOG: CatalogEntry[] = [
   e("locale-shots", "host", ["host"], "A screenshot flow under every locale, including RTL, as a contact sheet.", "host.md", localeShots),
   fromManifest(exploreManifest as Manifest, "host.md", exploreEx),
   fromManifest(upgradeTestManifest as Manifest, "host.md"),
+  fromManifest(atlasManifest as Manifest, "host.md"),
   fromManifest(sizeReportManifest as Manifest, "host.md"),
   fromManifest(tvloopManifest as Manifest, "host.md"),
   e("web-test", "host", ["host"], "Playwright suites, including on real phone screens.", "host.md", webTest),

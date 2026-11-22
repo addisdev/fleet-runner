@@ -16,6 +16,10 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- `atlas` workload and `npm run atlas` (collector): every screen of an app on one version from the app's own screen walk, filed as `<app>/<version>/<platform>/<screen>__<variant>.png` with an index and a sheet, diffed against an earlier version (pixelmatch, an HTML report), copied to the NAS with every sha256 verified, and its index put where a lake can read it.
+
 ## [0.9.6] — 2026-11-22
 
 ### Added

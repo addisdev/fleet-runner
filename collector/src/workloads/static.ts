@@ -27,6 +27,7 @@ import type { WorkloadRun } from "./types.js";
 type Loader = () => Promise<{ run?: unknown }>;
 
 export const BUNDLED: Record<string, Loader> = {
+  atlas: () => import("./atlas/index.js"),
   enrol: () => import("./enrol/index.js"),
   explore: () => import("./explore/index.js"),
   "cold-start": () => import("./cold-start/index.js"),

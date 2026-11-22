@@ -179,6 +179,70 @@ Native libraries group **per ABI** rather than as one `lib/`. `lib/` being huge
 tells you nothing you did not know; `lib/arm64-v8a` being 18 MB of it tells you
 what to split.
 
+## `atlas`
+
+The Screen Atlas: every screen of an app on one version, captured **once**, kept
+as one browsable set, and diffed against the version before. One capture then
+serves the jobs that otherwise capture the same screens on their own: a PR's
+proof, store screenshots, promo frames, the visual diff between versions, and
+the largest-text overflow check.
+
+The lab does not learn each app's screens. An app already has a walk that
+visits them (a UI test in screenshot mode, run by a script in its repo), and its
+**recipe** (`atlas.json`, anywhere in its repo) says how to run it and how its
+file names read:
+
+```json
+{ "schema": 1, "app": "homelake",
+  "platforms": { "ios": {
+    "command": ["lab/atlas/ios-walk.sh", "{udid}", "{work}/e2e-ios"],
+    "shots_env": "SHOTS",
+    "pattern": "^(?<screen>.+)-(?<state>dayone|full)-(?<variant>light|dark|lightAX5|darkAX5)-atlas\\.png$",
+    "screen": "{screen}.{state}",
+    "variants": { "light": "light", "dark": "dark", "lightAX5": "light-ax5", "darkAX5": "dark-ax5" } } } }
+```
+
+The workload runs the command from the checkout with `$SHOTS` set to an empty
+folder, then files every PNG the pattern names as
+`<root>/<app>/<version>/<platform>/<screen>__<variant>.png`, beside an
+`index.json` (each shot's sha256, size and pixels; the first fields are the
+launch kit's `captures.json` fields) and an `index.html` (one row per screen,
+one column per variant). A file the pattern does not name (a failure shot) is
+left out and counted. iOS and Android may be captured on different hosts; the
+index merges them.
+
+```json
+{ "schema": 1, "job_id": "atlas-homelake-0.9.76-ios", "workload": "atlas", "executor": "host",
+  "app": { "name": "homelake-ios", "build": "local", "sha256": "none", "platform": "ios" },
+  "params": { "checkout": "~/src/homelake", "recipe": "lab/atlas/homelake.json", "version": "0.9.76",
+              "baseline": "0.9.75", "store": "ultra:mnt/photos/atlas", "catalog": "ultra:screen-atlas" },
+  "targets": { "match": "os ~ 'ios'", "exclusive": true }, "lease": { "ttl_s": 900 } }
+```
+
+**Metrics:** `shots`, `screens`, `capture_s` and, with a `baseline`, `changed`
+(changed, resized, new or gone). The artifacts are the index, the sheet and the
+diff.
+
+- **`baseline`** diffs the new version against an earlier one in the same root,
+  screen by screen: pixelmatch at its 0.1 colour threshold with antialiasing
+  ignored; a shot is `changed` above `threshold_pct` (0.1%) of its pixels,
+  `resized` when its size changed, `new` or `gone` when only one side has it.
+  The report is `<version>/diff-from-<baseline>/report.html`, changes first.
+- **`store`** copies the version folder (rsync over ssh) and then compares every
+  shot's sha256 on the far side with the index, ignoring macOS's `._*` files.
+  On this lab the NAS is mounted only on ultra (`~/mnt/photos`), so the store is
+  `ultra:mnt/photos/atlas`.
+- **`catalog`** puts `index.json` and each diff (`diff-from-<v>.json`) on a
+  local disk as well. Lake collectors run under launchd, and launchd cannot read
+  the NFS share; never point a symlink from a scanned tree into the NAS.
+
+The same work runs outside the queue as a command, for a person or a session:
+`npm run atlas -- capture|import|diff|store|ls` in `collector/` (usage at the top
+of `collector/scripts/atlas.ts`).
+
+One device per platform, on purpose: the atlas is a record of the app, not a
+device matrix (that is `locale-shots` and `a11y-audit`).
+
 ## `tvloop`
 
 Runs [tvloop](../explore/surfaces.md#roku-through-tvloop)'s hardware suite
