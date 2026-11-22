@@ -16,11 +16,14 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.6] — 2026-11-22
+
 ### Added
 
 - A `web-shots` manifest for HomeLake's product site, `homelake-site`: homelake.app's
   landing, security, compare (index, Home Assistant, Exist, Cozi), agents and privacy
-  pages on `chromium` and `mobile-chrome`, each waiting for its `h1`.
+  pages on `chromium` and `mobile-chrome`, each waiting for its `h1`
+  ([#141](https://github.com/addisdev/fleet-runner/pull/141)).
 
 ### Changed
 
@@ -1723,7 +1726,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.5...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.6...HEAD
+[0.9.6]: https://github.com/addisdev/fleet-runner/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...v0.9.4
 [0.9.3]: https://github.com/addisdev/fleet-runner/compare/v0.9.2...v0.9.3
