@@ -1,0 +1,12 @@
+{
+  "id": "jerv-first-ride",
+  "app": "jerv",
+  "title": "A stranger's first ride",
+  "persona": "Someone who just installed Jerv, has never seen it, is signed out, and wants to start a walk right now.",
+  "goal": "Without signing in, start a ride from the map: answer the walking-or-riding question, allow location when asked, watch the ride screen for a minute, then stop the ride and read the ride summary to the end.",
+  "success": "A ride summary is on screen, its headline is not '+0', and nothing on the ride screen asked to sign in at the moment the ride started.",
+  "budget": { "steps": 45, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["MapScreen", "RideScreen", "RideSummary", "ModePicker"],
+  "block": ["\\bcreate an account\\b", "\\bsign up\\b", "\\bdelete\\b", "\\bsend\\b", "\\bpost\\b", "\\bshare\\b", "\\breport\\b", "\\bbuy\\b", "\\bsubscribe\\b"]
+}
