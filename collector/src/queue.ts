@@ -142,6 +142,9 @@ export const WORKLOADS = new Set([
   // Overnight exploratory QA: a vision model drives tonight's build and files
   // reproduced findings. See src/workloads/explore/.
   "explore",
+  // Every screen of an app per version, from the app's own walk, kept on the
+  // NAS and diffed between versions. See src/workloads/atlas/.
+  "atlas",
 ]);
 
 /** Devices a `targets` clause selects. Shared by fan-out and by the composer's

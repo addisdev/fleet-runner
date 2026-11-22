@@ -6,7 +6,7 @@ spec, and which agent claims it is decided by
 
 ![Thirty-four workloads in three columns by who claims them: on the device, on a host, and on a machine](../img/workloads.png)
 
-The collector ships <!-- count:workloads -->34 workloads. `GET /api/v1/workloads` (or
+The collector ships <!-- count:workloads -->35 workloads. `GET /api/v1/workloads` (or
 `fleetr workloads`) lists the same set with each one's params and an example
 spec, and marks three more names as reserved: `push-latency`, `camera-eval` and
 `desktop-ui-test` are accepted, but no runner in this repository implements
@@ -32,6 +32,7 @@ them yet.
 | [`explore`](host.md#explore) | host | A vision model explores tonight's build; reproduced crashes, hangs, dead controls, accessibility and visual defects, filed as findings |
 | [`upgrade-test`](host.md#upgrade-test) | host | Install the version users have, seed it, upgrade in place, and check the data survived |
 | [`size-report`](host.md#size-report) | host | Download, installed and archive size of a published build, with native libraries per ABI |
+| [`atlas`](host.md#atlas) | host | Every screen of an app on one version, from the app's own screen walk, kept as one set and diffed against the last version |
 | [`tvloop`](host.md#tvloop) | host | tvloop's hardware suite on a Roku the fleet has locked; Fire TV and Android TV replay its flows too when asked |
 | [`web-test`](host.md#web-test) | host | Playwright suites, including on real phone screens |
 | [`web-shots`](host.md#web-shots) | host | Visual regression captures diffed against an accepted baseline |

@@ -1,0 +1,68 @@
+{
+  "name": "atlas",
+  "capability": "devices",
+  "executor": "host",
+  "description": "Every screen of an app on one version, captured once by the app's own screen walk, filed as one browsable set and diffed against an earlier version.",
+  "params": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["checkout", "version"],
+    "properties": {
+      "checkout": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The app's repository on this host, at the commit being captured. The walk runs from here; its HEAD is recorded as the index's commit."
+      },
+      "recipe": {
+        "type": "string",
+        "default": "atlas.json",
+        "description": "The app's recipe, relative to checkout: per platform, the walk's command, the pattern its file names follow and its variant names (src/atlas.ts AtlasRecipe)."
+      },
+      "version": {
+        "type": "string",
+        "minLength": 1,
+        "description": "The version folder this capture files into, e.g. 0.9.76."
+      },
+      "platform": {
+        "type": "string",
+        "description": "Which of the recipe's platforms to walk. Falls back to app.platform, then ios. One device of that platform is walked."
+      },
+      "root": {
+        "type": "string",
+        "default": "~/atlas",
+        "description": "The atlas folder on this host."
+      },
+      "baseline": {
+        "type": "string",
+        "description": "An earlier version in root to diff against; the report goes into <version>/diff-from-<baseline>/."
+      },
+      "threshold_pct": {
+        "type": "number",
+        "minimum": 0,
+        "default": 0.1,
+        "description": "A shot counts as changed when more than this percent of its pixels differ."
+      },
+      "store": {
+        "type": "string",
+        "description": "Copy the version here when done and verify every sha256 there: host:path over ssh (the NAS is mounted on ultra at ~/mnt/photos, so ultra:mnt/photos/atlas) or a local folder."
+      },
+      "catalog": {
+        "type": "string",
+        "description": "Also copy index.json and diff.json here, on a local disk the lake's collector can read (launchd cannot read the NAS), e.g. ultra:screen-atlas."
+      }
+    }
+  },
+  "example": {
+    "params": {
+      "platform": "ios",
+      "checkout": "~/src/homelake",
+      "recipe": "lab/atlas/homelake.json",
+      "version": "0.9.76",
+      "baseline": "0.9.75",
+      "store": "ultra:mnt/photos/atlas",
+      "catalog": "ultra:screen-atlas"
+    },
+    "targets": { "match": "os ~ 'ios'", "exclusive": true },
+    "lease": { "ttl_s": 900 }
+  }
+}
