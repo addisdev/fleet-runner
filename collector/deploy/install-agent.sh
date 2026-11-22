@@ -78,6 +78,10 @@ NODE="$(cd "$(dirname "$NODE")" && pwd)/$(basename "$NODE")"
 : "${ADB_BIN:=$ANDROID_PLATFORM_TOOLS/adb}"
 : "${JAVA_HOME:=$(/usr/libexec/java_home 2>/dev/null || echo "$HOME/.local/jdk/Contents/Home")}"
 : "${IOS_PROJECT:=$(cd "$FLEET_HOME/.." 2>/dev/null && pwd)/runner-ios/FleetRunner.xcodeproj}"
+# The LAN address com.addisdev.fleet-lan-forward.plist listens on. No default:
+# it is this house's address, so unset leaves the placeholder and the check
+# below refuses.
+: "${FLEET_LAN_ADDRESS:=}"
 
 # tsx is how the agent runs TypeScript without a build step. If it is missing,
 # the agent would respawn every ten seconds forever, so say so now.
@@ -95,6 +99,7 @@ FILLED="$(sed \
   -e "s|__ADB_BIN__|$ADB_BIN|g" \
   -e "s|__JAVA_HOME__|$JAVA_HOME|g" \
   -e "s|__IOS_PROJECT__|$IOS_PROJECT|g" \
+  -e "s|__FLEET_LAN_ADDRESS__|${FLEET_LAN_ADDRESS:-__FLEET_LAN_ADDRESS__}|g" \
   "$SRC")"
 
 # A placeholder that survived means a path this script does not know about.

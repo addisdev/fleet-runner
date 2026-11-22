@@ -22,6 +22,14 @@ a CI job fails when they disagree.
   landing, security, compare (index, Home Assistant, Exist, Cozi), agents and privacy
   pages on `chromium` and `mobile-chrome`, each waiting for its `h1`.
 
+### Changed
+
+- `com.addisdev.fleet-lan-forward.plist` no longer carries a LAN address. It
+  listens on `__FLEET_LAN_ADDRESS__:8789`, which you fill with the brain
+  host's own address; `collector/deploy/install-agent.sh` takes it from
+  `FLEET_LAN_ADDRESS` and refuses without it. Addresses in the docs, tests and
+  older entries here are now placeholders from the same private ranges.
+
 ### Fixed
 
 - `web-shots` no longer fails every page of a site whose Content Security Policy
@@ -569,7 +577,7 @@ desktop app, each for the first time.
   unaffected. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
 - **A Roku seen first by address and later by serial was listed twice.** A
   sweep where the box answered SSDP but not device-info left a
-  `roku-ip-192-168-50-218` row offline beside `roku-X01600EMFRJ9`. A
+  `roku-ip-192-168-50-20` row offline beside `roku-X01600EMFRJ9`. A
   serial-named registration now retires the IP-named row at the same address. ([#94](https://github.com/addisdev/fleet-runner/pull/94))
 - **`fleet service install` on Windows had never started anything.** The
   scheduled task's command kept the backslashes of a `\"` escaping meant for a
@@ -800,7 +808,7 @@ the lint change.
 - **A Hue bridge registered as a Roku.** Roku discovery sends an M-SEARCH for
   `roku:ecp` and trusted every reply, and a Philips Hue bridge answers every
   M-SEARCH whatever it asks for. The first night Roku presence was on, it
-  joined the shelf as `roku-ip-192-168-50-100` -- and a `tvloop` job matching
+  joined the shelf as `roku-ip-192-168-50-24` -- and a `tvloop` job matching
   `os ~ 'roku'` would have pointed tvloop at a light bridge and gone red on
   its doctor. Only replies naming `roku:ecp` in their ST or USN count now.
 

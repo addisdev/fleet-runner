@@ -101,7 +101,7 @@ const job = (params: Record<string, unknown> = {}, exclusive = true): Job =>
 
 const deps = (dir: string, runStep: StepRunner): Deps => ({
   runStep,
-  hostOf: async () => "192.168.50.218",
+  hostOf: async () => "192.168.50.20",
   env: { FLEET_TVLOOP_DIR: dir },
 });
 
@@ -331,7 +331,7 @@ async function runAndroidTvChecks(check: Check): Promise<void> {
     const tv = rows.find((x) => x.device_id === "emulator-5556") ?? {};
     check("tvloop/tv: the Roku is skipped for its password and the TV still runs",
       /^skipped: no Roku developer password/.test(String(rk.error)) && tv.ok === true &&
-        r.calls.every((c) => !c.args.includes("192.168.50.218")), JSON.stringify(rows));
+        r.calls.every((c) => !c.args.includes("192.168.50.20")), JSON.stringify(rows));
   }
 
   // --- both, with a password: each gets what is its own -------------------

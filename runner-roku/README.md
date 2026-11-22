@@ -64,7 +64,7 @@ sideload page on port 80 and ECP on port 8060.
 security add-generic-password -s fleet-roku-dev -a rokudev -w
 
 cd runner-roku
-./build.sh --install 192.168.1.44 --launch http://fleet-host.local:8788 --device-id roku-den
+./build.sh --install 192.168.1.21 --launch http://fleet-host.local:8788 --device-id roku-den
 ```
 
 That packages the channel, installs it, and launches it with the collector URL
@@ -81,7 +81,7 @@ Watch it arrive:
 
 ```bash
 curl -s http://fleet-host.local:8788/api/devices | grep roku
-telnet 192.168.1.44 8085          # the channel's debug console
+telnet 192.168.1.21 8085          # the channel's debug console
 ```
 
 ## What it reports

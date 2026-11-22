@@ -56,17 +56,17 @@ export function runRegistryHygieneChecks(check: Check) {
     check("hygiene: a second sweep has nothing left to do", forgetStaleSimulators(7).length === 0);
 
     // --- the Roku listed twice ---
-    check("roku: the IP-named id is the executor's", rokuIpId("192.168.50.218") === "roku-ip-192-168-50-218");
-    add("roku-ip-192-168-50-218", { model: "roku", os: "roku", ip: "192.168.50.218", kind: "device" }, 3);
-    add("roku-ip-192-168-50-99", { model: "roku", os: "roku", ip: "192.168.50.99", kind: "device" }, 3);
-    const serial = { platform: "roku", model: "Roku Express 4K+", os: "roku-15.3.4", serial: "X01600EMFRJ9", ip: "192.168.50.218" };
-    check("roku: an IP-named registration never displaces anything", retireRokuIpDuplicate("roku-ip-192-168-50-218", serial) === null);
+    check("roku: the IP-named id is the executor's", rokuIpId("192.168.50.20") === "roku-ip-192-168-50-20");
+    add("roku-ip-192-168-50-20", { model: "roku", os: "roku", ip: "192.168.50.20", kind: "device" }, 3);
+    add("roku-ip-192-168-50-22", { model: "roku", os: "roku", ip: "192.168.50.22", kind: "device" }, 3);
+    const serial = { platform: "roku", model: "Roku Express 4K+", os: "roku-15.3.4", serial: "X01600EMFRJ9", ip: "192.168.50.20" };
+    check("roku: an IP-named registration never displaces anything", retireRokuIpDuplicate("roku-ip-192-168-50-20", serial) === null);
     check("roku: a serial-named registration retires the duplicate at its address",
-      retireRokuIpDuplicate("roku-X01600EMFRJ9", serial) === "roku-ip-192-168-50-218" && !exists("roku-ip-192-168-50-218"));
-    check("roku: and only that one", exists("roku-ip-192-168-50-99"));
+      retireRokuIpDuplicate("roku-X01600EMFRJ9", serial) === "roku-ip-192-168-50-20" && !exists("roku-ip-192-168-50-20"));
+    check("roku: and only that one", exists("roku-ip-192-168-50-22"));
     check("roku: a device with no address retires nothing", retireRokuIpDuplicate("roku-X01600EMFRJ9", { model: "roku" }) === null);
     check("roku: nor does a phone that happens to report an ip",
-      retireRokuIpDuplicate("988a1b3541354f565a", { ip: "192.168.50.99" }) === null && exists("roku-ip-192-168-50-99"));
+      retireRokuIpDuplicate("988a1b3541354f565a", { ip: "192.168.50.22" }) === null && exists("roku-ip-192-168-50-22"));
   } finally {
     closeDb();
     rmSync(dir, { recursive: true, force: true });
