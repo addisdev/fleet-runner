@@ -387,7 +387,15 @@ export function runLogged(
   argv: string[], o: { cwd: string; env: NodeJS.ProcessEnv; timeoutS: number; log: (line: string) => void; onTick?: () => void },
 ): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(argv[0], argv.slice(1), { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"] });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(argv[0], argv.slice(1), { cwd: o.cwd, env: o.env, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      // A walk that cannot start (no such file, or a shell script on Windows) is a failed walk, not a crash.
+      o.log(`atlas: cannot start ${argv[0]}: ${(e as Error).message}`);
+      resolve(127);
+      return;
+    }
     const tick = o.onTick ? setInterval(o.onTick, 60_000) : null;
     const kill = setTimeout(() => child.kill("SIGTERM"), o.timeoutS * 1000);
     let buf = "";
@@ -399,8 +407,8 @@ export function runLogged(
         buf = buf.slice(i + 1);
       }
     };
-    child.stdout.on("data", take);
-    child.stderr.on("data", take);
+    child.stdout?.on("data", take);
+    child.stderr?.on("data", take);
     child.on("close", (code) => {
       if (buf) o.log(buf);
       if (tick) clearInterval(tick);

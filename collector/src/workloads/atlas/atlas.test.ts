@@ -102,7 +102,9 @@ export async function runAtlasChecks(check: Check): Promise<void> {
   check("diff.json's paths are relative to the report", dj.rows.every((r: { a: string | null }) => !r.a || !path.isAbsolute(r.a)));
   check("the report lists what changed", readFileSync(path.join(out, "report.html"), "utf8").includes("1 changed, 1 resized, 1 new, 1 gone, 1 the same"));
 
-  // A walk run as a command: the recipe's command writes into $SHOTS.
+  // A walk run as a command: the recipe's command writes into $SHOTS. Walks are shell scripts and store is
+  // rsync, so these run on macOS and Linux hosts only (the atlas's hosts); Windows checks the rest.
+  if (process.platform !== "win32") {
   const walker = path.join(tmp, "walk.sh");
   writeFileSync(walker, `#!/bin/sh\ncp "${w1}/today-full-light-sim.png" "$SHOTS/today-full-light-$DEV.png"\necho walked\n`, { mode: 0o755 });
   const lines: string[] = [];
@@ -117,6 +119,7 @@ export async function runAtlasChecks(check: Check): Promise<void> {
   check("store copies and verifies every shot", s.verified === 4 && existsSync(path.join(store, "demo", "1.0.1", "ios", "today.full__light.png")));
   check("store puts the index (and the diff) beside the lake", existsSync(path.join(tmp, "catalog", "demo", "1.0.1", "index.json")) &&
     existsSync(path.join(tmp, "catalog", "demo", "1.0.1", "diff-from-1.0.0.json")));
+  }
 
   // The workload's refusals.
   const sim: Target = { id: "SIM-1", platform: "ios", kind: "simulator", driver: "simctl" };
