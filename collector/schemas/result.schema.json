@@ -146,7 +146,10 @@
       "crashes": { "type": "number", "description": "app-soak: crashes observed in this interval" },
 
       "locales": { "type": "number", "description": "locale-shots: how many locales the run covered" },
-      "shots": { "type": "number", "description": "locale-shots and a11y-audit: screenshots captured" },
+      "shots": { "type": "number", "description": "locale-shots, a11y-audit and atlas: screenshots captured" },
+      "screens": { "type": "number", "description": "atlas: distinct screens the walk photographed" },
+      "capture_s": { "type": "number", "description": "atlas: seconds the app's screen walk took, build included when the walk builds" },
+      "changed": { "type": "number", "description": "atlas: shots changed, resized, new or gone against the baseline version" },
 
       "convert_s": { "type": "number", "description": "model-convert: seconds for one output format" },
       "outputs": { "type": "number", "description": "model-convert: how many artifacts the conversion produced" },

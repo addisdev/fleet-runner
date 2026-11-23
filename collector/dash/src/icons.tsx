@@ -453,6 +453,7 @@ const WORKLOAD_ICON: Record<string, IconName> = {
   "llm-eval": "judged",
   "size-report": "scale",
   "upgrade-test": "upgrade",
+  atlas: "visual",
 };
 
 /** The workload's name with its icon, for job tables. */

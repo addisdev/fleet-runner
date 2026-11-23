@@ -14,11 +14,11 @@ and nothing said which of them held the iPhone.
 
 | | What it is | Runs | Reached by |
 |---|---|---|---|
-| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | A machine agent and the `fleet-host` executor — one `fleet` service, two components, pointed at the brain on ultra (`http://192.168.1.111:8789`). The executor does Android host work, the web nightlies in the installed Google Chrome, and tvloop's Roku suite. It owns the Rokus on its network (`FLEET_ROKU=1`). Until 2026-10-21 it was also the brain; its `~/fleet-collector` is kept as a cold copy | `ssh fleet-host` |
+| **fleet-host** | 2016 MacBook Pro, i7-6820HQ, 16 GB, **macOS 12.7.6**, Node 22.23.2 | A machine agent and the `fleet-host` executor — one `fleet` service, two components, pointed at the brain on ultra (`http://192.168.1.20:8789`). The executor does Android host work, the web nightlies in the installed Google Chrome, and tvloop's Roku suite. It owns the Rokus on its network (`FLEET_ROKU=1`). Until 2026-10-21 it was also the brain; its `~/fleet-collector` is kept as a cold copy | `ssh fleet-host` |
 | **runner-host** | MacBook Pro (Mac14,10), macOS 26.7, Xcode 27 | **Nothing of Fleet Runner's, since 2026-09-22.** It runs the GitHub Actions runner farm, which is its own project | `ssh runner-host` |
 | **the dev MacBook** | M1 Pro, 16 GB, macOS 27, Xcode 27 | A machine agent and the `mac-dev` executor in pool `personal`, plus the SSH tunnel and the alert receiver. Its executor refuses heavy work above load 50 or under 2 GB of free swap (`FLEET_MAX_LOAD`, `FLEET_MIN_FREE_SWAP_MB`) | it is the machine you are on |
 | **the mini** | Mac mini M4, macOS 15.6.1, up 224 days | Nothing fleet-related | `ssh mini`, over the tailnet |
-| **ultra** | Mac Studio, M5 Ultra, 96 GB, macOS 27 | **The brain** (since 2026-10-21): `fleet up` with role `brain` on `127.0.0.1:8789`, data in `~/fleet-brain`, and a forwarder that puts it on the LAN at `192.168.1.111:8789`. Also the exploratory QA nights: the `ultra` executor, its Android emulator and Apple simulators, and the model gateway they call. Its night queue runs them, not the brain's schedules; [Running it on ultra](deploy/explore-on-ultra.md) is its runbook. Since 2026-10-28 also the **`ultra-phone`** executor and two phones on its USB (below) | `ssh ultra` (`ultra-ts` away), `http://192.168.1.111:8789` from the house |
+| **ultra** | Mac Studio, M5 Ultra, 96 GB, macOS 27 | **The brain** (since 2026-10-21): `fleet up` with role `brain` on `127.0.0.1:8789`, data in `~/fleet-brain`, and a forwarder that puts it on the LAN at `192.168.1.20:8789`. Also the exploratory QA nights: the `ultra` executor, its Android emulator and Apple simulators, and the model gateway they call. Its night queue runs them, not the brain's schedules; [Running it on ultra](deploy/explore-on-ultra.md) is its runbook. Since 2026-10-28 also the **`ultra-phone`** executor and two phones on its USB (below) | `ssh ultra` (`ultra-ts` away), `http://192.168.1.20:8789` from the house |
 
 **Why the brain moved to ultra (2026-10-21).** It was on fleet-host because
 that Mac is on the shelf's subnet and is macOS 12, which has no local-network
@@ -37,7 +37,7 @@ Two things make it work, and both are traps:
   `/usr/bin/python3` gets through (the Homelab Map's page server on ultra
   relies on the same thing). `com.addisdev.fleet-lan-forward` runs
   [`collector/deploy/lan-forward.py`](https://github.com/addisdev/fleet-runner/blob/develop/collector/deploy/lan-forward.py),
-  a byte pipe from `192.168.1.111:8789` to `127.0.0.1:8789`. The script lives
+  a byte pipe from `192.168.1.20:8789` to `127.0.0.1:8789`. The script lives
   in `~/.fleet/forward/`, because `install.sh` replaces `~/.fleet/bin` on every
   update. A side effect:
   every LAN client registers from `127.0.0.0/24`, so `last_net` no longer
@@ -142,15 +142,15 @@ On macOS 26 and later a LaunchAgent cannot reach a LAN address, so the dev
 MacBook's agent, executor, CLI and MCP server all point at
 `http://127.0.0.1:18788`, which is an SSH tunnel to ultra's `127.0.0.1:8789`
 (`com.addisdev.fleet-tunnel`: the LAN alias `ultra` first, the tailnet alias
-`ultra-ts` when away). It is not a preference. Point one at `192.168.1.111`
+`ultra-ts` when away). It is not a preference. Point one at `192.168.1.20`
 and it will work from your shell and fail under launchd. ultra's own night
 jobs use `127.0.0.1:8789` directly. fleet-host is macOS 12 and uses the LAN
 address.
 
 **Runner apps on phones** (the Android and iOS runners in device mode) are
-not launchd jobs and use the LAN address: `http://192.168.1.111:8789`, typed
+not launchd jobs and use the LAN address: `http://192.168.1.20:8789`, typed
 into the app's Collector field. None was connected over Wi-Fi when the brain
-moved; a shelf device that comes back with `http://192.168.50.27:8788` saved
+moved; a shelf device that comes back with `http://192.168.50.21:8788` saved
 needs that field changed.
 
 ## What runs where, and the traps in it
@@ -211,7 +211,7 @@ back.
 
 | | |
 |---|---|
-| The device | Roku Express 4K+ at `192.168.50.218`, Roku OS 15.3.4, developer mode on. Registered as `roku-<serial>` by fleet-host. An executor older than 0.9 registers it as `platform: android` and leaves an offline `roku-ip-192-168-50-218` beside it; from 0.9 it says `roku`, and the serial-named row retires the IP-named one |
+| The device | Roku Express 4K+ at `192.168.50.20`, Roku OS 15.3.4, developer mode on. Registered as `roku-<serial>` by fleet-host. An executor older than 0.9 registers it as `platform: android` and leaves an offline `roku-ip-192-168-50-20` beside it; from 0.9 it says `roku`, and the serial-named row retires the IP-named one |
 | The checkout | `~/tvloop` on fleet-host, **synced from the dev MacBook**, not cloned: the repo is private and fleet-host has no GitHub credential. Re-sync with `rsync -a --delete --exclude node_modules --exclude 'packages/*/dist' --exclude tvloop.toml <tvloop>/ fleet-host:tvloop/`, then `corepack pnpm install --frozen-lockfile && corepack pnpm build` there |
 | `~/tvloop/tvloop.toml` | Not in the repo. Points `[project] source` at `examples/sample-channel`, the channel the flows expect. Keep it out of the rsync |
 | The password | Keychain item `fleet-roku-dev` / account `rokudev` on fleet-host, the same one the dev installer reads. Missing means every run is `skipped:` and says how to add it. On a 0.7 or 0.8 brain those runs show as `done`; from 0.9 they are `skipped`, and three in a row raise a `schedule-skipping` alert |
@@ -331,7 +331,7 @@ curl -s localhost:8789/api/health
 launchctl list | grep fleet-lan-forward    # the LAN side; its log is ~/.fleet/logs/lan-forward.log
 ```
 
-Loopback answering while `http://192.168.1.111:8789` times out from the house
+Loopback answering while `http://192.168.1.20:8789` times out from the house
 is the forwarder, not the brain.
 
 Since 0.6.1 `fleet service status` reads the supervisor's own state, so a

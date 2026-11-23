@@ -5,7 +5,9 @@
   <key>Label</key>
   <string>com.addisdev.fleet-lan-forward</string>
   <!-- The brain's LAN address on ultra. The brain (`fleet up`, role brain)
-       binds 127.0.0.1:8789 only; this carries 192.168.1.111:8789 to it.
+       binds 127.0.0.1:8789 only; this carries __FLEET_LAN_ADDRESS__:8789 to
+       it. __FLEET_LAN_ADDRESS__ is the brain host's own LAN IPv4 address
+       (give it a DHCP reservation); there is no default.
        ultra's application firewall is in stealth mode and drops LAN
        connections to a Homebrew node even though `socketfilterfw` reports
        that path as permitted (measured 2026-10-21; the entry probably holds
@@ -13,14 +15,16 @@
        through. See lan-forward.py.
        The executors and runner apps on the 192.168.50.x side reach this
        address; the laptop and ultra's own night jobs use loopback.
-       Install: copy lan-forward.py to ~/.fleet/forward/, fill __HOME__, and
+       Install: copy lan-forward.py to ~/.fleet/forward/, fill __HOME__ and
+       __FLEET_LAN_ADDRESS__ (install-agent.sh takes it from the
+       FLEET_LAN_ADDRESS environment variable and refuses without it), and
        `launchctl bootstrap gui/$(id -u)` this file. Not ~/.fleet/bin:
        install.sh replaces that folder on every update. -->
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/python3</string>
     <string>__HOME__/.fleet/forward/lan-forward.py</string>
-    <string>192.168.1.111:8789</string>
+    <string>__FLEET_LAN_ADDRESS__:8789</string>
     <string>127.0.0.1:8789</string>
   </array>
   <key>KeepAlive</key>

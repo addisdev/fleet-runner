@@ -31,6 +31,7 @@ import { runPressureChecks } from "../src/pressure.test.js";
 import { runEnrolChecks } from "../src/workloads/enrol/enrol.test.js";
 import { runTvloopChecks } from "../src/workloads/tvloop/tvloop.test.js";
 import { runColdStartChecks } from "../src/workloads/cold-start/cold-start.test.js";
+import { runAtlasChecks } from "../src/workloads/atlas/atlas.test.js";
 import { runFindingsChecks } from "../src/findings.test.js";
 import { runRegressionChecks } from "../src/workloads/regressions.test.js";
 import { runFlowChecks } from "../src/workloads/flows.test.js";
@@ -3006,6 +3007,7 @@ await runTvloopChecks(check);
 
 // cold-start's refusals and its iOS rows, against a fake context.
 await runColdStartChecks(check);
+await runAtlasChecks(check);
 
 // The night-QA findings store, decisions first: dedupe, the issue cap, the
 // armed GitHub path and the digest timer, against a temp database of its own.
