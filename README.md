@@ -22,6 +22,8 @@ Built to answer a question I could not otherwise answer: **would on-device
 machine learning actually be good enough to ship in my apps, and on which
 hardware?** It turned out to be yes, and the fleet is how I know.
 
+Running this for a team? [Tell me what you need](https://github.com/addisdev/fleet-runner/issues/new?template=team-use.yml).
+
 ## At a glance
 
 | | |

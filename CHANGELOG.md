@@ -18,6 +18,9 @@ a CI job fails when they disagree.
 
 ### Added
 
+- A **Team use** issue form and a README line that links to it, for teams
+  running Fleet Runner to say what they would need
+  ([#142](https://github.com/addisdev/fleet-runner/pull/142)).
 - `atlas` workload and `npm run atlas` (collector): every screen of an app on one version from the app's own screen walk, filed as `<app>/<version>/<platform>/<screen>__<variant>.png` with an index and a sheet, diffed against an earlier version (pixelmatch, an HTML report), copied to the NAS with every sha256 verified, and its index put where a lake can read it.
 
 ## [0.9.6] — 2026-11-22
