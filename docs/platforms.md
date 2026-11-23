@@ -35,7 +35,7 @@ that says which ones somebody has watched register is worth something.
 | Platform | Runner | How it joins | Verified |
 |---|---|---|---|
 | **Roku player, Roku TV** | `runner-roku` | `build.sh --install <ip>`, then an ECP launch | **no** -- and less verified than anything above it. No Roku was available and no Roku emulator exists, so the channel has never run. CI compiles it with brighterscript's `bsc` on every pull request that touches it; the firmware's own compiler has never seen it. See [Roku: the one that has never run](#roku-the-one-that-has-never-run) |
-| **Roku, from the executor** | `collector/src/drivers/roku.ts` | SSDP discovery on the LAN | **partly** -- the SSDP and device-info parsers are checked against recorded response shapes in `drivers.test.ts`; the UDP socket path is exercised by nothing, and no Roku has answered it |
+| **Roku, from the executor** | `collector/src/drivers/roku.ts` | SSDP discovery on the LAN | **partly** -- the SSDP and device-info parsers are checked against recorded response shapes in `drivers.test.ts`; since v0.9.4 a Roku Express 4K+ in the lab answers discovery and shows online; no job has run on it yet |
 
 The desktop app is not a runner, and it has never run on the platform it is
 for. On every pull request that touches it, `desktop / cargo check` compiles

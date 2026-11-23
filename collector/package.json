@@ -1,6 +1,6 @@
 {
   "name": "fleet-collector",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "private": true,
   "type": "module",
   "engines": {
@@ -14,6 +14,7 @@
     "start": "tsx src/server.ts",
     "dev": "tsx watch src/server.ts",
     "executor": "tsx src/executor.ts",
+    "atlas": "tsx scripts/atlas.ts",
     "smoke": "tsx scripts/smoke.ts",
     "dash:install": "npm --prefix dash install",
     "dash:build": "npm --prefix dash run build",
