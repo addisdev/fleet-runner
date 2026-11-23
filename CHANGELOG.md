@@ -16,12 +16,21 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+## [0.9.7] — 2026-11-23
+
 ### Added
 
 - A **Team use** issue form and a README line that links to it, for teams
   running Fleet Runner to say what they would need
   ([#142](https://github.com/addisdev/fleet-runner/pull/142)).
-- `atlas` workload and `npm run atlas` (collector): every screen of an app on one version from the app's own screen walk, filed as `<app>/<version>/<platform>/<screen>__<variant>.png` with an index and a sheet, diffed against an earlier version (pixelmatch, an HTML report), copied to the NAS with every sha256 verified, and its index put where a lake can read it.
+- `atlas` workload and `npm run atlas` (collector): every screen of an app on one version from the app's own screen walk, filed as `<app>/<version>/<platform>/<screen>__<variant>.png` with an index and a sheet, diffed against an earlier version (pixelmatch, an HTML report), copied to the NAS with every sha256 verified, and its index put where a lake can read it
+  ([#146](https://github.com/addisdev/fleet-runner/pull/146)).
+
+### Fixed
+
+- `docs/platforms.md`: the Roku-from-the-executor row now says a Roku answers
+  discovery in the lab and shows online since v0.9.4, and that no job has run on
+  one yet; it said no Roku had answered.
 
 ## [0.9.6] — 2026-11-22
 
@@ -1733,7 +1742,8 @@ The first public release, when the project was still four repositories.
   that starts a throwaway collector on a spare port so it never touches a live
   fleet's history.
 
-[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.6...HEAD
+[Unreleased]: https://github.com/addisdev/fleet-runner/compare/v0.9.7...HEAD
+[0.9.7]: https://github.com/addisdev/fleet-runner/compare/v0.9.6...v0.9.7
 [0.9.6]: https://github.com/addisdev/fleet-runner/compare/v0.9.5...v0.9.6
 [0.9.5]: https://github.com/addisdev/fleet-runner/compare/v0.9.4...v0.9.5
 [0.9.4]: https://github.com/addisdev/fleet-runner/compare/v0.9.3...v0.9.4
