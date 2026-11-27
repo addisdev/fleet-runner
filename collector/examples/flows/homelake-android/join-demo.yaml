@@ -21,10 +21,18 @@ appId: ${APP_ID}
 - extendedWaitUntil:
     visible: "(?s).*Join the household's hub as.*"
     timeout: 30000
+# Under the largest text the buttons sit below the fold: scroll to each before tapping it.
+- scrollUntilVisible:
+    element:
+      text: "Join"
+    direction: DOWN
+    timeout: 20000
 - tapOn: "Join"
-- extendedWaitUntil:
-    visible: "Yes, join .*"
-    timeout: 10000
+- scrollUntilVisible:
+    element:
+      text: "Yes, join .*"
+    direction: DOWN
+    timeout: 20000
 - tapOn: "Yes, join .*"
 # Joined: the phone leaves the join screen for the app. "Start with these" is the owner's one-time starter step.
 - extendedWaitUntil:
