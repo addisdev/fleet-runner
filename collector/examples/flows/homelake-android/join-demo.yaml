@@ -1,0 +1,40 @@
+# HomeLake Android: join the demo household (demo.homelake.app) with its standing invite.
+#
+# The demo hub is an invented household, read-only from devices, and its reviewer invite is reusable. The night
+# command (deploy/explore/night/fleet-explore-homelake.json) reads the invite's deep link from
+# ~/.config/homelake-demo/invite.json on the executor host when the night starts and exports it as
+# MAESTRO_HOMELAKE_DEMO_LINK (Maestro hands shell variables with that prefix to a flow). The value is never in this
+# file, in a job spec or in a mission card, and the executor blanks it out of a failed flow's error text.
+#
+# The harness runs this AFTER it has reset the app and launched it with the card's launch_args (e2eScreenshots=true,
+# which lifts the debug build's FLAG_SECURE), so the flow must not restart the app: `stopApp: false`.
+# The invite opens the join screen ("Join the household's hub as ...?"); the demo host is not on a tailnet, so the app
+# asks for a second, deliberate tap ("Yes, join <host>").
+appId: ${APP_ID}
+---
+- launchApp:
+    stopApp: false
+- extendedWaitUntil:
+    visible: "Start on this phone"
+    timeout: 45000
+- openLink: ${MAESTRO_HOMELAKE_DEMO_LINK}
+- extendedWaitUntil:
+    visible: "(?s).*Join the household's hub as.*"
+    timeout: 30000
+- tapOn: "Join"
+- extendedWaitUntil:
+    visible: "Yes, join .*"
+    timeout: 10000
+- tapOn: "Yes, join .*"
+# Joined: the phone leaves the join screen for the app. "Start with these" is the owner's one-time starter step.
+- extendedWaitUntil:
+    notVisible: "(?s).*Join the household's hub as.*"
+    timeout: 60000
+- runFlow:
+    when:
+      visible: "Not now"
+    commands:
+      - tapOn: "Not now"
+- extendedWaitUntil:
+    visible: "Today"
+    timeout: 60000

@@ -10,7 +10,7 @@
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { MAESTRO_OUTPUT_FLAG, collectFlowShots, runFlow, uploadFlowShots } from "./flows.js";
+import { MAESTRO_OUTPUT_FLAG, collectFlowShots, redactShellSecrets, runFlow, uploadFlowShots } from "./flows.js";
 import type { Target } from "./types.js";
 
 type Check = (name: string, cond: boolean, detail?: string) => void;
@@ -121,6 +121,15 @@ export async function runFlowChecks(check: Check) {
       check("flows: a shot that will not upload is logged and the rest still go",
         up.shas.length === 2 && up.shots === 2 && up.failures === 1 && lines.some((l) => l.includes("ct1-02-map.png") && l.includes("507")),
         JSON.stringify({ up, lines }));
+    }
+
+    // --- a MAESTRO_* shell variable (an invite read from a file) never reaches a failure's text ------
+    {
+      const env = { MAESTRO_HOMELAKE_DEMO_LINK: "homelake://join?c=ABCD-2345&u=https://x.example", MAESTRO_CLI_NO_ANALYTICS: "true", PATH: "/usr/bin" };
+      const out = redactShellSecrets("Input: openLink homelake://join?c=ABCD-2345&u=https://x.example failed; analytics true", env);
+      check("flows: a MAESTRO_* shell variable's value is blanked out of a failed flow's text",
+        !out.includes("ABCD-2345") && out.includes("<MAESTRO_HOMELAKE_DEMO_LINK>"), out);
+      check("flows: Maestro's own switches are left alone", out.includes("analytics true"), out);
     }
 
     // --- runFlow against a fake Maestro ---------------------------------------

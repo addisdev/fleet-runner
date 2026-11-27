@@ -209,6 +209,7 @@ the harness's night queue runs `scripts/explore-night.ts` from the manifests in
 | `fleet-explore-builds` | 19 | none: `deploy/explore/nightly-builds.sh` builds GreenFolio iOS and Dozehound tvOS from `origin/develop` and uploads them |
 | `fleet-explore` | 20 | `explore-garden-ultra.json`, the bug garden on the Android emulator |
 | `fleet-explore-tv` | 85 | `explore-dozehound-tvos-ultra.json` and the two tvOS bench specs, on a tvOS simulator |
+| `fleet-explore-homelake` | 81 | `explore-homelake-android-ultra.json`, the HomeLake `.dev` debug build (uploaded by HomeLake's own `phone-first-run` night at 80) on the Android emulator, 100 minutes at most |
 | `fleet-explore-apple` | 86 | `explore-greenfolio-ios-ultra.json`, on an iOS simulator |
 
 A lower number runs earlier; the products' own night jobs sit between 20 and

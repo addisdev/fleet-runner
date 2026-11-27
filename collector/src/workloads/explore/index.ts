@@ -185,7 +185,8 @@ export function missingFlowVars(flow: string, env: Record<string, string>): stri
   let text = "";
   try { text = readFileSync(resolveFlow(flow), "utf8"); } catch { return [`the flow ${flow} itself`]; }
   const wanted = new Set([...text.matchAll(/\$\{(\w+)\}/g)].map((m) => m[1]).filter((v) => v !== "APP_ID"));
-  return [...wanted].filter((v) => !(v in env));
+  // `MAESTRO_*` shell variables reach a flow without being passed (see runFlow), so a host that has one set supplies it.
+  return [...wanted].filter((v) => !(v in env) && !(v.startsWith("MAESTRO_") && process.env[v]));
 }
 
 export function fileable(c: Confirmed): boolean {

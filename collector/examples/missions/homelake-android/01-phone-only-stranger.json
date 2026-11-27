@@ -1,0 +1,25 @@
+{
+  "id": "homelake-phone-only-stranger",
+  "app": "homelake-android",
+  "title": "A stranger who only uses the phone",
+  "persona": "Someone who just installed HomeLake, has no computer to spare and no hub, and wants to see whether it is any use on the phone alone.",
+  "goal": "Choose Start on this phone, say yes to what the emulator offers to connect, and turn Health lite on. Then read Today, Trends and Agents, and open one agent to see what it says without a hub. On the Agents tab tap How to set up a hub once, to see where it leads; if a browser opens, come back to the app with Back and do not follow the page. Do not join a hub, send a report or share anything.",
+  "success": "Every screen read loads its content, the words say plainly what works on this phone and what needs a hub, and How to set up a hub leads somewhere or fails with a clear message.",
+  "budget": { "steps": 50, "minutes": 25 },
+  "surfaces": ["touch"],
+  "screens": ["HomeSetup", "AgentsScreen", "AgentsPower", "AgentsBoard", "HealthLiteUi", "TodayScreen", "Trends"],
+  "launch_args": ["e2eScreenshots=true"],
+  "block": [
+    "join or set up",
+    "\\bjoin\\b",
+    "move to a hub",
+    "bring .*(history|export|file)",
+    "\\binvite\\b",
+    "\\bsend\\b",
+    "\\bshare\\b",
+    "\\bexport\\b",
+    "report a problem",
+    "\\bfeedback\\b",
+    "\\bsupport\\b"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "fleet-explore-homelake",
+  "owner": "fleet-runner",
+  "command": [
+    "bash",
+    "-lc",
+    "source ~/explore/env.sh && source ~/fleet-runner/collector/deploy/explore/homelake-demo-env.sh && cd ~/fleet-runner/collector && export FLEET_URL=http://127.0.0.1:8789 && npx tsx scripts/explore-night.ts --spec examples/jobs/explore-homelake-android-ultra.json --avd fleet-explore-1 --warm \"WARM_MIN_FREE_PCT=45 bash ~/harness/shelf.sh warm pilot\""
+  ],
+  "priority": 81,
+  "needs_gb": 35,
+  "unloads_shelf": false,
+  "max_minutes": 100,
+  "nights": "daily",
+  "wait_minutes": 120,
+  "gateway_key": "fleet"
+}
