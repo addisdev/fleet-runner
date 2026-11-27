@@ -16,6 +16,18 @@ a CI job fails when they disagree.
 
 ## [Unreleased]
 
+### Added
+
+- **HomeLake Android joins the night's explore.** A job spec
+  (`explore-homelake-android-ultra.json`), three mission cards under
+  `missions/homelake-android/` (a stranger who only uses the phone; a visitor
+  in the demo household; the same visit under big text and dark mode) and a
+  night-queue manifest, `fleet-explore-homelake` (priority 81, after
+  HomeLake's own phone-first-run upload), on the `fleet-explore-1` emulator.
+  The demo household's invite is read from a file on the executor host when
+  the night starts and handed to the join flow as a `MAESTRO_*` shell
+  variable; a failed flow's text has such values blanked out.
+
 ## [0.9.7] — 2026-11-23
 
 ### Added

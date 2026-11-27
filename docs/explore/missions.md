@@ -101,6 +101,18 @@ The password is read from the executor host's Keychain (service
 `fleet-ui-test`, account as given) and never appears in a job spec. A flow that
 carries its own test account, like the bug garden's, needs nothing.
 
+### A secret that lives in a file
+
+A flow can also use a shell variable named `MAESTRO_*`: Maestro passes those to
+every flow, and the job's `credentials` are not needed. HomeLake's join flow
+opens `${MAESTRO_HOMELAKE_DEMO_LINK}`, which
+`deploy/explore/homelake-demo-env.sh` exports from
+`~/.config/homelake-demo/invite.json` on ultra when the night starts, so the
+invite is in no spec, card or manifest. A card whose flow names such a variable
+that the host did not export is left out and said so, like any other missing
+variable, and a failed flow's text has the value replaced by the variable's
+name.
+
 ## Bench cards
 
 A bench card has an id starting `bench-` and a `check` the harness can
@@ -138,6 +150,7 @@ that comes out is how many end states the model reached. See
 | `bug-garden/` | 7 exploration, 20 bench, all on the fixture app |
 | `greenfolio/` | 3 Android: the sign-in gate, forgot password, a read-only signed-in tour |
 | `greenfolio-ios/` | 2 iOS, offline: the sign-in gate, creating an account with no network |
+| `homelake-android/` | 3 Android, on the HomeLake `.dev` debug build: a stranger who only uses the phone (no hub), then a visitor in the demo household (joined with its standing invite by `flows/homelake-android/join-demo.yaml`), then the same visit looking for clipped text. See [the demo invite](#a-secret-that-lives-in-a-file) |
 | `dozehound-tv/` | Android TV / Fire TV: 3 exploration, 10 bench |
 | `dozehound-tvos/` | tvOS: 1 exploration, 10 bench, end states taken from a hand walk on a tvOS 26.5 simulator |
 | `fakeroku/` | 10 bench, for tvloop's fake Roku |

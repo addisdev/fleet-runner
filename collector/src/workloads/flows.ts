@@ -177,6 +177,20 @@ export async function uploadFlowShots(
  * every caller wants to record it against one cell of a matrix and carry on
  * with the rest.
  */
+/**
+ * Maestro hands a flow every shell variable named `MAESTRO_*` (the night command
+ * for HomeLake exports the demo household's invite that way, from a file on the
+ * executor host). Maestro echoes the commands it runs, so a failed flow's text
+ * would carry the value into the job's error and the finding; this blanks it.
+ */
+export function redactShellSecrets(text: string, env: NodeJS.ProcessEnv = process.env): string {
+  let out = text;
+  for (const [k, v] of Object.entries(env)) {
+    if (k.startsWith("MAESTRO_") && v && v.length >= 8 && !/^MAESTRO_(CLI|DRIVER|BIN|OUTPUT)/.test(k)) out = out.split(v).join(`<${k}>`);
+  }
+  return out;
+}
+
 export async function runFlow(
   t: Target, flow: string, cwd: string, env: Record<string, string>, timeoutMs: number,
   bin: string = MAESTRO,
@@ -193,7 +207,7 @@ export async function runFlow(
     return null;
   } catch (e) {
     const err = e as { stdout?: string; message?: string };
-    return `${err.stdout ?? ""}${err.message ?? ""}`.trim().slice(-400) || "maestro failed";
+    return redactShellSecrets(`${err.stdout ?? ""}${err.message ?? ""}`).trim().slice(-400) || "maestro failed";
   } finally {
     try { placeFlowShots(collectFlowShots(out), cwd); } catch { /* a copy that fails leaves the caller's own "no shots" check to say so */ }
     rmSync(out, { recursive: true, force: true });

@@ -1,0 +1,31 @@
+{
+  "id": "homelake-demo-visitor",
+  "app": "homelake-android",
+  "title": "A visitor in the demo household",
+  "persona": "Someone with a HomeLake invite to a household they do not know, looking around to see what the app shows before they trust it with anything.",
+  "goal": "Look through the household as it is shown: Today, Trends, the Agents tab, one agent's page if the list has any, and Money. Scroll each screen to its end, open one item on each that opens, and go back. Read only: do not turn anything on or off, add, edit, connect or leave anything.",
+  "success": "Every screen visited loads its content, no screen is empty or stuck loading, and nothing in the household changed.",
+  "budget": { "steps": 60, "minutes": 30 },
+  "surfaces": ["touch"],
+  "screens": ["TodayScreen", "Trends", "AgentsScreen", "AgentsBoard", "Money", "Household"],
+  "setup_flow": "homelake-android/join-demo.yaml",
+  "launch_args": ["e2eScreenshots=true"],
+  "block": [
+    "\\bturn (on|off)\\b",
+    "\\bswitch\\b",
+    "\\bleave\\b",
+    "\\bunpair\\b",
+    "\\bdisconnect\\b",
+    "\\bremove\\b",
+    "\\bsave\\b",
+    "\\badd\\b",
+    "\\bconnect\\b",
+    "new invite",
+    "add a device",
+    "\\bsend\\b",
+    "\\bshare\\b",
+    "\\bexport\\b",
+    "report a problem",
+    "\\bfeedback\\b"
+  ]
+}

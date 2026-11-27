@@ -1,0 +1,31 @@
+{
+  "id": "homelake-demo-big-text",
+  "app": "homelake-android",
+  "title": "Someone using the largest text and dark mode",
+  "persona": "A person who needs the biggest text and a dark screen, joined to the demo household, who gives up on any screen where words are cut off, overlap or cannot be read.",
+  "goal": "Visit Today, Trends, the Agents tab, one agent's page if the list has any, and Money, scrolling each to its end. On each, look for text that is clipped, overlapping, tiny against its neighbours, or low in contrast, and for buttons or rows pushed off the screen. Read only: do not turn anything on or off, add, edit, connect or leave anything.",
+  "success": "Every screen can be read in full, nothing is cut off or overlapping, and every control can be reached by scrolling.",
+  "budget": { "steps": 60, "minutes": 30 },
+  "surfaces": ["touch"],
+  "screens": ["TodayScreen", "Trends", "AgentsScreen", "AgentsBoard", "Money", "Theme"],
+  "setup_flow": "homelake-android/join-demo.yaml",
+  "launch_args": ["e2eScreenshots=true"],
+  "block": [
+    "\\bturn (on|off)\\b",
+    "\\bswitch\\b",
+    "\\bleave\\b",
+    "\\bunpair\\b",
+    "\\bdisconnect\\b",
+    "\\bremove\\b",
+    "\\bsave\\b",
+    "\\badd\\b",
+    "\\bconnect\\b",
+    "new invite",
+    "add a device",
+    "\\bsend\\b",
+    "\\bshare\\b",
+    "\\bexport\\b",
+    "report a problem",
+    "\\bfeedback\\b"
+  ]
+}
